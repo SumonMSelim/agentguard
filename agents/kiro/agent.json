@@ -1,0 +1,45 @@
+{
+  "name": "agentguard",
+  "description": "Security guardrails and workflow policies for Kiro",
+  "prompt": "file://~/.kiro/KIRO.md",
+  "hooks": {
+    "preToolUse": [
+      {
+        "matcher": "execute_bash",
+        "command": "bash ~/.kiro/hooks/block-env.sh",
+        "description": "Block .env reads and env dumps"
+      },
+      {
+        "matcher": "execute_bash",
+        "command": "bash ~/.kiro/hooks/block-main-branch.sh",
+        "description": "Block commits/pushes on main/master and force pushes"
+      },
+      {
+        "matcher": "execute_bash",
+        "command": "bash ~/.kiro/hooks/block-system-installs.sh",
+        "description": "Block system package manager installs"
+      },
+      {
+        "matcher": "execute_bash",
+        "command": "bash ~/.kiro/hooks/block-destructive-ops.sh",
+        "description": "Block rm on root/home and pipe-to-shell"
+      },
+      {
+        "matcher": "fs_read",
+        "command": "bash ~/.kiro/hooks/block-env-read.sh",
+        "description": "Block reads of .env and credential files"
+      },
+      {
+        "matcher": "fs_write",
+        "command": "bash ~/.kiro/hooks/block-env-read.sh",
+        "description": "Block writes to .env and credential files"
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "bash ~/.kiro/hooks/audit-log.sh",
+        "description": "Audit log every tool call"
+      }
+    ]
+  }
+}
