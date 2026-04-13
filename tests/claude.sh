@@ -39,6 +39,34 @@ check() {
   fi
 }
 
+# Like check() but runs the hook from a specific directory.
+# Used for branch-detection tests that call `git branch --show-current`
+# internally — the result depends on the CWD's git state.
+check_in() {
+  local dir="$1" label="$2" expected="$3" input="$4" hook="$5"
+  echo "$input" | (cd "$dir" && bash "$HOOKS_DIR/$hook") >/dev/null 2>&1
+  local code=$?
+  if [[ "$expected" == "block" && "$code" -eq 2 ]]; then
+    printf "  PASS  %s\n" "$label"
+    ((pass++))
+  elif [[ "$expected" == "allow" && "$code" -eq 0 ]]; then
+    printf "  PASS  %s\n" "$label"
+    ((pass++))
+  else
+    printf "  FAIL  %s (exit %d, expected %s)\n" "$label" "$code" "$expected"
+    ((fail++))
+  fi
+}
+
+# Temp git repo on 'main' for branch-detection tests.
+# CI checkouts are detached HEAD, so tests that rely on the current branch
+# must supply their own controlled git environment.
+MAIN_REPO=$(mktemp -d)
+trap 'rm -rf "$MAIN_REPO"' EXIT
+git -C "$MAIN_REPO" init -q
+git -C "$MAIN_REPO" symbolic-ref HEAD refs/heads/main
+git -C "$MAIN_REPO" -c user.email=t@t.com -c user.name=t commit --allow-empty -q -m init
+
 jq_check() {
   local label="$1" query="$2" file="$3"
   if jq -e "$query" "$file" >/dev/null 2>&1; then
@@ -89,7 +117,7 @@ run_hook_tests() {
   PUSH_REFSPEC='git push origin HEAD:main'
   check "blocks refspec push to main"      block "{\"tool_input\":{\"command\":\"$PUSH_REFSPEC\"}}"           block-main-branch.sh
   PUSH_BARE='git push'
-  check "blocks bare push (on main)"        block "{\"tool_input\":{\"command\":\"$PUSH_BARE\"}}"              block-main-branch.sh
+  check_in "$MAIN_REPO" "blocks bare push (on main)" block "{\"tool_input\":{\"command\":\"$PUSH_BARE\"}}" block-main-branch.sh
   check "allows push to feature branch"     allow '{"tool_input":{"command":"git push origin feat/my-feature"}}' block-main-branch.sh
   check "allows non-git command"            allow '{"tool_input":{"command":"ls -la"}}'                        block-main-branch.sh
 
