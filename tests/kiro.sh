@@ -82,6 +82,7 @@ run_hook_tests() {
   check "blocks push to main (explicit)"   block "$(kiro_bash 'git push origin main')"            block-main-branch.sh
   check "blocks push to master (explicit)" block "$(kiro_bash 'git push origin master')"          block-main-branch.sh
   check "blocks refspec push to main"      block "$(kiro_bash 'git push origin HEAD:main')"       block-main-branch.sh
+  check "blocks bare push (on main)"        block "$(kiro_bash 'git push')"                        block-main-branch.sh
   check "allows push to feature branch"   allow "$(kiro_bash 'git push origin feat/my-feature')" block-main-branch.sh
   check "allows non-git command"          allow "$(kiro_bash 'echo hello')"                       block-main-branch.sh
 

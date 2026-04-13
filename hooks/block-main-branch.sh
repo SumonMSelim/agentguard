@@ -2,7 +2,9 @@
 # hooks/block-main-branch.sh
 #
 # 1. Blocks any force-push flag (--force, -f, --force-with-lease) in git push.
-# 2. Blocks git commit and git push when the current branch is main or master.
+# 2. Blocks git commit on main/master, and git push with no explicit branch (which
+#    would implicitly push the current branch). Explicit-target pushes like
+#    "git push origin feat/foo" are allowed here; the refspec check handles those.
 # 3. Blocks explicit pushes targeting main/master regardless of current branch,
 #    including refspec-style pushes (HEAD:main, refs/heads/main).
 #
@@ -34,13 +36,29 @@ fi
 BRANCH=$(git branch --show-current 2>/dev/null)
 
 if echo "$BRANCH" | grep -qE '^(main|master)$'; then
-  echo "Blocked: currently on '$BRANCH'. Never commit or push directly to '$BRANCH'." >&2
-  echo "Steps to follow:" >&2
-  echo "  1. git pull origin $BRANCH" >&2
-  echo "  2. git checkout -b <type>/<short-description>" >&2
-  echo "  3. Make changes and commit on that branch" >&2
-  echo "  4. When ready, open a PR to merge back into $BRANCH" >&2
-  exit 2
+  _block_msg() {
+    echo "Blocked: currently on '$BRANCH'. Never commit or push directly to '$BRANCH'." >&2
+    echo "Steps to follow:" >&2
+    echo "  1. git pull origin $BRANCH" >&2
+    echo "  2. git checkout -b <type>/<short-description>" >&2
+    echo "  3. Make changes and commit on that branch" >&2
+    echo "  4. When ready, open a PR to merge back into $BRANCH" >&2
+  }
+
+  # Always block commits on main/master
+  if echo "$COMMAND" | grep -qE '\bgit\s+commit\b'; then
+    _block_msg; exit 2
+  fi
+
+  # Block pushes only when no explicit remote branch is given, which would
+  # implicitly push the current branch (main/master) to the remote.
+  # "git push" / "git push origin"     → blocked
+  # "git push origin feat/foo"         → allowed (explicit target)
+  if echo "$COMMAND" | grep -qE '\bgit\s+push\b'; then
+    if ! echo "$COMMAND" | grep -qE 'git[[:space:]]+push[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+'; then
+      _block_msg; exit 2
+    fi
+  fi
 fi
 
 # Also block explicit pushes targeting main/master regardless of current branch,

@@ -88,8 +88,10 @@ run_hook_tests() {
   check "blocks push to master (explicit)" block "{\"tool_input\":{\"command\":\"$PUSH_MASTER\"}}"            block-main-branch.sh
   PUSH_REFSPEC='git push origin HEAD:main'
   check "blocks refspec push to main"      block "{\"tool_input\":{\"command\":\"$PUSH_REFSPEC\"}}"           block-main-branch.sh
-  check "allows push to feature branch"   allow '{"tool_input":{"command":"git push origin feat/my-feature"}}' block-main-branch.sh
-  check "allows non-git command"          allow '{"tool_input":{"command":"ls -la"}}'                        block-main-branch.sh
+  PUSH_BARE='git push'
+  check "blocks bare push (on main)"        block "{\"tool_input\":{\"command\":\"$PUSH_BARE\"}}"              block-main-branch.sh
+  check "allows push to feature branch"     allow '{"tool_input":{"command":"git push origin feat/my-feature"}}' block-main-branch.sh
+  check "allows non-git command"            allow '{"tool_input":{"command":"ls -la"}}'                        block-main-branch.sh
 
   echo ""
   echo "block-system-installs.sh"
