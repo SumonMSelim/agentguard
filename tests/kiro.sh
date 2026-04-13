@@ -34,6 +34,28 @@ check() {
   fi
 }
 
+check_in() {
+  local dir="$1" label="$2" expected="$3" input="$4" hook="$5"
+  echo "$input" | (cd "$dir" && bash "$HOOKS_DIR/$hook") >/dev/null 2>&1
+  local code=$?
+  if [[ "$expected" == "block" && "$code" -eq 2 ]]; then
+    printf "  PASS  %s\n" "$label"
+    ((pass++))
+  elif [[ "$expected" == "allow" && "$code" -eq 0 ]]; then
+    printf "  PASS  %s\n" "$label"
+    ((pass++))
+  else
+    printf "  FAIL  %s (exit %d, expected %s)\n" "$label" "$code" "$expected"
+    ((fail++))
+  fi
+}
+
+MAIN_REPO=$(mktemp -d)
+trap 'rm -rf "$MAIN_REPO"' EXIT
+git -C "$MAIN_REPO" init -q
+git -C "$MAIN_REPO" symbolic-ref HEAD refs/heads/main
+git -C "$MAIN_REPO" -c user.email=t@t.com -c user.name=t commit --allow-empty -q -m init
+
 jq_check() {
   local label="$1" query="$2" file="$3"
   if jq -e "$query" "$file" >/dev/null 2>&1; then
@@ -82,6 +104,7 @@ run_hook_tests() {
   check "blocks push to main (explicit)"   block "$(kiro_bash 'git push origin main')"            block-main-branch.sh
   check "blocks push to master (explicit)" block "$(kiro_bash 'git push origin master')"          block-main-branch.sh
   check "blocks refspec push to main"      block "$(kiro_bash 'git push origin HEAD:main')"       block-main-branch.sh
+  check_in "$MAIN_REPO" "blocks bare push (on main)" block "$(kiro_bash 'git push')" block-main-branch.sh
   check "allows push to feature branch"   allow "$(kiro_bash 'git push origin feat/my-feature')" block-main-branch.sh
   check "allows non-git command"          allow "$(kiro_bash 'echo hello')"                       block-main-branch.sh
 

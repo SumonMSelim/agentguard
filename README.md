@@ -1,5 +1,9 @@
 # agentguard
 
+[![Shell: bash](https://img.shields.io/badge/shell-bash-green.svg)](hooks/)
+[![CI](https://github.com/SumonMSelim/agentguard/actions/workflows/test.yml/badge.svg)](https://github.com/SumonMSelim/agentguard/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Universal security guardrails and workflow policies for AI coding agents.
 
 - Hooks are written in bash and are tool-agnostic.
