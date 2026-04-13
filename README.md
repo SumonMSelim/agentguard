@@ -84,7 +84,7 @@ Requires: `bash`, `jq`.
 ```
 
 Re-running is safe. Existing files are backed up with a timestamp suffix before any write.
-`settings.json` is **merged**, not overwritten — see [Merge behavior](#merge-behavior).
+`settings.json` is **merged**, not overwritten — see [Merge behavior](#merge-behavior-settingsjson).
 
 Verify after installing Claude:
 
@@ -147,7 +147,7 @@ Always review before running these on your system. While these are tested, use t
 
 ## License
 
-MIT License - feel free to use and modify as needed.
+[MIT License](LICENSE) - feel free to use and modify as needed.
 
 ---
 
