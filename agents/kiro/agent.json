@@ -37,6 +37,7 @@
     ],
     "postToolUse": [
       {
+        "matcher": "*",
         "command": "bash ~/.kiro/hooks/audit-log.sh",
         "description": "Audit log every tool call"
       }

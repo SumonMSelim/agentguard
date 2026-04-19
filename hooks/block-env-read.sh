@@ -9,13 +9,14 @@
 # Exit 2 = blocked. The agent receives the stderr message as feedback.
 
 INPUT=$(cat)
-# Claude:  .tool_input.path (Read/Write), .tool_input.file_path (Edit)
+# Claude:  .tool_input.path (Read/Write), .tool_input.file_path (Edit), .tool_input.file_path (MultiEdit)
 # Kiro:    .tool_input.path (fs_write),   .tool_input.operations[].path (fs_read)
 # Collect all candidate paths; trim whitespace via sed (xargs would split paths with spaces).
 PATHS=$(echo "$INPUT" | jq -r '
   (.tool_input.file_path // ""),
   (.tool_input.path // ""),
-  (.tool_input.operations // [] | .[].path // "")
+  (.tool_input.operations // [] | .[].path // ""),
+  (.tool_input.edits // [] | .[].file_path // "")
 ' 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)
 
 SENSITIVE_RE='(^|/)\.env(\.|$)|(^|/)\.env$|\.envrc$|secrets/|\.aws/|\.ssh/|credentials|\.netrc$|\.(pem|key|p12|pfx)$'

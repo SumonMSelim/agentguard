@@ -6,6 +6,7 @@
 # Usage:
 #   ./install.sh claude    — install for Claude Code
 #   ./install.sh codex     — install for Codex
+#   ./install.sh kiro      — install for Kiro
 #   ./install.sh all       — install for all supported agents
 #
 # Default: claude
@@ -133,6 +134,21 @@ merge_settings() {
 
 # ── agent installers ──────────────────────────────────────────────────────────
 
+install_skills() {
+  local dest="$1"
+  if [[ -d "$SCRIPT_DIR/skills" ]]; then
+    if [[ -d "$dest/skills" ]]; then
+      local ts
+      ts=$(date +%Y%m%d%H%M%S)
+      cp -r "$dest/skills" "${dest}/skills.bak.${ts}"
+      log "Backed up skills → skills.bak.${ts}"
+    fi
+    mkdir -p "$dest/skills"
+    cp -r "$SCRIPT_DIR/skills/"* "$dest/skills/"
+    ok "Skills installed → $dest/skills"
+  fi
+}
+
 install_claude() {
   local dest="$HOME/.claude"
   mkdir -p "$dest"
@@ -140,6 +156,7 @@ install_claude() {
   echo "Installing Claude Code guardrails → $dest"
 
   install_hooks "$dest/hooks"
+  install_skills "$dest"
 
   backup_if_exists "$dest/CLAUDE.md"
   cp "$SCRIPT_DIR/agents/claude/CLAUDE.md" "$dest/CLAUDE.md"
@@ -153,14 +170,12 @@ install_claude() {
 
 install_kiro() {
   local dest="$HOME/.kiro"
-  local hooks_dest="$dest/hooks"
-  mkdir -p "$hooks_dest"
+  mkdir -p "$dest"
 
   echo "Installing Kiro guardrails → $dest"
 
-  cp "$SCRIPT_DIR/hooks/"*.sh "$hooks_dest/"
-  chmod +x "$hooks_dest/"*.sh
-  ok "Hooks installed → $hooks_dest"
+  install_hooks "$dest/hooks"
+  install_skills "$dest"
 
   backup_if_exists "$dest/KIRO.md"
   cp "$SCRIPT_DIR/agents/kiro/KIRO.md" "$dest/KIRO.md"
