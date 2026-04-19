@@ -9,6 +9,9 @@
 #   ./install.sh kiro      — install for Kiro
 #   ./install.sh all       — install for all supported agents
 #
+#   --skills <list>        — comma-separated skill names to append (e.g. karpathy-guidelines)
+#                            Skills tagged [core] are always appended unless --skills none
+#
 # Default: claude
 #
 # Re-running is safe. Existing files are backed up before any writes.
@@ -18,6 +21,15 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 AGENT="${1:-claude}"
+SKILLS_ARG=""
+
+# Parse --skills flag (can appear anywhere after the agent arg)
+args=("$@")
+for i in "${!args[@]}"; do
+  if [[ "${args[$i]}" == "--skills" ]]; then
+    SKILLS_ARG="${args[$((i+1))]:-}"
+  fi
+done
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -134,19 +146,64 @@ merge_settings() {
 
 # ── agent installers ──────────────────────────────────────────────────────────
 
-install_skills() {
-  local dest="$1"
-  if [[ -d "$SCRIPT_DIR/skills" ]]; then
-    if [[ -d "$dest/skills" ]]; then
-      local ts
-      ts=$(date +%Y%m%d%H%M%S)
-      cp -r "$dest/skills" "${dest}/skills.bak.${ts}"
-      log "Backed up skills → skills.bak.${ts}"
+# ── skills ────────────────────────────────────────────────────────────────────
+#
+# Skills are appended to the agent's instruction file after install.
+# Each SKILL.md has YAML front-matter (stripped before appending).
+#
+# Selection logic:
+#   --skills none              → no skills appended
+#   --skills foo,bar           → append only foo and bar
+#   (no --skills flag)         → append all skills tagged [core]
+
+# strip_frontmatter <file> — prints SKILL.md body with YAML front-matter removed
+strip_frontmatter() {
+  awk 'BEGIN{fm=0} /^---/{if(NR==1){fm=1;next}else if(fm){fm=0;next}} !fm{print}' "$1"
+}
+
+# skill_has_tag <skill_dir> <tag> — returns 0 if SKILL.md front-matter contains the tag
+skill_has_tag() {
+  local skill_file="$1/SKILL.md"
+  [[ -f "$skill_file" ]] || return 1
+  # Extract front-matter block (between first pair of ---) and grep for the tag
+  awk '/^---/{if(NR==1){in_fm=1;next}else{exit}} in_fm{print}' "$skill_file" \
+    | grep -qE "\b$2\b"
+}
+
+# append_skills <instruction_file> — appends selected skills to the instruction file
+append_skills() {
+  local dest_file="$1"
+  [[ -d "$SCRIPT_DIR/skills" ]] || return 0
+  [[ "$SKILLS_ARG" == "none" ]] && return 0
+
+  local appended=0
+  for skill_dir in "$SCRIPT_DIR/skills"/*/; do
+    [[ -f "$skill_dir/SKILL.md" ]] || continue
+    local name
+    name=$(basename "$skill_dir")
+
+    # Determine if this skill should be included
+    local include=0
+    if [[ -n "$SKILLS_ARG" ]]; then
+      # Explicit list: check if name is in the comma-separated list
+      IFS=',' read -ra requested <<< "$SKILLS_ARG"
+      for req in "${requested[@]}"; do
+        [[ "$req" == "$name" ]] && include=1 && break
+      done
+    else
+      # Default: include core-tagged skills only
+      skill_has_tag "$skill_dir" "core" && include=1
     fi
-    mkdir -p "$dest/skills"
-    cp -r "$SCRIPT_DIR/skills/"* "$dest/skills/"
-    ok "Skills installed → $dest/skills"
-  fi
+
+    if [[ "$include" == 1 ]]; then
+      printf '\n\n---\n\n' >> "$dest_file"
+      strip_frontmatter "$skill_dir/SKILL.md" >> "$dest_file"
+      ok "Skill '$name' appended → $(basename "$dest_file")"
+      appended=$((appended + 1))
+    fi
+  done
+
+  [[ "$appended" -eq 0 ]] && log "No skills appended"
 }
 
 install_claude() {
@@ -156,10 +213,10 @@ install_claude() {
   echo "Installing Claude Code guardrails → $dest"
 
   install_hooks "$dest/hooks"
-  install_skills "$dest"
 
   backup_if_exists "$dest/CLAUDE.md"
   cp "$SCRIPT_DIR/agents/claude/CLAUDE.md" "$dest/CLAUDE.md"
+  append_skills "$dest/CLAUDE.md"
   ok "CLAUDE.md installed"
 
   backup_if_exists "$dest/settings.json"
@@ -175,10 +232,10 @@ install_kiro() {
   echo "Installing Kiro guardrails → $dest"
 
   install_hooks "$dest/hooks"
-  install_skills "$dest"
 
   backup_if_exists "$dest/KIRO.md"
   cp "$SCRIPT_DIR/agents/kiro/KIRO.md" "$dest/KIRO.md"
+  append_skills "$dest/KIRO.md"
   ok "KIRO.md installed"
 
   local agent_dest="$dest/agents"
@@ -197,6 +254,7 @@ install_codex() {
 
   backup_if_exists "$dest/AGENTS.md"
   cp "$SCRIPT_DIR/agents/codex/AGENTS.md" "$dest/AGENTS.md"
+  append_skills "$dest/AGENTS.md"
   ok "AGENTS.md installed"
   log "Note: Codex does not support shell hooks — instruction file only."
 }

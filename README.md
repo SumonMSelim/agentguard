@@ -108,18 +108,32 @@ When an existing `~/.claude/settings.json` is found, `install.sh` merges rather 
 
 ## Skills
 
-Skills are optional behavioural packs deployed alongside instruction files. Each skill lives in `skills/<name>/SKILL.md` and is copied to the agent's config directory on install.
+Skills are optional behavioural packs appended to the agent's instruction file at install time. Each skill lives in `skills/<name>/SKILL.md` with a YAML front-matter block.
 
-| Skill | What it does |
-|-------|-------------|
-| [`karpathy-guidelines`](skills/karpathy-guidelines/SKILL.md) | 4 coding guidelines from Andrej Karpathy: think before coding, simplicity first, surgical changes, goal-driven execution |
+| Skill | Tags | What it does |
+|-------|------|-------------|
+| [`karpathy-guidelines`](skills/karpathy-guidelines/SKILL.md) | `core` | 4 coding guidelines from Andrej Karpathy: think before coding, simplicity first, surgical changes, goal-driven execution |
 
-Skills are deployed automatically for Claude (`~/.claude/skills/`) and Kiro (`~/.kiro/skills/`). Codex has no config directory — skills are not deployed there.
+Skills tagged `core` are appended automatically. Language- or project-specific skills are opt-in via `--skills`.
+
+```bash
+# Default: appends all core-tagged skills
+./install.sh claude
+
+# Explicit list: append only the named skills
+./install.sh claude --skills karpathy-guidelines,clean-code-python
+
+# Skip all skills
+./install.sh claude --skills none
+```
+
+Skills are appended to the instruction file the agent reads (`CLAUDE.md`, `KIRO.md`, `AGENTS.md`). The YAML front-matter is stripped — only the content is appended.
 
 ### Adding a skill
 
-1. Create `skills/<name>/SKILL.md` with a YAML front-matter block (`name`, `description`, `license`) followed by the skill content.
-2. `install.sh` picks it up automatically — no changes needed.
+1. Create `skills/<name>/SKILL.md` with YAML front-matter (`name`, `tags`, `description`, `license`) followed by the skill content.
+2. Tag it `core` to include it by default, or leave it untagged for opt-in only.
+3. `install.sh` picks it up automatically — no other changes needed.
 
 ---
 
