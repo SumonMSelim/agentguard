@@ -101,6 +101,15 @@
             "command": "bash ~/.claude/hooks/block-env-read.sh"
           }
         ]
+      },
+      {
+        "matcher": "MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/block-env-read.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [

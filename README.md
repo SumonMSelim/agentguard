@@ -39,6 +39,10 @@ hooks/                        # Shared bash hooks — tool-agnostic, used by Cla
 ├── block-destructive-ops.sh  # Blocks rm on root/home; pipe-to-shell patterns
 └── audit-log.sh              # PostToolUse: appends every tool call to the agent's audit.log
 
+skills/                       # Optional behavioural skill packs — deployed alongside instruction files
+└── karpathy-guidelines/
+    └── SKILL.md              # Karpathy's 4 coding guidelines (think, simplify, surgical, goal-driven)
+
 install.sh                    # Installer: ./install.sh [claude|codex|kiro|all]
 README.md
 ```
@@ -101,6 +105,23 @@ When an existing `~/.claude/settings.json` is found, `install.sh` merges rather 
 - **`includeCoAuthoredBy`**, **`gitAttribution`**, **`disableGitWorkflow`** — Guardrails always win; these are security-critical.
 - **`permissions.defaultMode`** — Guardrails set this to `acceptEdits`, which auto-approves file reads/writes without prompting. This is a usability tradeoff: it keeps the agent flowing without constant interruptions, while the hooks and deny rules handle the actual security boundaries. If you prefer the agent to ask before every file change, set `"defaultMode": "ask"` in your local `~/.claude/settings.json` after installing — the merge logic will preserve your value on re-runs.
 - **Everything else** (`env`, `model`, `apiKey`, Bedrock config, etc.) — Your values are preserved untouched.
+
+## Skills
+
+Skills are optional behavioural packs deployed alongside instruction files. Each skill lives in `skills/<name>/SKILL.md` and is copied to the agent's config directory on install.
+
+| Skill | What it does |
+|-------|-------------|
+| [`karpathy-guidelines`](skills/karpathy-guidelines/SKILL.md) | 4 coding guidelines from Andrej Karpathy: think before coding, simplicity first, surgical changes, goal-driven execution |
+
+Skills are deployed automatically for Claude (`~/.claude/skills/`) and Kiro (`~/.kiro/skills/`). Codex has no config directory — skills are not deployed there.
+
+### Adding a skill
+
+1. Create `skills/<name>/SKILL.md` with a YAML front-matter block (`name`, `description`, `license`) followed by the skill content.
+2. `install.sh` picks it up automatically — no changes needed.
+
+---
 
 ## Adding a new agent
 
