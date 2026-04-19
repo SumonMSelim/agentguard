@@ -203,7 +203,7 @@ append_skills() {
     fi
   done
 
-  [[ "$appended" -eq 0 ]] && log "No skills appended"
+  [[ "$appended" -eq 0 ]] && log "No skills appended" || true
 }
 
 install_claude() {
