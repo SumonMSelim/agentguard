@@ -2,10 +2,22 @@
   "permissions": {
     "defaultMode": "acceptEdits",
     "allow": [
-      "Read(**)",
       "Glob",
       "Grep",
-      "LS"
+      "LS",
+      "Read(**)",
+      "Bash(ssh *)",
+      "Bash(grep *)",
+      "Bash(find *)",
+      "Bash(ls *)",
+      "Bash(docker *)",
+      "Bash(cat *)",
+      "Bash(echo *)",
+      "Bash(which *)",
+      "Bash(hostname *)",
+      "Bash(curl *)",
+      "WebFetch",
+      "WebSearch"
     ],
     "ask": [
       "Bash(git commit*)",
