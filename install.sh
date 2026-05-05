@@ -207,6 +207,12 @@ skill_has_tag() {
     | grep -qE "\b$2\b"
 }
 
+# skill_already_present <dest_file> <name> — returns 0 if the skill sentinel exists in the file
+skill_already_present() {
+  local dest_file="$1" name="$2"
+  [[ -f "$dest_file" ]] && grep -qF "<!-- agentguard:skill:${name} -->" "$dest_file"
+}
+
 # append_skills <instruction_file> — appends selected skills to the instruction file
 append_skills() {
   local dest_file="$1"
@@ -233,11 +239,15 @@ append_skills() {
     fi
 
     if [[ "$include" == 1 ]]; then
+      if skill_already_present "$dest_file" "$name"; then
+        log "Skill '$name' already present — skipping"
+        continue
+      fi
       if [[ "$DRY_RUN" -eq 1 ]]; then
         dry "Would append skill '$name' → $(basename "$dest_file")"
         appended=$((appended + 1))
       else
-        printf '\n\n---\n\n' >> "$dest_file"
+        printf '\n\n---\n\n<!-- agentguard:skill:%s -->\n' "$name" >> "$dest_file"
         strip_frontmatter "$skill_dir/SKILL.md" >> "$dest_file"
         ok "Skill '$name' appended → $(basename "$dest_file")"
         appended=$((appended + 1))
@@ -256,15 +266,26 @@ install_claude() {
 
   install_hooks "$dest/hooks"
 
-  backup_if_exists "$dest/CLAUDE.md"
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    dry "Would copy CLAUDE.md → $dest/CLAUDE.md"
+  # Only write CLAUDE.md if it doesn't already exist — skills are appended once
+  # and the sentinel check in append_skills prevents duplicates on re-runs.
+  # If the file is missing (first install or after uninstall), write it fresh.
+  if [[ ! -f "$dest/CLAUDE.md" ]]; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would copy CLAUDE.md → $dest/CLAUDE.md"
+    else
+      mkdir -p "$dest"
+      cp "$SCRIPT_DIR/agents/claude/CLAUDE.md" "$dest/CLAUDE.md"
+      ok "CLAUDE.md installed"
+    fi
+    append_skills "$dest/CLAUDE.md"
   else
-    mkdir -p "$dest"
-    cp "$SCRIPT_DIR/agents/claude/CLAUDE.md" "$dest/CLAUDE.md"
-    ok "CLAUDE.md installed"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "CLAUDE.md already present — skipping base copy, checking skills"
+    else
+      log "CLAUDE.md already present — skipping base copy"
+    fi
+    append_skills "$dest/CLAUDE.md"
   fi
-  append_skills "$dest/CLAUDE.md"
 
   backup_if_exists "$dest/settings.json"
   merge_settings "$dest/settings.json" \
@@ -280,15 +301,24 @@ install_kiro() {
 
   install_hooks "$dest/hooks"
 
-  backup_if_exists "$dest/KIRO.md"
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    dry "Would copy KIRO.md → $dest/KIRO.md"
+  # Only write KIRO.md if it doesn't already exist — same rationale as CLAUDE.md above.
+  if [[ ! -f "$dest/KIRO.md" ]]; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would copy KIRO.md → $dest/KIRO.md"
+    else
+      mkdir -p "$dest"
+      cp "$SCRIPT_DIR/agents/kiro/KIRO.md" "$dest/KIRO.md"
+      ok "KIRO.md installed"
+    fi
+    append_skills "$dest/KIRO.md"
   else
-    mkdir -p "$dest"
-    cp "$SCRIPT_DIR/agents/kiro/KIRO.md" "$dest/KIRO.md"
-    ok "KIRO.md installed"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "KIRO.md already present — skipping base copy, checking skills"
+    else
+      log "KIRO.md already present — skipping base copy"
+    fi
+    append_skills "$dest/KIRO.md"
   fi
-  append_skills "$dest/KIRO.md"
 
   local agent_dest="$dest/agents"
   backup_if_exists "$agent_dest/agentguard.json"
@@ -309,14 +339,23 @@ install_codex() {
   echo "Installing Codex guardrails → $dest/AGENTS.md"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
 
-  backup_if_exists "$dest/AGENTS.md"
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    dry "Would copy AGENTS.md → $dest/AGENTS.md"
+  # Only write AGENTS.md if it doesn't already exist — same rationale as CLAUDE.md above.
+  if [[ ! -f "$dest/AGENTS.md" ]]; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would copy AGENTS.md → $dest/AGENTS.md"
+    else
+      cp "$SCRIPT_DIR/agents/codex/AGENTS.md" "$dest/AGENTS.md"
+      ok "AGENTS.md installed"
+    fi
+    append_skills "$dest/AGENTS.md"
   else
-    cp "$SCRIPT_DIR/agents/codex/AGENTS.md" "$dest/AGENTS.md"
-    ok "AGENTS.md installed"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "AGENTS.md already present — skipping base copy, checking skills"
+    else
+      log "AGENTS.md already present — skipping base copy"
+    fi
+    append_skills "$dest/AGENTS.md"
   fi
-  append_skills "$dest/AGENTS.md"
   log "Note: Codex does not support shell hooks — instruction file only."
 }
 
