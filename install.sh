@@ -11,6 +11,7 @@
 #
 #   --skills <list>        — comma-separated skill names to append (e.g. karpathy-guidelines)
 #                            Skills tagged [core] are always appended unless --skills none
+#   --dry-run              — show what would be installed/changed without writing anything
 #
 # Default: claude
 #
@@ -22,20 +23,30 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 AGENT="${1:-claude}"
 SKILLS_ARG=""
+DRY_RUN=0
 
-# Parse --skills flag (can appear anywhere after the agent arg)
+# Parse flags (can appear anywhere after the agent arg)
 args=("$@")
 for i in "${!args[@]}"; do
   if [[ "${args[$i]}" == "--skills" ]]; then
     SKILLS_ARG="${args[$((i+1))]:-}"
   fi
+  if [[ "${args[$i]}" == "--dry-run" ]]; then
+    DRY_RUN=1
+  fi
 done
+
+# If the first positional arg is a flag (e.g. ./install.sh --dry-run), default agent to claude
+if [[ "$AGENT" == --* ]]; then
+  AGENT="claude"
+fi
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 log()  { printf '  %s\n' "$*"; }
 ok()   { printf '✓ %s\n' "$*"; }
 fail() { printf '✗ %s\n' "$*" >&2; exit 1; }
+dry()  { printf '  [dry-run] %s\n' "$*"; }
 
 require() {
   command -v "$1" >/dev/null 2>&1 || fail "'$1' is required but not installed."
@@ -44,10 +55,14 @@ require() {
 backup_if_exists() {
   local file="$1"
   if [[ -f "$file" ]]; then
-    local ts
-    ts=$(date +%Y%m%d%H%M%S)
-    cp "$file" "${file}.bak.${ts}"
-    log "Backed up $(basename "$file") → $(basename "$file").bak.${ts}"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would back up $(basename "$file") → $(basename "$file").bak.<timestamp>"
+    else
+      local ts
+      ts=$(date +%Y%m%d%H%M%S)
+      cp "$file" "${file}.bak.${ts}"
+      log "Backed up $(basename "$file") → $(basename "$file").bak.${ts}"
+    fi
   fi
 }
 
@@ -55,6 +70,13 @@ backup_if_exists() {
 
 install_hooks() {
   local dest="$1"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would install hooks → $dest"
+    for f in "$SCRIPT_DIR/hooks/"*.sh; do
+      dry "  copy $(basename "$f") → $dest/$(basename "$f")"
+    done
+    return
+  fi
   mkdir -p "$dest"
   # Copy only shared hooks (exclude agent-specific prefixed files if any are added later)
   cp "$SCRIPT_DIR/hooks/"*.sh "$dest/"
@@ -92,6 +114,15 @@ merge_settings() {
   local output="$3"      # destination (may be same path as existing)
 
   require jq
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    if [[ -f "$existing" ]]; then
+      dry "Would merge settings.json → $output (existing file found, merging)"
+    else
+      dry "Would write settings.json → $output (no existing file, writing fresh)"
+    fi
+    return
+  fi
 
   local user_json='{}'
   [[ -f "$existing" ]] && user_json=$(cat "$existing")
@@ -196,10 +227,15 @@ append_skills() {
     fi
 
     if [[ "$include" == 1 ]]; then
-      printf '\n\n---\n\n' >> "$dest_file"
-      strip_frontmatter "$skill_dir/SKILL.md" >> "$dest_file"
-      ok "Skill '$name' appended → $(basename "$dest_file")"
-      appended=$((appended + 1))
+      if [[ "$DRY_RUN" -eq 1 ]]; then
+        dry "Would append skill '$name' → $(basename "$dest_file")"
+        appended=$((appended + 1))
+      else
+        printf '\n\n---\n\n' >> "$dest_file"
+        strip_frontmatter "$skill_dir/SKILL.md" >> "$dest_file"
+        ok "Skill '$name' appended → $(basename "$dest_file")"
+        appended=$((appended + 1))
+      fi
     fi
   done
 
@@ -208,16 +244,21 @@ append_skills() {
 
 install_claude() {
   local dest="$HOME/.claude"
-  mkdir -p "$dest"
 
   echo "Installing Claude Code guardrails → $dest"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
 
   install_hooks "$dest/hooks"
 
   backup_if_exists "$dest/CLAUDE.md"
-  cp "$SCRIPT_DIR/agents/claude/CLAUDE.md" "$dest/CLAUDE.md"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would copy CLAUDE.md → $dest/CLAUDE.md"
+  else
+    mkdir -p "$dest"
+    cp "$SCRIPT_DIR/agents/claude/CLAUDE.md" "$dest/CLAUDE.md"
+    ok "CLAUDE.md installed"
+  fi
   append_skills "$dest/CLAUDE.md"
-  ok "CLAUDE.md installed"
 
   backup_if_exists "$dest/settings.json"
   merge_settings "$dest/settings.json" \
@@ -227,22 +268,31 @@ install_claude() {
 
 install_kiro() {
   local dest="$HOME/.kiro"
-  mkdir -p "$dest"
 
   echo "Installing Kiro guardrails → $dest"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
 
   install_hooks "$dest/hooks"
 
   backup_if_exists "$dest/KIRO.md"
-  cp "$SCRIPT_DIR/agents/kiro/KIRO.md" "$dest/KIRO.md"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would copy KIRO.md → $dest/KIRO.md"
+  else
+    mkdir -p "$dest"
+    cp "$SCRIPT_DIR/agents/kiro/KIRO.md" "$dest/KIRO.md"
+    ok "KIRO.md installed"
+  fi
   append_skills "$dest/KIRO.md"
-  ok "KIRO.md installed"
 
   local agent_dest="$dest/agents"
-  mkdir -p "$agent_dest"
   backup_if_exists "$agent_dest/agentguard.json"
-  cp "$SCRIPT_DIR/agents/kiro/agent.json" "$agent_dest/agentguard.json"
-  ok "agentguard agent config installed → $agent_dest/agentguard.json"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would copy agent.json → $agent_dest/agentguard.json"
+  else
+    mkdir -p "$agent_dest"
+    cp "$SCRIPT_DIR/agents/kiro/agent.json" "$agent_dest/agentguard.json"
+    ok "agentguard agent config installed → $agent_dest/agentguard.json"
+  fi
 }
 
 install_codex() {
@@ -251,11 +301,16 @@ install_codex() {
   local dest="$HOME"
 
   echo "Installing Codex guardrails → $dest/AGENTS.md"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
 
   backup_if_exists "$dest/AGENTS.md"
-  cp "$SCRIPT_DIR/agents/codex/AGENTS.md" "$dest/AGENTS.md"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would copy AGENTS.md → $dest/AGENTS.md"
+  else
+    cp "$SCRIPT_DIR/agents/codex/AGENTS.md" "$dest/AGENTS.md"
+    ok "AGENTS.md installed"
+  fi
   append_skills "$dest/AGENTS.md"
-  ok "AGENTS.md installed"
   log "Note: Codex does not support shell hooks — instruction file only."
 }
 
@@ -271,7 +326,8 @@ esac
 
 echo ""
 echo "Done."
-[[ "$AGENT" == "claude" || "$AGENT" == "all" ]] && \
+[[ "$DRY_RUN" -eq 1 ]] && echo "(dry-run: no files were written)"
+[[ "$AGENT" == "claude" || "$AGENT" == "all" ]] && [[ "$DRY_RUN" -eq 0 ]] && \
   echo "Run 'claude --print-config' to verify Claude settings."
-[[ "$AGENT" == "kiro" || "$AGENT" == "all" ]] && \
+[[ "$AGENT" == "kiro" || "$AGENT" == "all" ]] && [[ "$DRY_RUN" -eq 0 ]] && \
   echo "Switch to the 'agentguard' agent in Kiro to activate guardrails."
