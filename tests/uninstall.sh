@@ -183,6 +183,23 @@ for h in "${HOOKS[@]}"; do
   check_false "kiro hook $h removed (all)"   test -f "$FAKE_HOME/.kiro/hooks/$h"
 done
 
+# ── skill idempotency ─────────────────────────────────────────────────────────
+
+echo ""
+echo "skill idempotency — re-running install does not duplicate skills"
+run_install claude
+run_install claude  # second install
+run_install claude  # third install
+
+count=$(grep -c 'agentguard:skill:' "$FAKE_HOME/.claude/CLAUDE.md" 2>/dev/null || echo 0)
+if [[ "$count" -eq 1 ]]; then
+  printf "  PASS  skill sentinel appears exactly once after 3 installs\n"
+  ((pass++))
+else
+  printf "  FAIL  skill sentinel appears %s times (expected 1)\n" "$count"
+  ((fail++))
+fi
+
 # ── results ───────────────────────────────────────────────────────────────────
 
 echo ""
