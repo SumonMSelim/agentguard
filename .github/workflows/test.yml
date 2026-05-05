@@ -8,5 +8,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: sudo apt-get install -y jq
+      - run: bash tests/check-sync.sh
       - run: bash install.sh all
       - run: bash tests/run_all.sh

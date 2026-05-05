@@ -14,8 +14,10 @@ run_suite() {
   echo ""
 }
 
+run_suite "Sync check" "$DIR/check-sync.sh"
 run_suite "Claude"     "$DIR/claude.sh"
 run_suite "Kiro"       "$DIR/kiro.sh"
 run_suite "Uninstall"  "$DIR/uninstall.sh"
+run_suite "Check"      "$DIR/check.sh"
 
 exit $overall
