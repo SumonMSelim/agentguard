@@ -102,6 +102,35 @@ Verify after installing Claude:
 claude --print-config
 ```
 
+## Uninstallation
+
+```bash
+# Claude Code
+./install.sh uninstall claude
+
+# Codex
+./install.sh uninstall codex
+
+# Kiro
+./install.sh uninstall kiro
+
+# All agents at once
+./install.sh uninstall all
+
+# Preview what would be removed without changing anything
+./install.sh uninstall claude --dry-run
+./install.sh uninstall all --dry-run
+```
+
+Uninstall removes only what agentguard owns:
+
+- **Hooks** — the six hook scripts are deleted from the agent's hooks directory. Any other hooks you have are untouched.
+- **Instruction file** — `CLAUDE.md`, `KIRO.md`, or `AGENTS.md` is deleted.
+- **Kiro agent config** — `~/.kiro/agents/agentguard.json` is deleted.
+- **Claude `settings.json`** — agentguard entries are stripped (hook commands, permission rules, and the three security-critical scalars). Your own keys (`model`, `apiKey`, custom rules, etc.) are preserved. The file is not deleted.
+
+Every destructive write is preceded by a timestamped backup, same as install.
+
 ## Merge behavior (settings.json)
 
 When an existing `~/.claude/settings.json` is found, `install.sh` merges rather than replaces:
