@@ -64,6 +64,7 @@ README.md
 | Catastrophic `rm` blocked (`/`, `~`, `$HOME`) — not project paths (see Notes) | `block-destructive-ops.sh` hook                                                      |
 | Always use Docker to run code                                                 | Instruction file + `block-system-installs.sh` hook                                   |
 | Never install system packages                                                 | `block-system-installs.sh` hook                                                      |
+| `pip install` outside a virtualenv blocked                                    | `block-system-installs.sh` hook (checks `VIRTUAL_ENV`)                               |
 | Conventional Commits on all messages                                          | Instruction file                                                                     |
 | No AI attribution in commits                                                  | `includeCoAuthoredBy`/`gitAttribution` settings (Claude) + instruction file          |
 | No over-engineering, ask before big changes                                   | Instruction file                                                                     |
@@ -85,6 +86,11 @@ Requires: `bash`, `jq`.
 
 # All
 ./install.sh all
+
+# Preview what would be installed without writing anything
+./install.sh --dry-run          # defaults to claude
+./install.sh kiro --dry-run
+./install.sh all --dry-run
 ```
 
 Re-running is safe. Existing files are backed up with a timestamp suffix before any write.
@@ -147,9 +153,15 @@ Skills are appended to the instruction file the agent reads (`CLAUDE.md`, `KIRO.
 
 - Hooks are the reliable enforcement layer for Claude Code. Declarative `deny` rules in `settings.json` have known pattern-matching limitations, so hooks provide the belt-and-suspenders backstop.
 
-- `block-main-branch.sh` only protects `main` and `master`. For projects using a different protected branch (e.g. `develop`, `trunk`), Claude users can add a project-level `.claude/settings.json` pointing to a custom hook; Kiro users can create a project-level agent config.
+- `block-main-branch.sh` only protects `main` and `master` by default. To protect additional branches (e.g. `develop`, `trunk`), set the `AGENTGUARD_PROTECTED_BRANCHES` environment variable to a comma-separated list before the agent runs:
 
-- `pip install` without `sudo` outside a virtualenv is not blocked at the hook level (too many false positives). The instruction file covers it.
+  ```bash
+  export AGENTGUARD_PROTECTED_BRANCHES="main,master,develop,trunk"
+  ```
+
+  Claude users can set this in a project-level `.claude/settings.json` hook env block; Kiro users can set it in the agent config or their shell profile.
+
+- `pip install` without `sudo` outside a virtualenv is now blocked by `block-system-installs.sh`. The hook checks the `VIRTUAL_ENV` environment variable — if it is unset, the install is blocked. Inside an active virtualenv (`source .venv/bin/activate`), `pip install` is allowed normally.
 
 - `block-env.sh` is best-effort. It intercepts common viewer/editor patterns (`cat`, `less`, `vim`, etc.) but cannot enumerate every possible Bash reader (`awk`, `strings`, `python3 -c`, etc.). `block-env-read.sh` is the primary enforcement layer for `.env` reads — it intercepts the Read/Write/Edit tools (Claude) and fs_read/fs_write tools (Kiro), which is how agents access files in normal operation.
 

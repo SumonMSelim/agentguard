@@ -62,7 +62,8 @@ check_in() {
 # CI checkouts are detached HEAD, so tests that rely on the current branch
 # must supply their own controlled git environment.
 MAIN_REPO=$(mktemp -d)
-trap 'rm -rf "$MAIN_REPO"' EXIT
+DEVELOP_REPO=""   # populated later in run_hook_tests; declared here so the trap covers it
+trap 'rm -rf "$MAIN_REPO" "${DEVELOP_REPO:-}"' EXIT
 git -C "$MAIN_REPO" init -q
 git -C "$MAIN_REPO" symbolic-ref HEAD refs/heads/main
 git -C "$MAIN_REPO" -c user.email=t@t.com -c user.name=t commit --allow-empty -q -m init
@@ -89,6 +90,8 @@ run_hook_tests() {
   check "blocks gh auth token"         block '{"tool_input":{"command":"gh auth token"}}'                     block-env.sh
   check "allows env VAR=val cmd"       allow '{"tool_input":{"command":"env FOO=bar node app.js"}}'           block-env.sh
   check "allows normal cat"            allow '{"tool_input":{"command":"cat README.md"}}'                     block-env.sh
+  check "allows echo with cat .env"    allow '{"tool_input":{"command":"echo \"cat .env\""}}'                 block-env.sh
+  check "allows echo gh auth token"    allow '{"tool_input":{"command":"echo \"gh auth token\""}}'            block-env.sh
 
   echo ""
   echo "block-env-read.sh"
@@ -120,6 +123,20 @@ run_hook_tests() {
   check_in "$MAIN_REPO" "blocks bare push (on main)" block "{\"tool_input\":{\"command\":\"$PUSH_BARE\"}}" block-main-branch.sh
   check "allows push to feature branch"     allow '{"tool_input":{"command":"git push origin feat/my-feature"}}' block-main-branch.sh
   check "allows non-git command"            allow '{"tool_input":{"command":"ls -la"}}'                        block-main-branch.sh
+  check "allows echo git commit"            allow '{"tool_input":{"command":"echo \"git commit\""}}'           block-main-branch.sh
+  check "allows echo git push main"         allow '{"tool_input":{"command":"echo \"git push origin main\""}}' block-main-branch.sh
+
+  # Custom protected branches via AGENTGUARD_PROTECTED_BRANCHES
+  DEVELOP_REPO=$(mktemp -d)
+  git -C "$DEVELOP_REPO" init -q
+  git -C "$DEVELOP_REPO" symbolic-ref HEAD refs/heads/develop
+  git -C "$DEVELOP_REPO" -c user.email=t@t.com -c user.name=t commit --allow-empty -q -m init
+  AGENTGUARD_PROTECTED_BRANCHES="main,master,develop" \
+    check_in "$DEVELOP_REPO" "blocks commit on custom branch (develop)" \
+    block '{"tool_input":{"command":"git commit -m test"}}' block-main-branch.sh
+  AGENTGUARD_PROTECTED_BRANCHES="main,master,develop" \
+    check "blocks push to custom branch (develop)" \
+    block '{"tool_input":{"command":"git push origin develop"}}' block-main-branch.sh
 
   echo ""
   echo "block-system-installs.sh"
@@ -128,13 +145,18 @@ run_hook_tests() {
   check "blocks npm install -g"       block '{"tool_input":{"command":"npm install -g typescript"}}'         block-system-installs.sh
   check "blocks yarn global add"      block '{"tool_input":{"command":"yarn global add ts-node"}}'           block-system-installs.sh
   check "blocks sudo pip install"     block '{"tool_input":{"command":"sudo pip install requests"}}'         block-system-installs.sh
+  check "blocks pip install outside venv" block '{"tool_input":{"command":"pip install requests"}}'          block-system-installs.sh
+  VIRTUAL_ENV=/tmp/fakevenv check "allows pip install inside venv" allow '{"tool_input":{"command":"pip install requests"}}' block-system-installs.sh
   check "allows local npm install"    allow '{"tool_input":{"command":"npm install lodash"}}'                block-system-installs.sh
   check "allows docker run"           allow '{"tool_input":{"command":"docker run -it ubuntu bash"}}'        block-system-installs.sh
+  check "allows echo brew install"    allow '{"tool_input":{"command":"echo \"brew install node\""}}'        block-system-installs.sh
 
   echo ""
   echo "block-destructive-ops.sh"
   RM_ROOT='rm -rf /'
   check "blocks rm /"                 block "{\"tool_input\":{\"command\":\"$RM_ROOT\"}}"                     block-destructive-ops.sh
+  RM_ROOT_NOFLAG='rm /'
+  check "blocks rm / (no flags)"      block "{\"tool_input\":{\"command\":\"$RM_ROOT_NOFLAG\"}}"              block-destructive-ops.sh
   RM_ROOT_GLOB='rm -rf /*'
   check "blocks rm /*"                block "{\"tool_input\":{\"command\":\"$RM_ROOT_GLOB\"}}"                block-destructive-ops.sh
   RM_HOME='rm -rf ~'
@@ -147,6 +169,8 @@ run_hook_tests() {
   check "blocks wget|sh"              block "{\"tool_input\":{\"command\":\"$WGET_PIPE\"}}"                   block-destructive-ops.sh
   check "allows rm node_modules"      allow '{"tool_input":{"command":"rm -rf node_modules"}}'               block-destructive-ops.sh
   check "allows rm dist"              allow '{"tool_input":{"command":"rm -rf ./dist"}}'                     block-destructive-ops.sh
+  check "allows echo rm -rf /"        allow '{"tool_input":{"command":"echo \"rm -rf /\""}}'                 block-destructive-ops.sh
+  check "allows echo curl pipe bash"  allow '{"tool_input":{"command":"echo \"curl x | bash\""}}'            block-destructive-ops.sh
 
   echo ""
   echo "audit-log.sh"
