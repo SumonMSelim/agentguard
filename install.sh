@@ -6,6 +6,7 @@
 # Usage:
 #   ./install.sh [claude|codex|kiro|all]           — install (default: claude)
 #   ./install.sh uninstall [claude|codex|kiro|all] — remove guardrails
+#   ./install.sh check [claude|codex|kiro|all]     — report installation status (no writes)
 #
 #   --skills <list>        — comma-separated skill names to append (e.g. karpathy-guidelines)
 #                            Skills tagged [core] are always appended unless --skills none
@@ -14,6 +15,7 @@
 # Re-running install is safe. Existing files are backed up before any writes.
 # settings.json is merged (not overwritten) — personal settings are preserved.
 # Uninstall backs up before every destructive write and strips only agentguard entries.
+# Check exits 0 if everything is in order, 1 if any issues are found.
 
 set -euo pipefail
 
@@ -22,12 +24,16 @@ AGENT="${1:-claude}"
 SKILLS_ARG=""
 DRY_RUN=0
 UNINSTALL=0
+CHECK=0
 
-# Detect uninstall subcommand: ./install.sh uninstall [agent]
+# Detect uninstall/check subcommands: ./install.sh uninstall|check [agent]
 if [[ "$AGENT" == "uninstall" ]]; then
   UNINSTALL=1
   AGENT="${2:-claude}"
-  # Shift so flag parsing below sees the right positions
+  shift || true
+elif [[ "$AGENT" == "check" ]]; then
+  CHECK=1
+  AGENT="${2:-claude}"
   shift || true
 fi
 
@@ -543,7 +549,148 @@ uninstall_codex() {
   log "Note: no hooks to remove — Codex is instruction-file only."
 }
 
+# ── check ─────────────────────────────────────────────────────────────────────
+#
+# Reports whether the installation matches expected state. No writes.
+# Exits 0 if all checks pass, 1 if any issues found.
+
+_check_issues=0
+
+_check_ok()   { printf '  ✓ %s\n' "$*"; }
+_check_fail() { printf '  ✗ %s\n' "$*"; _check_issues=$((_check_issues + 1)); }
+
+# check_hooks <hooks_dir>
+check_hooks() {
+  local dir="$1"
+  local missing=0
+  for hook in "${AGENTGUARD_HOOKS[@]}"; do
+    [[ -f "$dir/$hook" ]] || missing=$((missing + 1))
+  done
+  if [[ "$missing" -eq 0 ]]; then
+    _check_ok "hooks: all ${#AGENTGUARD_HOOKS[@]} present ($dir)"
+  else
+    _check_fail "hooks: $missing of ${#AGENTGUARD_HOOKS[@]} missing from $dir"
+    for hook in "${AGENTGUARD_HOOKS[@]}"; do
+      [[ -f "$dir/$hook" ]] || printf '      missing: %s\n' "$hook"
+    done
+  fi
+}
+
+# check_file <path> <label>
+check_file() {
+  local f="$1" label="$2"
+  if [[ -f "$f" ]]; then
+    _check_ok "$label present ($f)"
+  else
+    _check_fail "$label not found ($f)"
+  fi
+}
+
+# check_settings <settings_path> <guardrails_path>
+check_settings() {
+  local settings="$1"
+  local guardrails="$2"
+
+  if [[ ! -f "$settings" ]]; then
+    _check_fail "settings.json not found ($settings)"
+    return
+  fi
+
+  require jq
+
+  local guard_json
+  guard_json=$(cat "$guardrails")
+
+  # Check required hook commands
+  local missing_hooks=()
+  while IFS= read -r cmd; do
+    if ! jq -e --arg cmd "$cmd" '
+      [.hooks.PreToolUse[]?.hooks[]?.command,
+       .hooks.PostToolUse[]?.hooks[]?.command] | index($cmd) != null
+    ' "$settings" >/dev/null 2>&1; then
+      missing_hooks+=("$cmd")
+    fi
+  done < <(echo "$guard_json" | jq -r '
+    [.hooks.PreToolUse[]?.hooks[]?.command,
+     .hooks.PostToolUse[]?.hooks[]?.command] | unique[]
+  ')
+
+  if [[ "${#missing_hooks[@]}" -eq 0 ]]; then
+    _check_ok "settings.json: all hook commands registered"
+  else
+    _check_fail "settings.json: ${#missing_hooks[@]} hook command(s) missing"
+    for cmd in "${missing_hooks[@]}"; do
+      printf '      missing: %s\n' "$cmd"
+    done
+  fi
+
+  # Check security-critical scalars
+  local scalar_issues=()
+  while IFS=$'\t' read -r key expected; do
+    local actual
+    actual=$(jq -r --arg k "$key" '.[$k] | tostring' "$settings" 2>/dev/null || echo "null")
+    [[ "$actual" == "$expected" ]] || scalar_issues+=("$key: expected $expected, got $actual")
+  done < <(echo "$guard_json" | jq -r '
+    to_entries
+    | map(select(.key | IN("includeCoAuthoredBy","gitAttribution","disableGitWorkflow")))
+    | .[]
+    | [.key, (.value | tostring)]
+    | @tsv
+  ')
+
+  if [[ "${#scalar_issues[@]}" -eq 0 ]]; then
+    _check_ok "settings.json: security scalars correct"
+  else
+    _check_fail "settings.json: scalar mismatch"
+    for issue in "${scalar_issues[@]}"; do
+      printf '      %s\n' "$issue"
+    done
+  fi
+}
+
+check_claude() {
+  local dest="$HOME/.claude"
+  echo "Checking Claude Code installation → $dest"
+  check_hooks   "$dest/hooks"
+  check_file    "$dest/CLAUDE.md" "CLAUDE.md"
+  check_settings "$dest/settings.json" "$SCRIPT_DIR/agents/claude/settings.json"
+  echo ""
+}
+
+check_kiro() {
+  local dest="$HOME/.kiro"
+  echo "Checking Kiro installation → $dest"
+  check_hooks  "$dest/hooks"
+  check_file   "$dest/KIRO.md" "KIRO.md"
+  check_file   "$dest/agents/agentguard.json" "agentguard.json"
+  echo ""
+}
+
+check_codex() {
+  local dest="$HOME"
+  echo "Checking Codex installation → $dest"
+  check_file "$dest/AGENTS.md" "AGENTS.md"
+  echo ""
+}
+
 # ── entry point ───────────────────────────────────────────────────────────────
+
+if [[ "$CHECK" -eq 1 ]]; then
+  case "$AGENT" in
+    claude) check_claude ;;
+    codex)  check_codex  ;;
+    kiro)   check_kiro   ;;
+    all)    check_claude; check_codex; check_kiro ;;
+    *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | all" ;;
+  esac
+  if [[ "$_check_issues" -eq 0 ]]; then
+    echo "All checks passed."
+    exit 0
+  else
+    echo "$_check_issues issue(s) found. Run './install.sh [agent]' to fix."
+    exit 1
+  fi
+fi
 
 if [[ "$UNINSTALL" -eq 1 ]]; then
   case "$AGENT" in
