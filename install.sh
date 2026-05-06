@@ -4,9 +4,9 @@
 # Installs (or uninstalls) AI agent guardrails to their tool-specific config locations.
 #
 # Usage:
-#   ./install.sh [claude|codex|kiro|all]           — install (default: claude)
-#   ./install.sh uninstall [claude|codex|kiro|all] — remove guardrails
-#   ./install.sh check [claude|codex|kiro|all]     — report installation status (no writes)
+#   ./install.sh [claude|codex|kiro|cursor|all]           — install (default: claude)
+#   ./install.sh uninstall [claude|codex|kiro|cursor|all] — remove guardrails
+#   ./install.sh check [claude|codex|kiro|cursor|all]     — report installation status (no writes)
 #
 #   --skills <list>        — comma-separated skill names to append (e.g. karpathy-guidelines)
 #                            Skills tagged [core] are always appended unless --skills none
@@ -74,6 +74,20 @@ backup_if_exists() {
       ts=$(date +%Y%m%d%H%M%S)
       cp "$file" "${file}.bak.${ts}"
       log "Backed up $(basename "$file") → $(basename "$file").bak.${ts}"
+    fi
+  fi
+}
+
+backup_dir_if_exists() {
+  local dir="$1"
+  if [[ -d "$dir" ]]; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would back up $(basename "$dir")/ → $(basename "$dir").bak.<timestamp>/"
+    else
+      local ts
+      ts=$(date +%Y%m%d%H%M%S)
+      cp -R "$dir" "${dir}.bak.${ts}"
+      log "Backed up $(basename "$dir")/ → $(basename "$dir").bak.${ts}/"
     fi
   fi
 }
@@ -365,6 +379,56 @@ install_codex() {
   log "Note: Codex does not support shell hooks — instruction file only."
 }
 
+install_cursor() {
+  # Cursor reads config from the current project directory (.cursor/).
+  local dest
+  dest="$(pwd)/.cursor"
+  local src_base
+  src_base="$SCRIPT_DIR/agents/cursor"
+  local src_cursor
+  src_cursor="$src_base/.cursor"
+
+  echo "Installing Cursor guardrails → $dest"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
+
+  if [[ ! -d "$src_cursor" ]]; then
+    fail "Cursor config not found at $src_cursor"
+  fi
+
+  backup_dir_if_exists "$dest"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would install Cursor config → $dest"
+    dry "  copy hooks.json + rules from $src_cursor/"
+    dry "  copy hook scripts from $SCRIPT_DIR/hooks/"
+    dry "  copy skills from $SCRIPT_DIR/skills/"
+    return
+  fi
+
+  rm -rf "$dest"
+  mkdir -p "$dest"
+
+  # Project-level Cursor config
+  mkdir -p "$dest/rules"
+  cp "$src_cursor/hooks.json" "$dest/hooks.json"
+  if [[ -d "$src_cursor/rules" ]]; then
+    cp -R "$src_cursor/rules/"* "$dest/rules/" 2>/dev/null || true
+  fi
+
+  # Hook scripts live in agentguard/hooks and are shared with Claude/Kiro.
+  mkdir -p "$dest/hooks"
+  cp "$SCRIPT_DIR/hooks/"*.sh "$dest/hooks/"
+  chmod +x "$dest/hooks/"*.sh 2>/dev/null || true
+
+  # Skills are optional for Cursor, but keep parity by installing the skill pack(s).
+  if [[ -d "$SCRIPT_DIR/skills" ]]; then
+    mkdir -p "$dest/skills"
+    cp -R "$SCRIPT_DIR/skills/"* "$dest/skills/" 2>/dev/null || true
+  fi
+
+  ok "Cursor config installed → $dest"
+}
+
 # ── uninstallers ──────────────────────────────────────────────────────────────
 #
 # Uninstall removes only the files agentguard owns:
@@ -549,6 +613,55 @@ uninstall_codex() {
   log "Note: no hooks to remove — Codex is instruction-file only."
 }
 
+CURSOR_AGENTGUARD_FILES=(
+  ".cursor/hooks.json"
+  ".cursor/hooks/audit-log.sh"
+  ".cursor/hooks/block-destructive-ops.sh"
+  ".cursor/hooks/block-env-read.sh"
+  ".cursor/hooks/block-env.sh"
+  ".cursor/hooks/block-main-branch.sh"
+  ".cursor/hooks/block-system-installs.sh"
+  ".cursor/rules/karpathy-guidelines.mdc"
+  ".cursor/skills/karpathy-guidelines/SKILL.md"
+)
+
+uninstall_cursor() {
+  local dest
+  dest="$(pwd)"
+
+  echo "Uninstalling Cursor guardrails from $dest/.cursor"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be changed)"
+
+  local removed=0
+  for rel in "${CURSOR_AGENTGUARD_FILES[@]}"; do
+    local f="$dest/$rel"
+    if [[ -f "$f" ]]; then
+      backup_if_exists "$f"
+      if [[ "$DRY_RUN" -eq 1 ]]; then
+        dry "Would remove $f"
+      else
+        rm "$f"
+        log "Removed $f"
+      fi
+      removed=$((removed + 1))
+    fi
+  done
+
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    rmdir "$dest/.cursor/hooks" 2>/dev/null || true
+    rmdir "$dest/.cursor/rules" 2>/dev/null || true
+    rmdir "$dest/.cursor/skills/karpathy-guidelines" 2>/dev/null || true
+    rmdir "$dest/.cursor/skills" 2>/dev/null || true
+    rmdir "$dest/.cursor" 2>/dev/null || true
+  fi
+
+  if [[ "$removed" -eq 0 ]]; then
+    log "No Cursor guardrail files found (already removed?)"
+  elif [[ "$DRY_RUN" -eq 0 ]]; then
+    ok "Cursor guardrail files removed"
+  fi
+}
+
 # ── check ─────────────────────────────────────────────────────────────────────
 #
 # Reports whether the installation matches expected state. No writes.
@@ -673,6 +786,31 @@ check_codex() {
   echo ""
 }
 
+check_exec() {
+  local f="$1" label="$2"
+  if [[ -f "$f" && -x "$f" ]]; then
+    _check_ok "$label executable ($f)"
+  elif [[ -f "$f" ]]; then
+    _check_fail "$label not executable ($f)"
+  else
+    _check_fail "$label not found ($f)"
+  fi
+}
+
+check_cursor() {
+  local dest
+  dest="$(pwd)/.cursor"
+  echo "Checking Cursor installation → $dest"
+  check_file "$dest/hooks.json" "hooks.json"
+  check_exec "$dest/hooks/audit-log.sh" "audit-log.sh"
+  check_exec "$dest/hooks/block-destructive-ops.sh" "block-destructive-ops.sh"
+  check_exec "$dest/hooks/block-system-installs.sh" "block-system-installs.sh"
+  check_exec "$dest/hooks/block-env.sh" "block-env.sh"
+  check_exec "$dest/hooks/block-main-branch.sh" "block-main-branch.sh"
+  check_exec "$dest/hooks/block-env-read.sh" "block-env-read.sh"
+  echo ""
+}
+
 # ── entry point ───────────────────────────────────────────────────────────────
 
 if [[ "$CHECK" -eq 1 ]]; then
@@ -680,8 +818,9 @@ if [[ "$CHECK" -eq 1 ]]; then
     claude) check_claude ;;
     codex)  check_codex  ;;
     kiro)   check_kiro   ;;
-    all)    check_claude; check_codex; check_kiro ;;
-    *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | all" ;;
+    cursor) check_cursor ;;
+    all)    check_claude; check_codex; check_kiro; check_cursor ;;
+    *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | all" ;;
   esac
   if [[ "$_check_issues" -eq 0 ]]; then
     echo "All checks passed."
@@ -697,8 +836,9 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     claude) uninstall_claude ;;
     codex)  uninstall_codex  ;;
     kiro)   uninstall_kiro   ;;
-    all)    uninstall_claude; echo; uninstall_codex; echo; uninstall_kiro ;;
-    *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | all" ;;
+    cursor) uninstall_cursor ;;
+    all)    uninstall_claude; echo; uninstall_codex; echo; uninstall_kiro; echo; uninstall_cursor ;;
+    *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | all" ;;
   esac
   echo ""
   echo "Done."
@@ -710,8 +850,9 @@ case "$AGENT" in
   claude) install_claude ;;
   codex)  install_codex  ;;
   kiro)   install_kiro   ;;
-  all)    install_claude; echo; install_codex; echo; install_kiro ;;
-  *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | all" ;;
+  cursor) install_cursor ;;
+  all)    install_claude; echo; install_codex; echo; install_kiro; echo; install_cursor ;;
+  *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | all" ;;
 esac
 
 echo ""

@@ -17,7 +17,7 @@
 # Exit 2 = blocked. The agent receives the stderr message as feedback.
 
 INPUT=$(cat)
-COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""') || exit 0
+COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // ""') || exit 0
 
 # Statement-boundary prefix — see block-main-branch.sh for rationale.
 _STMT_START='(^|[;&|]|\$\()[[:space:]]*(sudo[[:space:]]+)?'

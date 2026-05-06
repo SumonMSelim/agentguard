@@ -21,9 +21,18 @@ INPUT=$(cat)
 LOG="$(cd "$(dirname "$0")/.." && pwd)/audit.log"
 
 ENTRY=$(echo "$INPUT" | jq -r '
-  (.tool_name // "unknown") as $tool |
-  (.tool_input.command // .tool_input.file_path // .tool_input.path // (.tool_input.operations // [] | first | .path // "") // .tool_input.description // "") as $detail |
-  "\(now | strftime("%Y-%m-%dT%H:%M:%SZ")) tool=\($tool) \($detail | .[0:200])"
+  (.tool_name // .tool // "unknown") as $tool |
+  (
+    .command //
+    .file_path //
+    .tool_input.command //
+    .tool_input.file_path //
+    .tool_input.path //
+    (.tool_input.operations // [] | first | .path // "") //
+    .tool_input.description //
+    ""
+  ) as $detail |
+  "\(now | strftime("%Y-%m-%dT%H:%M:%SZ")) tool=\($tool) \($detail | tostring | .[0:200])"
 ' 2>/dev/null)
 
 if [[ -n "$ENTRY" ]]; then

@@ -8,15 +8,16 @@ Security guardrails and workflow policies for AI coding agents. Blocks dangerous
 ## Supported agents
 
 | Agent | Enforcement |
-|-------|-------------|
+| --- | --- |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code/hooks) | Shell hooks + settings.json + instruction file |
 | [Kiro](https://kiro.dev/docs/cli/hooks/) | Shell hooks + agent config + instruction file |
+| [Cursor](https://cursor.com) | Project-level hooks + rules/skills (via `.cursor/`) |
 | [OpenAI Codex](https://github.com/openai/codex) | Instruction file only (no hook support) |
 
 ## What's enforced
 
 | Rule | How |
-|------|-----|
+| --- | --- |
 | `.env`, key files, credentials never read | `block-env-read.sh` (primary) + `block-env.sh` (bash surface) |
 | Force push always blocked | `deny` rules + `block-main-branch.sh` |
 | No commits/pushes directly to main/master | `block-main-branch.sh` |
@@ -28,7 +29,7 @@ Security guardrails and workflow policies for AI coding agents. Blocks dangerous
 | `gh auth token` blocked | `block-env.sh` |
 | No AI attribution in commits | `gitAttribution` / `includeCoAuthoredBy` settings |
 | Conventional Commits, no over-engineering | Instruction file |
-| Every tool call logged | `audit-log.sh` → `~/.claude/audit.log` / `~/.kiro/audit.log` |
+| Every tool call logged | `audit-log.sh` → `~/.claude/audit.log` / `~/.kiro/audit.log` / `.cursor/audit.log` |
 
 ## Installation
 
@@ -37,6 +38,7 @@ Requires: `bash`, `jq`.
 ```bash
 ./install.sh claude   # Claude Code
 ./install.sh kiro     # Kiro
+./install.sh cursor   # Cursor IDE (project-level)
 ./install.sh codex    # Codex
 ./install.sh all      # All agents
 ```
@@ -71,7 +73,7 @@ Reports which hooks, files, and settings are present or missing. Exits 1 if anyt
 ## Skills
 
 | Skill | What it does |
-|-------|-------------|
+| --- | --- |
 | [`karpathy-guidelines`](skills/karpathy-guidelines/SKILL.md) | Think before coding, simplicity first, surgical changes, goal-driven execution |
 
 `core` skills are appended automatically. See [docs/configuration.md](docs/configuration.md) to add skills or change selection.
@@ -79,6 +81,7 @@ Reports which hooks, files, and settings are present or missing. Exits 1 if anyt
 ## Notes
 
 - **Kiro** — guardrails only activate when using the `agentguard` agent. Switch to it in Kiro after install.
+- **Cursor** — guardrails are project-local. `./install.sh cursor` installs `.cursor/` into the current directory.
 - **Codex** — instruction-only; no hooks, no automated enforcement backstop.
 - **`block-env.sh`** — best-effort on the bash surface. `block-env-read.sh` is the primary layer (intercepts Read/Write/Edit tools directly).
 - **Upgrade** — re-running install won't overwrite existing files. To pick up a new version: uninstall then install.
