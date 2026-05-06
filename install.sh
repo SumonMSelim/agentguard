@@ -383,10 +383,14 @@ install_cursor() {
   # Cursor reads config from the current project directory (.cursor/).
   local dest
   dest="$(pwd)/.cursor"
+  local project_root
+  project_root="$(pwd)"
   local src_base
   src_base="$SCRIPT_DIR/agents/cursor"
   local src_cursor
   src_cursor="$src_base/.cursor"
+  local src_agents
+  src_agents="$src_base/AGENTS.md"
 
   echo "Installing Cursor guardrails → $dest"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
@@ -394,11 +398,15 @@ install_cursor() {
   if [[ ! -d "$src_cursor" ]]; then
     fail "Cursor config not found at $src_cursor"
   fi
+  if [[ ! -f "$src_agents" ]]; then
+    fail "Cursor AGENTS.md not found at $src_agents"
+  fi
 
   backup_dir_if_exists "$dest"
 
   if [[ "$DRY_RUN" -eq 1 ]]; then
     dry "Would install Cursor config → $dest"
+    dry "  copy AGENTS.md → $project_root/AGENTS.md (if missing)"
     dry "  copy hooks.json + rules from $src_cursor/"
     dry "  copy hook scripts from $SCRIPT_DIR/hooks/"
     dry "  copy skills from $SCRIPT_DIR/skills/"
@@ -407,6 +415,14 @@ install_cursor() {
 
   rm -rf "$dest"
   mkdir -p "$dest"
+
+  # Cursor instruction file (project-local). Only install if missing.
+  if [[ ! -f "$project_root/AGENTS.md" ]]; then
+    cp "$src_agents" "$project_root/AGENTS.md"
+    ok "AGENTS.md installed → $project_root/AGENTS.md"
+  else
+    log "AGENTS.md already present — skipping"
+  fi
 
   # Project-level Cursor config
   mkdir -p "$dest/rules"
@@ -628,9 +644,26 @@ CURSOR_AGENTGUARD_FILES=(
 uninstall_cursor() {
   local dest
   dest="$(pwd)"
+  local src_agents
+  src_agents="$SCRIPT_DIR/agents/cursor/AGENTS.md"
 
   echo "Uninstalling Cursor guardrails from $dest/.cursor"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be changed)"
+
+  # Remove AGENTS.md only if it matches our Cursor instructions (avoid deleting user files).
+  if [[ -f "$dest/AGENTS.md" && -f "$src_agents" ]]; then
+    if diff -q "$dest/AGENTS.md" "$src_agents" >/dev/null 2>&1; then
+      backup_if_exists "$dest/AGENTS.md"
+      if [[ "$DRY_RUN" -eq 1 ]]; then
+        dry "Would remove $dest/AGENTS.md"
+      else
+        rm "$dest/AGENTS.md"
+        log "Removed $dest/AGENTS.md"
+      fi
+    else
+      log "AGENTS.md present but not owned by agentguard — leaving in place"
+    fi
+  fi
 
   local removed=0
   for rel in "${CURSOR_AGENTGUARD_FILES[@]}"; do
@@ -801,6 +834,7 @@ check_cursor() {
   local dest
   dest="$(pwd)/.cursor"
   echo "Checking Cursor installation → $dest"
+  check_file "$(pwd)/AGENTS.md" "AGENTS.md"
   check_file "$dest/hooks.json" "hooks.json"
   check_exec "$dest/hooks/audit-log.sh" "audit-log.sh"
   check_exec "$dest/hooks/block-destructive-ops.sh" "block-destructive-ops.sh"

@@ -1,4 +1,4 @@
-# Global Rules — Apply to Every Project
+# Global Rules
 
 ---
 
@@ -16,21 +16,25 @@
 ## 🔁 Git Workflow
 
 ### Always ask before:
+
 - `git commit`, `git push`, opening or merging a PR
 - Any force push (`--force`, `-f`, `--force-with-lease`) — always blocked
 - `git reset --hard`, `git clean -f`, `git branch -D`
 - `git stash drop` / `git stash clear`
 
 ### Branch discipline
+
 - Check current branch first: `git branch --show-current`
 - On `main`/`master`: pull, then create a feature branch
   - `git checkout -b <type>/<short-description>`
 - NEVER commit or push directly to `main`/`master`
 
 ### Commit messages — Conventional Commits
+
 ```
 <type>[optional scope]: <short description>
 ```
+
 Types: `feat` | `fix` | `docs` | `style` | `refactor` | `perf` | `test` | `chore` | `build` | `ci` | `revert`
 
 - Subject ≤ 72 chars, lowercase, no trailing period
@@ -39,6 +43,7 @@ Types: `feat` | `fix` | `docs` | `style` | `refactor` | `perf` | `test` | `chore
 - No vague messages: "fix stuff", "WIP", "update", "changes"
 
 ### Attribution
+
 - NEVER add AI/tool attribution to commits, PR descriptions, or code comments.
 
 ---

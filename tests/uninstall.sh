@@ -72,6 +72,7 @@ run_uninstall() { (cd "$FAKE_PROJECT" && HOME="$FAKE_HOME" bash "$SCRIPT_DIR/ins
 
 HOOKS=(audit-log.sh block-destructive-ops.sh block-env-read.sh block-env.sh block-main-branch.sh block-system-installs.sh)
 CURSOR_FILES=(
+  "AGENTS.md"
   ".cursor/hooks.json"
   ".cursor/hooks/audit-log.sh"
   ".cursor/hooks/block-destructive-ops.sh"
