@@ -96,7 +96,7 @@ Install once, active in every project. Best for universal practices and skills t
 |-------------|-------------------------------------------------------------------------------------|
 | Claude Code | `.claude/CLAUDE.md` in CWD                                                          |
 | Codex       | `AGENTS.md` in CWD                                                                  |
-| Cursor      | `AGENTS.md` in CWD (skills-only; use `--project` or `--skills` during full install) |
+| Cursor      | `AGENTS.md` in CWD — `--project` for skills only, `--skills` for full install with hooks |
 | Kiro        | Not supported — install globally                                                    |
 
 ```bash
