@@ -14,32 +14,17 @@ Security guardrails and workflow policies for AI coding agents. Blocks dangerous
 | [Cursor](https://cursor.com)                                        | Project-level hooks + rules/skills (via `.cursor/`)      |
 | [OpenAI Codex](https://github.com/openai/codex)                     | Instruction file only (no hook support)                  |
 
-## What's enforced
-
-| Rule                                                         | How                                                            |
-|--------------------------------------------------------------|----------------------------------------------------------------|
-| `.env`, key files, credentials never read                    | `block-env-read.sh` (primary) + `block-env.sh` (bash surface)  |
-| Force push always blocked                                    | `deny` rules + `block-main-branch.sh`                          |
-| No commits/pushes directly to main/master                    | `block-main-branch.sh`                                         |
-| Ask before `git commit`, `push`, `reset --hard`, `branch -D` | `ask` rules (Claude) + instruction file                        |
-| System package managers blocked (`brew`, `apt`, `yum`, etc.) | `block-system-installs.sh`                                     |
-| `pip install` outside a virtualenv blocked                   | `block-system-installs.sh` (checks `VIRTUAL_ENV`)              |
-| `rm /`, `rm ~`, `rm $HOME` blocked                           | `block-destructive-ops.sh`                                     |
-| Pipe-to-shell blocked (`curl \| bash`, `wget \| sh`)         | `block-destructive-ops.sh`                                     |
-| `gh auth token` blocked                                      | `block-env.sh`                                                 |
-| No AI attribution in commits                                 | `gitAttribution` / `includeCoAuthoredBy` settings              |
-| Conventional Commits, no over-engineering                    | Instruction file                                               |
-| Every tool call logged                                       | `audit-log.sh` → `~/.claude/audit.log` / `~/.kiro/audit.log` / `.cursor/audit.log` |
+See [docs/configuration.md](docs/configuration.md) for the full list of enforced rules.
 
 ## Installation
 
 Requires: `bash`, `jq`.
 
 ```bash
-./install.sh claude   # Claude Code
-./install.sh kiro     # Kiro
-./install.sh cursor   # Cursor IDE (project-level)
-./install.sh codex    # Codex
+./install.sh claude   # Claude Code (installs to ~/.claude/)
+./install.sh kiro     # Kiro (installs to ~/.kiro/)
+./install.sh cursor   # Cursor IDE (installs to .cursor/ in current directory)
+./install.sh codex    # Codex (installs to ~/AGENTS.md)
 ./install.sh all      # All agents
 ```
 
