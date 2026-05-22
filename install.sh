@@ -305,8 +305,6 @@ install_claude() {
   merge_settings "$dest/settings.json" \
                  "$SCRIPT_DIR/agents/claude/settings.json" \
                  "$dest/settings.json"
-
-  install_cli_wrapper
 }
 
 install_cli_wrapper() {
@@ -979,6 +977,8 @@ case "$AGENT" in
   all)    install_claude; echo; install_codex; echo; install_kiro; echo; install_cursor ;;
   *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | all" ;;
 esac
+
+install_cli_wrapper
 
 echo ""
 echo "Done."

@@ -30,7 +30,7 @@ git clone https://github.com/SumonMSelim/agentguard.git ~/agentguard
 ~/agentguard/install.sh all      # All agents
 ```
 
-Installing Claude Code guardrails also drops an `agentguard` CLI wrapper to `~/.local/bin/`. After that you can run `agentguard` from any directory:
+Every install also drops an `agentguard` CLI wrapper to `~/.local/bin/`. After that you can run `agentguard` from any directory:
 
 ```bash
 agentguard claude --project --skills go,aws   # add skills to current project
@@ -116,7 +116,7 @@ agentguard claude --skills none
 
 ### Per-project skills
 
-`--project` appends skills to the instruction file in the **current directory** instead of `~`. No hooks or settings changes — skills only. Requires `agentguard` CLI (installed with Claude Code global install).
+`--project` appends skills to the instruction file in the **current directory** instead of `~`. No hooks or settings changes — skills only. Requires `agentguard` CLI (installed on any global install).
 
 | Agent       | File written                                          | Notes                            |
 |-------------|-------------------------------------------------------|----------------------------------|
