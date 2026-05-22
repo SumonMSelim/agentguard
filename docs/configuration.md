@@ -14,12 +14,12 @@ Set this in your shell profile, or in a project-level `.claude/settings.json` ho
 
 When an existing `~/.claude/settings.json` is found, `install.sh` merges rather than replaces:
 
-| Key | Behavior |
-|-----|----------|
-| `permissions.allow/ask/deny` | Union of your entries + agentguard entries, deduplicated |
-| `hooks.PreToolUse/PostToolUse` | Merged by matcher; your existing hooks preserved |
-| `includeCoAuthoredBy`, `gitAttribution`, `disableGitWorkflow` | agentguard always wins — security-critical |
-| Everything else (`model`, `apiKey`, `env`, etc.) | Your values preserved untouched |
+| Key                                                           | Behavior                                                 |
+|---------------------------------------------------------------|----------------------------------------------------------|
+| `permissions.allow/ask/deny`                                  | Union of your entries + agentguard entries, deduplicated |
+| `hooks.PreToolUse/PostToolUse`                                | Merged by matcher; your existing hooks preserved         |
+| `includeCoAuthoredBy`, `gitAttribution`, `disableGitWorkflow` | agentguard always wins — security-critical               |
+| Everything else (`model`, `apiKey`, `env`, etc.)              | Your values preserved untouched                          |
 
 ## defaultMode
 
@@ -58,7 +58,22 @@ Skills are behavioural packs appended to the instruction file at install time.
 ./install.sh claude --skills none                # skip all skills
 ```
 
-To add a skill: create `skills/<name>/SKILL.md` with YAML front-matter (`name`, `tags`, `description`, `license`) followed by the content. Tag it `core` to include by default. `install.sh` picks it up automatically.
+### Per-project skills
+
+`--project` targets the instruction file in the current directory instead of `~`. Hooks and `settings.json` are not touched.
+
+```bash
+# From your project root:
+./install.sh claude --project --skills go,aws    # → .claude/CLAUDE.md
+./install.sh codex  --project --skills go,aws    # → AGENTS.md
+./install.sh kiro   --project --skills go,aws    # prints warning — not supported
+```
+
+Kiro's `agent.json` hardcodes a single global file path; per-project overrides require manual `agent.json` edits.
+
+### Adding a skill
+
+Create `skills/<name>/SKILL.md` with YAML front-matter (`name`, `tags`, `description`, `license`) followed by the content. Tag it `core` to include by default. `install.sh` picks it up automatically.
 
 ## Upgrade
 
