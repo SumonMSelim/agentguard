@@ -118,22 +118,24 @@ agentguard claude --skills none
 
 `--project` appends skills to the instruction file in the **current directory** instead of `~`. No hooks or settings changes — skills only. Requires `agentguard` CLI (installed with Claude Code global install).
 
-| Agent       | File written                                                        |
-|-------------|---------------------------------------------------------------------|
-| Claude Code | `.claude/CLAUDE.md` in CWD                                          |
-| Codex       | `AGENTS.md` in CWD                                                  |
-| Cursor      | Always project-local — use `agentguard cursor --skills <list>`      |
-| Kiro        | Not supported — install globally                                    |
+| Agent       | File written                                          | Notes                            |
+|-------------|-------------------------------------------------------|----------------------------------|
+| Claude Code | `.claude/CLAUDE.md` in CWD                            |                                  |
+| Codex       | `AGENTS.md` in CWD                                    |                                  |
+| Cursor      | `.cursor/` in CWD (hooks + `AGENTS.md`)               | Always project-local; full install |
+| Kiro        | —                                                     | Not supported; prints warning    |
 
 ```bash
-# In your project root:
+# All agents at once — recommended:
+agentguard all --project --skills go,aws
+
+# Or per-agent:
 agentguard claude --project --skills go,aws     # → .claude/CLAUDE.md
 agentguard codex  --project --skills go,aws     # → AGENTS.md
-agentguard cursor --skills go,aws               # → AGENTS.md + hooks
-agentguard kiro   --project --skills go,aws     # prints warning — not supported
+agentguard cursor --skills go,aws               # → .cursor/ (hooks + AGENTS.md)
 
 # Preview without writing:
-agentguard claude --project --skills go,aws --dry-run
+agentguard all --project --skills go,aws --dry-run
 ```
 
 Claude Code loads both `~/.claude/CLAUDE.md` (global) and `.claude/CLAUDE.md` (project) simultaneously — project skills layer on top. Codex checks `AGENTS.md` in CWD first, then `~/AGENTS.md`. Cursor reads only the project-local `AGENTS.md`.
