@@ -148,23 +148,16 @@ fi
 check_false "no KIRO.md written"        test -f "$PROJECT_KIRO/KIRO.md"
 check_false "no global KIRO.md written" test -f "$FAKE_HOME/.kiro/KIRO.md"
 
-# ── Cursor: creates AGENTS.md with skill ─────────────────────────────────────
+# ── Cursor: --project runs full install (cursor is always project-local) ──────
 
 echo ""
-echo "cursor --project: creates AGENTS.md with skill"
+echo "cursor --project: runs full install (hooks + AGENTS.md + skills)"
 run_project_in "$PROJECT_CURSOR" cursor --project --skills go >/dev/null
 
 check_true  "creates AGENTS.md"          test -f "$PROJECT_CURSOR/AGENTS.md"
 check_true  "skill sentinel present"     grep -q "agentguard:skill:go" "$PROJECT_CURSOR/AGENTS.md"
-check_false "no hooks written"           test -d "$PROJECT_CURSOR/.cursor/hooks"
+check_true  "hooks written (full install)" test -d "$PROJECT_CURSOR/.cursor/hooks"
 check_false "no global AGENTS.md"        test -f "$FAKE_HOME/AGENTS.md"
-
-echo ""
-echo "cursor --project: dedup on re-run"
-run_project_in "$PROJECT_CURSOR" cursor --project --skills go >/dev/null
-run_project_in "$PROJECT_CURSOR" cursor --project --skills go >/dev/null
-count=$(grep -c "agentguard:skill:go" "$PROJECT_CURSOR/AGENTS.md" || true)
-check_count "sentinel appears exactly once after 3 installs" 1 "$count"
 
 # ── all --project: claude + codex succeed, kiro warns ─────────────────────────
 
@@ -175,7 +168,7 @@ run_project_in "$PROJECT_ALL" all --project --skills go >/dev/null
 check_true  "all: .claude/CLAUDE.md created"  test -f "$PROJECT_ALL/.claude/CLAUDE.md"
 check_true  "all: AGENTS.md created"          test -f "$PROJECT_ALL/AGENTS.md"
 check_false "all: no hooks written"           test -d "$FAKE_HOME/.claude/hooks"
-check_false "all: no cursor hooks written"    test -d "$PROJECT_ALL/.cursor/hooks"
+check_false "all: no cursor hooks written"    test -d "$PROJECT_ALL/.cursor/hooks"  # cursor excluded from all --project
 
 # ── results ───────────────────────────────────────────────────────────────────
 

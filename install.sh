@@ -839,7 +839,7 @@ check_cursor() {
 #
 #   Claude: .claude/CLAUDE.md  (created if absent)
 #   Codex:  AGENTS.md          (created if absent)
-#   Cursor: AGENTS.md          (created if absent — same as full install, skills only)
+#   Cursor: always project-local — --project runs full install instead
 #   Kiro:   not supported      (prints warning, exits 0)
 
 install_project_claude() {
@@ -877,29 +877,6 @@ install_project_codex() {
       dry "Would create $file (empty)"
     else
       touch "$file"
-      ok "Created $file"
-    fi
-  else
-    log "$file already exists — appending skills only"
-  fi
-
-  append_skills "$file"
-}
-
-install_project_cursor() {
-  local file
-  file="$(pwd)/AGENTS.md"
-  local src_agents
-  src_agents="$SCRIPT_DIR/agents/cursor/AGENTS.md"
-
-  echo "Installing Cursor project skills → $file"
-  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
-
-  if [[ ! -f "$file" ]]; then
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-      dry "Would create $file from cursor AGENTS.md"
-    else
-      cp "$src_agents" "$file"
       ok "Created $file"
     fi
   else
@@ -954,9 +931,9 @@ if [[ "$PROJECT" -eq 1 ]]; then
   case "$AGENT" in
     claude) install_project_claude ;;
     codex)  install_project_codex  ;;
-    cursor) install_project_cursor ;;
+    cursor) log "Cursor is always project-local — running full install instead"; install_cursor ;;
     kiro)   install_project_kiro   ;;
-    all)    install_project_claude; echo; install_project_codex; echo; install_project_cursor; echo; install_project_kiro ;;
+    all)    install_project_claude; echo; install_project_codex; echo; install_project_kiro ;;
     *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | cursor | kiro | all" ;;
   esac
   echo ""

@@ -85,8 +85,7 @@ Skills are behavioural packs appended to the instruction file at install time.
 # From your project root:
 ./install.sh claude --project --skills go,aws    # → .claude/CLAUDE.md
 ./install.sh codex  --project --skills go,aws    # → AGENTS.md
-./install.sh cursor --project --skills go,aws    # → AGENTS.md (skills only, no hooks)
-./install.sh cursor --skills go,aws              # → AGENTS.md + hooks (full install)
+./install.sh cursor --skills go,aws              # → AGENTS.md + hooks (always project-local)
 ./install.sh kiro   --project --skills go,aws    # prints warning — not supported
 ```
 

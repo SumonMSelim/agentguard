@@ -18,7 +18,6 @@ agentguard installs security guardrails for AI coding agents (Claude Code, Kiro,
 ./install.sh claude --skills go,aws          # With specific skill packs
 ./install.sh cursor --skills go,aws          # Cursor full install + skills
 ./install.sh claude --project --skills go    # Append skills to CWD only (no hooks)
-./install.sh cursor --project --skills go    # Cursor skills-only (no hooks)
 
 # Uninstall
 ./install.sh uninstall claude

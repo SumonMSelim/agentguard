@@ -96,7 +96,7 @@ Install once, active in every project. Best for universal practices and skills t
 |-------------|-------------------------------------------------------------------------------------------|
 | Claude Code | `.claude/CLAUDE.md` in CWD                                                                |
 | Codex       | `AGENTS.md` in CWD                                                                        |
-| Cursor      | `AGENTS.md` in CWD — `--project` for skills only, `--skills` for full install with hooks |
+| Cursor      | Always project-local — use `./install.sh cursor --skills <list>`                         |
 | Kiro        | Not supported — install globally                                                          |
 
 ```bash
@@ -107,7 +107,7 @@ cd ~/projects/my-service
 # Codex in the same project:
 ./install.sh codex --project --skills go,aws
 
-# Cursor (full install with skills — --project also works for skills-only):
+# Cursor (always project-local):
 ./install.sh cursor --skills go,aws
 
 # Preview without writing:
