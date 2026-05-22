@@ -51,6 +51,34 @@ To review every file change instead:
 
 This value is preserved on re-runs.
 
+## Skills
+
+Skills are behavioural packs appended to the instruction file at install time.
+
+```bash
+agentguard claude                              # append all core-tagged skills (default)
+agentguard claude --skills go,aws,kubernetes  # append specific skills
+agentguard claude --skills none               # skip all skills
+```
+
+### Per-project skills
+
+`--project` targets the instruction file in the current directory instead of `~`. Hooks and `settings.json` are not touched.
+
+```bash
+# From your project root:
+agentguard claude --project --skills go,aws    # → .claude/CLAUDE.md
+agentguard codex  --project --skills go,aws    # → AGENTS.md
+agentguard all    --project --skills go,aws    # → claude + codex (kiro warns)
+agentguard kiro   --project --skills go,aws    # prints warning — not supported
+```
+
+Kiro's `agent.json` hardcodes a single global file path; per-project overrides require manual `agent.json` edits.
+
+### Adding a skill
+
+Create `skills/<name>/SKILL.md` with YAML front-matter (`name`, `tags`, `description`, `license`) followed by the content. Tag it `core` to include by default. `install.sh` picks it up automatically.
+
 ## Audit log rotation
 
 `audit-log.sh` appends one line per tool call with no rotation. Log paths:

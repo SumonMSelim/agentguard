@@ -2,6 +2,8 @@
 # install.sh
 #
 # Installs (or uninstalls) AI agent guardrails to their tool-specific config locations.
+# Also installs an `agentguard` CLI wrapper to ~/.local/bin/ so you can run
+# `agentguard <cmd>` from any directory after the initial install.
 #
 # Usage:
 #   ./install.sh [claude|codex|kiro|cursor|all]           — install (default: claude)
@@ -303,6 +305,31 @@ install_claude() {
   merge_settings "$dest/settings.json" \
                  "$SCRIPT_DIR/agents/claude/settings.json" \
                  "$dest/settings.json"
+
+  install_cli_wrapper
+}
+
+install_cli_wrapper() {
+  local bin_dir="$HOME/.local/bin"
+  local wrapper="$bin_dir/agentguard"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would install agentguard CLI wrapper → $wrapper"
+    return
+  fi
+
+  mkdir -p "$bin_dir"
+  cat > "$wrapper" <<WRAPPER
+#!/bin/bash
+exec "$SCRIPT_DIR/install.sh" "\$@"
+WRAPPER
+  chmod +x "$wrapper"
+  ok "agentguard CLI installed → $wrapper"
+
+  # Warn if ~/.local/bin is not in PATH
+  if ! echo "$PATH" | tr ':' '\n' | grep -qx "$bin_dir"; then
+    log "Add to PATH: export PATH=\"\$HOME/.local/bin:\$PATH\""
+  fi
 }
 
 install_kiro() {
@@ -590,6 +617,7 @@ uninstall_claude() {
   remove_hooks "$dest/hooks"
   remove_file  "$dest/CLAUDE.md"
   unmerge_settings "$dest/settings.json" "$SCRIPT_DIR/agents/claude/settings.json"
+  remove_file  "$HOME/.local/bin/agentguard"
 }
 
 uninstall_kiro() {
@@ -787,6 +815,7 @@ check_claude() {
   check_hooks   "$dest/hooks"
   check_file    "$dest/CLAUDE.md" "CLAUDE.md"
   check_settings "$dest/settings.json" "$SCRIPT_DIR/agents/claude/settings.json"
+  check_exec    "$HOME/.local/bin/agentguard" "agentguard CLI"
   echo ""
 }
 
