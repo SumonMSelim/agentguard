@@ -16,7 +16,9 @@ agentguard installs security guardrails for AI coding agents (Claude Code, Kiro,
 ./install.sh all                             # All agents
 ./install.sh claude --dry-run                # Preview without writing
 ./install.sh claude --skills go,aws          # With specific skill packs
-./install.sh claude --project --skills go    # Append skills to CWD instruction file only
+./install.sh cursor --skills go,aws          # Cursor full install + skills
+./install.sh claude --project --skills go    # Append skills to CWD only (no hooks)
+./install.sh cursor --project --skills go    # Cursor skills-only (no hooks)
 
 # Uninstall
 ./install.sh uninstall claude
@@ -63,7 +65,7 @@ Per-agent config installed to the agent's home directory:
 - `agents/codex/` → `~/AGENTS.md` (instruction-only, no hook support)
 - `agents/cursor/` → `<CWD>/.cursor/` (hooks.json + hooks/ copied from `hooks/`)
 
-**Instruction file sync rule**: `agents/claude/CLAUDE.md` is the canonical source. `agents/kiro/KIRO.md` must be byte-for-byte identical. `agents/codex/AGENTS.md` must match modulo its 3-line Codex header (lines 3-5). `tests/check-sync.sh` enforces this. Cursor uses a separate `agents/cursor/AGENTS.md` (not synced).
+**Instruction file sync rule**: `agents/claude/CLAUDE.md` is the canonical source. `agents/kiro/KIRO.md` and `agents/cursor/AGENTS.md` must be byte-for-byte identical to it. `agents/codex/AGENTS.md` must match modulo its 3-line Codex header (lines 3-5). `tests/check-sync.sh` enforces all four.
 
 ### Settings merge (`install.sh: merge_settings`)
 When `~/.claude/settings.json` already exists, the installer merges rather than overwrites:

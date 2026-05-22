@@ -1,7 +1,7 @@
 #!/bin/bash
 # tests/project.sh — agentguard --project flag test suite
 #
-# Tests per-project skill installation for Claude and Codex.
+# Tests per-project skill installation for Claude, Codex, and Cursor.
 # Verifies: file creation, skill content, sentinel dedup, dry-run, Kiro warning.
 #
 # Usage:
@@ -71,9 +71,10 @@ PROJECT_DRY="$TMPROOT/dry"
 PROJECT_EXISTING="$TMPROOT/existing"
 PROJECT_CODEX="$TMPROOT/codex"
 PROJECT_KIRO="$TMPROOT/kiro"
+PROJECT_CURSOR="$TMPROOT/cursor"
 PROJECT_ALL="$TMPROOT/all"
 mkdir -p "$PROJECT_DIR" "$PROJECT_DRY" "$PROJECT_EXISTING" \
-         "$PROJECT_CODEX" "$PROJECT_KIRO" "$PROJECT_ALL"
+         "$PROJECT_CODEX" "$PROJECT_KIRO" "$PROJECT_CURSOR" "$PROJECT_ALL"
 
 run_project() {
   HOME="$FAKE_HOME" bash "$SCRIPT_DIR/install.sh" "$@" >/dev/null 2>&1
@@ -147,15 +148,34 @@ fi
 check_false "no KIRO.md written"        test -f "$PROJECT_KIRO/KIRO.md"
 check_false "no global KIRO.md written" test -f "$FAKE_HOME/.kiro/KIRO.md"
 
+# ── Cursor: creates AGENTS.md with skill ─────────────────────────────────────
+
+echo ""
+echo "cursor --project: creates AGENTS.md with skill"
+run_project_in "$PROJECT_CURSOR" cursor --project --skills go >/dev/null
+
+check_true  "creates AGENTS.md"          test -f "$PROJECT_CURSOR/AGENTS.md"
+check_true  "skill sentinel present"     grep -q "agentguard:skill:go" "$PROJECT_CURSOR/AGENTS.md"
+check_false "no hooks written"           test -d "$PROJECT_CURSOR/.cursor/hooks"
+check_false "no global AGENTS.md"        test -f "$FAKE_HOME/AGENTS.md"
+
+echo ""
+echo "cursor --project: dedup on re-run"
+run_project_in "$PROJECT_CURSOR" cursor --project --skills go >/dev/null
+run_project_in "$PROJECT_CURSOR" cursor --project --skills go >/dev/null
+count=$(grep -c "agentguard:skill:go" "$PROJECT_CURSOR/AGENTS.md" || true)
+check_count "sentinel appears exactly once after 3 installs" 1 "$count"
+
 # ── all --project: claude + codex succeed, kiro warns ─────────────────────────
 
 echo ""
 echo "all --project: claude and codex install, kiro warns"
 run_project_in "$PROJECT_ALL" all --project --skills go >/dev/null
 
-check_true  "all: .claude/CLAUDE.md created" test -f "$PROJECT_ALL/.claude/CLAUDE.md"
-check_true  "all: AGENTS.md created"         test -f "$PROJECT_ALL/AGENTS.md"
-check_false "all: no hooks written"          test -d "$FAKE_HOME/.claude/hooks"
+check_true  "all: .claude/CLAUDE.md created"  test -f "$PROJECT_ALL/.claude/CLAUDE.md"
+check_true  "all: AGENTS.md created"          test -f "$PROJECT_ALL/AGENTS.md"
+check_false "all: no hooks written"           test -d "$FAKE_HOME/.claude/hooks"
+check_false "all: no cursor hooks written"    test -d "$PROJECT_ALL/.cursor/hooks"
 
 # ── results ───────────────────────────────────────────────────────────────────
 

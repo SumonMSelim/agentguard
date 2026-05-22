@@ -399,6 +399,7 @@ install_cursor() {
     dry "  copy AGENTS.md → $project_root/AGENTS.md (if missing)"
     dry "  copy hooks.json → $dest/hooks.json (if missing)"
     dry "  copy hook scripts from $SCRIPT_DIR/hooks/"
+    dry "  append skills → $project_root/AGENTS.md"
     return
   fi
 
@@ -411,6 +412,8 @@ install_cursor() {
   else
     log "AGENTS.md already present — skipping"
   fi
+
+  append_skills "$project_root/AGENTS.md"
 
   # hooks.json — only install if missing (preserve user edits on re-run)
   if [[ ! -f "$dest/hooks.json" ]]; then
@@ -631,9 +634,12 @@ uninstall_cursor() {
   echo "Uninstalling Cursor guardrails from $dest/.cursor"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be changed)"
 
-  # Remove AGENTS.md only if it matches our Cursor instructions (avoid deleting user files).
+  # Remove AGENTS.md only if agentguard owns it: the file must start with our
+  # canonical header (skills may have been appended after, so exact match fails).
   if [[ -f "$dest/AGENTS.md" && -f "$src_agents" ]]; then
-    if diff -q "$dest/AGENTS.md" "$src_agents" >/dev/null 2>&1; then
+    local src_lines
+    src_lines=$(wc -l < "$src_agents")
+    if diff -q <(head -n "$src_lines" "$dest/AGENTS.md") "$src_agents" >/dev/null 2>&1; then
       backup_if_exists "$dest/AGENTS.md"
       if [[ "$DRY_RUN" -eq 1 ]]; then
         dry "Would remove $dest/AGENTS.md"
@@ -833,6 +839,7 @@ check_cursor() {
 #
 #   Claude: .claude/CLAUDE.md  (created if absent)
 #   Codex:  AGENTS.md          (created if absent)
+#   Cursor: AGENTS.md          (created if absent — same as full install, skills only)
 #   Kiro:   not supported      (prints warning, exits 0)
 
 install_project_claude() {
@@ -870,6 +877,29 @@ install_project_codex() {
       dry "Would create $file (empty)"
     else
       touch "$file"
+      ok "Created $file"
+    fi
+  else
+    log "$file already exists — appending skills only"
+  fi
+
+  append_skills "$file"
+}
+
+install_project_cursor() {
+  local file
+  file="$(pwd)/AGENTS.md"
+  local src_agents
+  src_agents="$SCRIPT_DIR/agents/cursor/AGENTS.md"
+
+  echo "Installing Cursor project skills → $file"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
+
+  if [[ ! -f "$file" ]]; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would create $file from cursor AGENTS.md"
+    else
+      cp "$src_agents" "$file"
       ok "Created $file"
     fi
   else
@@ -924,9 +954,10 @@ if [[ "$PROJECT" -eq 1 ]]; then
   case "$AGENT" in
     claude) install_project_claude ;;
     codex)  install_project_codex  ;;
+    cursor) install_project_cursor ;;
     kiro)   install_project_kiro   ;;
-    all)    install_project_claude; echo; install_project_codex; echo; install_project_kiro ;;
-    *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | all" ;;
+    all)    install_project_claude; echo; install_project_codex; echo; install_project_cursor; echo; install_project_kiro ;;
+    *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | cursor | kiro | all" ;;
   esac
   echo ""
   echo "Done."

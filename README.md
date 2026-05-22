@@ -7,12 +7,12 @@ Security guardrails and workflow policies for AI coding agents. Blocks dangerous
 
 ## Supported agents
 
-| Agent                                                               | Enforcement                                               |
-|---------------------------------------------------------------------|-----------------------------------------------------------|
-| [Claude Code](https://docs.anthropic.com/en/docs/claude-code/hooks) | Shell hooks + settings.json + instruction file           |
-| [Kiro](https://kiro.dev/docs/cli/hooks/)                            | Shell hooks + agent config + instruction file             |
-| [Cursor](https://cursor.com)                                        | Project-level hooks + rules/skills (via `.cursor/`)      |
-| [OpenAI Codex](https://github.com/openai/codex)                     | Instruction file only (no hook support)                  |
+| Agent                                                               | Enforcement                                         |
+|---------------------------------------------------------------------|-----------------------------------------------------|
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code/hooks) | Shell hooks + settings.json + instruction file      |
+| [Kiro](https://kiro.dev/docs/cli/hooks/)                            | Shell hooks + agent config + instruction file       |
+| [Cursor](https://cursor.com)                                        | Project-level hooks + rules/skills (via `.cursor/`) |
+| [OpenAI Codex](https://github.com/openai/codex)                     | Instruction file only (no hook support)             |
 
 See [docs/configuration.md](docs/configuration.md) for the full list of enforced rules.
 
@@ -92,11 +92,12 @@ Install once, active in every project. Best for universal practices and skills t
 
 `--project` appends skills to the instruction file in the **current directory** instead of `~`. No hooks or settings changes — skills only.
 
-| Agent | File written |
-|-------|-------------|
-| Claude Code | `.claude/CLAUDE.md` in CWD |
-| Codex | `AGENTS.md` in CWD |
-| Kiro | Not supported — install globally |
+| Agent       | File written                                                                        |
+|-------------|-------------------------------------------------------------------------------------|
+| Claude Code | `.claude/CLAUDE.md` in CWD                                                          |
+| Codex       | `AGENTS.md` in CWD                                                                  |
+| Cursor      | `AGENTS.md` in CWD (skills-only; use `--project` or `--skills` during full install) |
+| Kiro        | Not supported — install globally                                                    |
 
 ```bash
 # In your Go + AWS project root:
@@ -106,11 +107,14 @@ cd ~/projects/my-service
 # Codex in the same project:
 ./install.sh codex --project --skills go,aws
 
+# Cursor (full install with skills — --project also works for skills-only):
+./install.sh cursor --skills go,aws
+
 # Preview without writing:
 ./install.sh claude --project --skills go,aws --dry-run
 ```
 
-Claude Code loads both `~/.claude/CLAUDE.md` (global) and `.claude/CLAUDE.md` (project) simultaneously — project skills layer on top. Codex checks `AGENTS.md` in CWD first, then `~/AGENTS.md`.
+Claude Code loads both `~/.claude/CLAUDE.md` (global) and `.claude/CLAUDE.md` (project) simultaneously — project skills layer on top. Codex checks `AGENTS.md` in CWD first, then `~/AGENTS.md`. Cursor reads only the project-local `AGENTS.md`.
 
 **Recommended pattern:** install `core` skills globally (guardrails + docker apply everywhere), add language and cloud skills per project where they're relevant.
 
