@@ -90,6 +90,8 @@ Skills are behavioural packs appended to the instruction file at install time.
 
 Kiro's `agent.json` hardcodes a single global file path; per-project overrides require manual `agent.json` edits.
 
+Cursor does not support `--project`. Skills are copied to `.cursor/skills/` during `./install.sh cursor` but are not auto-appended to `AGENTS.md` — copy the relevant `SKILL.md` content manually to activate them.
+
 ### Adding a skill
 
 Create `skills/<name>/SKILL.md` with YAML front-matter (`name`, `tags`, `description`, `license`) followed by the content. Tag it `core` to include by default. `install.sh` picks it up automatically.

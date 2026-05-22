@@ -88,6 +88,8 @@ Install once, active in every project. Best for universal practices and skills t
 ./install.sh claude --skills go,php,laravel,java,aws,gcp,kubernetes,terraform,docker
 ```
 
+Cursor installs skills to `.cursor/skills/` in the current directory alongside hooks. Skills are not auto-appended to `AGENTS.md` — copy the relevant `SKILL.md` content manually if you want them active.
+
 ### Per-project skills
 
 `--project` appends skills to the instruction file in the **current directory** instead of `~`. No hooks or settings changes — skills only.
@@ -97,6 +99,7 @@ Install once, active in every project. Best for universal practices and skills t
 | Claude Code | `.claude/CLAUDE.md` in CWD |
 | Codex | `AGENTS.md` in CWD |
 | Kiro | Not supported — install globally |
+| Cursor | Not supported via `--project` — skills are copied to `.cursor/skills/` during `./install.sh cursor` and must be manually appended to `AGENTS.md` |
 
 ```bash
 # In your Go + AWS project root:
