@@ -1,6 +1,6 @@
 ---
 name: docker
-tags: [core]
+tags: []
 description: Docker best practices: image security, build efficiency, runtime hardening, Compose, local tooling (Colima, OrbStack). Use when writing or reviewing Dockerfiles and Compose files.
 license: MIT
 ---
