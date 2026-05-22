@@ -56,14 +56,23 @@ Removes only what agentguard owns: hooks, instruction file, Kiro agent config. C
 
 Reports which hooks, files, and settings are present or missing. Exits 1 if anything is out of order — useful in CI to assert guardrails are in place.
 
+## Upgrade
+
+Re-running `install.sh` skips existing files — it only appends missing skills. To pick up a new agentguard version:
+
+```bash
+./install.sh uninstall claude
+./install.sh claude
+```
+
 ## Skills
 
-Skills are behavioural packs appended to the agent's instruction file. `core` skills are included automatically on every install; all others are opt-in.
+Skills are behavioural packs appended to the agent's instruction file at install time. `core` skills are included automatically; all others are opt-in via `--skills`.
 
 | Skill                                                        | Tags   | What it does                                                                   |
 |--------------------------------------------------------------|--------|--------------------------------------------------------------------------------|
 | [`karpathy-guidelines`](skills/karpathy-guidelines/SKILL.md) | `core` | Think before coding, simplicity first, surgical changes, goal-driven execution |
-| [`docker`](skills/docker/SKILL.md)                           | `core` | Image security, build efficiency, runtime hardening                            |
+| [`docker`](skills/docker/SKILL.md)                           | —      | Image security, build efficiency, runtime hardening                            |
 | [`go`](skills/go/SKILL.md)                                   | —      | Idiomatic Go: errors, interfaces, concurrency, testing, security               |
 | [`php`](skills/php/SKILL.md)                                 | —      | Modern PHP: strict types, security, PSR standards, architecture                |
 | [`laravel`](skills/laravel/SKILL.md)                         | —      | Laravel: thin controllers, Eloquent, queues, security                          |
@@ -75,7 +84,7 @@ Skills are behavioural packs appended to the agent's instruction file. `core` sk
 
 ### Global skills
 
-Install once, active in every project. Best for universal practices and skills that apply regardless of stack.
+Install once, active in every project. Best for universal practices that apply regardless of stack.
 
 ```bash
 # Core skills only (default)
@@ -84,31 +93,27 @@ Install once, active in every project. Best for universal practices and skills t
 # Add language/cloud skills globally
 ./install.sh claude --skills go,aws,kubernetes
 
-# All skills
-./install.sh claude --skills go,php,laravel,java,aws,gcp,kubernetes,terraform,docker
+# Skip all skills
+./install.sh claude --skills none
 ```
 
 ### Per-project skills
 
 `--project` appends skills to the instruction file in the **current directory** instead of `~`. No hooks or settings changes — skills only.
 
-| Agent       | File written                                                                              |
-|-------------|-------------------------------------------------------------------------------------------|
-| Claude Code | `.claude/CLAUDE.md` in CWD                                                                |
-| Codex       | `AGENTS.md` in CWD                                                                        |
-| Cursor      | Always project-local — use `./install.sh cursor --skills <list>`                         |
-| Kiro        | Not supported — install globally                                                          |
+| Agent       | File written                                                     |
+|-------------|------------------------------------------------------------------|
+| Claude Code | `.claude/CLAUDE.md` in CWD                                       |
+| Codex       | `AGENTS.md` in CWD                                               |
+| Cursor      | Always project-local — use `./install.sh cursor --skills <list>` |
+| Kiro        | Not supported — install globally                                 |
 
 ```bash
-# In your Go + AWS project root:
-cd ~/projects/my-service
-./install.sh claude --project --skills go,aws
-
-# Codex in the same project:
-./install.sh codex --project --skills go,aws
-
-# Cursor (always project-local):
-./install.sh cursor --skills go,aws
+# In your project root:
+./install.sh claude --project --skills go,aws     # → .claude/CLAUDE.md
+./install.sh codex  --project --skills go,aws     # → AGENTS.md
+./install.sh cursor --skills go,aws               # → AGENTS.md + hooks
+./install.sh kiro   --project --skills go,aws     # prints warning — not supported
 
 # Preview without writing:
 ./install.sh claude --project --skills go,aws --dry-run
@@ -116,9 +121,11 @@ cd ~/projects/my-service
 
 Claude Code loads both `~/.claude/CLAUDE.md` (global) and `.claude/CLAUDE.md` (project) simultaneously — project skills layer on top. Codex checks `AGENTS.md` in CWD first, then `~/AGENTS.md`. Cursor reads only the project-local `AGENTS.md`.
 
-**Recommended pattern:** install `core` skills globally (guardrails + docker apply everywhere), add language and cloud skills per project where they're relevant.
+**Recommended pattern:** install `core` skills globally (guardrails apply everywhere), add language and cloud skills per project where relevant.
 
-See [docs/configuration.md](docs/configuration.md) for full skills documentation.
+### Adding a skill
+
+Create `skills/<name>/SKILL.md` with YAML frontmatter (`name`, `tags`, `description`, `license`) followed by markdown content. Tag `core` to auto-include on every install. `install.sh` picks it up automatically — no registration needed.
 
 ## Notes
 
@@ -126,9 +133,8 @@ See [docs/configuration.md](docs/configuration.md) for full skills documentation
 - **Cursor** — guardrails are project-local. `./install.sh cursor` installs `.cursor/` into the current directory.
 - **Codex** — instruction-only; no hooks, no automated enforcement backstop.
 - **`block-env.sh`** — best-effort on the bash surface. `block-env-read.sh` is the primary layer (intercepts Read/Write/Edit tools directly).
-- **Upgrade** — re-running install won't overwrite existing files. To pick up a new version: uninstall then install.
 
-→ [Configuration reference](docs/configuration.md) — protected branches, settings.json merge rules, audit log rotation, skills.
+→ [Configuration reference](docs/configuration.md) — protected branches, settings.json merge rules, audit log rotation.
 
 ## License
 
