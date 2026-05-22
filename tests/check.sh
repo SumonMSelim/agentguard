@@ -35,10 +35,11 @@ check_false() {
 }
 
 FAKE_HOME=$(mktemp -d)
-trap 'rm -rf "$FAKE_HOME"' EXIT
+FAKE_PROJECT=$(mktemp -d)
+trap 'rm -rf "$FAKE_HOME" "$FAKE_PROJECT"' EXIT
 
-run_install() { HOME="$FAKE_HOME" bash "$SCRIPT_DIR/install.sh" "$@" >/dev/null 2>&1; }
-run_check()   { HOME="$FAKE_HOME" bash "$SCRIPT_DIR/install.sh" check "$@" >/dev/null 2>&1; }
+run_install() { (cd "$FAKE_PROJECT" && HOME="$FAKE_HOME" bash "$SCRIPT_DIR/install.sh" "$@") >/dev/null 2>&1; }
+run_check()   { (cd "$FAKE_PROJECT" && HOME="$FAKE_HOME" bash "$SCRIPT_DIR/install.sh" check "$@") >/dev/null 2>&1; }
 
 # ── not installed → check fails ───────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ echo "check — nothing installed → exits 1"
 check_false "claude check fails when not installed" run_check claude
 check_false "kiro check fails when not installed"   run_check kiro
 check_false "codex check fails when not installed"  run_check codex
+check_false "cursor check fails when not installed" run_check cursor
 check_false "all check fails when not installed"    run_check all
 
 # ── fully installed → check passes ───────────────────────────────────────────
@@ -57,6 +59,7 @@ run_install all
 check_true "claude check passes after install" run_check claude
 check_true "kiro check passes after install"   run_check kiro
 check_true "codex check passes after install"  run_check codex
+check_true "cursor check passes after install" run_check cursor
 check_true "all check passes after install"    run_check all
 
 # ── partial install → check fails ────────────────────────────────────────────

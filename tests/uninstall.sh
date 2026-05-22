@@ -64,12 +64,23 @@ jq_false() {
 
 # Run install.sh with a fake HOME so we don't touch the real one
 FAKE_HOME=$(mktemp -d)
-trap 'rm -rf "$FAKE_HOME"' EXIT
+FAKE_PROJECT=$(mktemp -d)
+trap 'rm -rf "$FAKE_HOME" "$FAKE_PROJECT"' EXIT
 
-run_install()   { HOME="$FAKE_HOME" bash "$SCRIPT_DIR/install.sh" "$@" >/dev/null 2>&1; }
-run_uninstall() { HOME="$FAKE_HOME" bash "$SCRIPT_DIR/install.sh" uninstall "$@" >/dev/null 2>&1; }
+run_install()   { (cd "$FAKE_PROJECT" && HOME="$FAKE_HOME" bash "$SCRIPT_DIR/install.sh" "$@") >/dev/null 2>&1; }
+run_uninstall() { (cd "$FAKE_PROJECT" && HOME="$FAKE_HOME" bash "$SCRIPT_DIR/install.sh" uninstall "$@") >/dev/null 2>&1; }
 
 HOOKS=(audit-log.sh block-destructive-ops.sh block-env-read.sh block-env.sh block-main-branch.sh block-system-installs.sh)
+CURSOR_FILES=(
+  "AGENTS.md"
+  ".cursor/hooks.json"
+  ".cursor/hooks/audit-log.sh"
+  ".cursor/hooks/block-destructive-ops.sh"
+  ".cursor/hooks/block-env-read.sh"
+  ".cursor/hooks/block-env.sh"
+  ".cursor/hooks/block-main-branch.sh"
+  ".cursor/hooks/block-system-installs.sh"
+)
 
 # ── Claude ────────────────────────────────────────────────────────────────────
 
@@ -167,6 +178,25 @@ run_uninstall codex
 
 check_false "AGENTS.md removed" test -f "$FAKE_HOME/AGENTS.md"
 
+# ── Cursor ────────────────────────────────────────────────────────────────────
+
+echo ""
+echo "uninstall cursor — dry-run leaves files intact"
+run_install cursor
+run_uninstall cursor --dry-run
+
+for f in "${CURSOR_FILES[@]}"; do
+  check_true "cursor file $f still present after dry-run" test -f "$FAKE_PROJECT/$f"
+done
+
+echo ""
+echo "uninstall cursor — removes files"
+run_uninstall cursor
+
+for f in "${CURSOR_FILES[@]}"; do
+  check_false "cursor file $f removed" test -f "$FAKE_PROJECT/$f"
+done
+
 # ── all ───────────────────────────────────────────────────────────────────────
 
 echo ""
@@ -181,6 +211,10 @@ check_false "AGENTS.md removed (all)"        test -f "$FAKE_HOME/AGENTS.md"
 for h in "${HOOKS[@]}"; do
   check_false "claude hook $h removed (all)" test -f "$FAKE_HOME/.claude/hooks/$h"
   check_false "kiro hook $h removed (all)"   test -f "$FAKE_HOME/.kiro/hooks/$h"
+done
+
+for f in "${CURSOR_FILES[@]}"; do
+  check_false "cursor file $f removed (all)" test -f "$FAKE_PROJECT/$f"
 done
 
 # ── skill idempotency ─────────────────────────────────────────────────────────

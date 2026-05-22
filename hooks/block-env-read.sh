@@ -13,6 +13,7 @@ INPUT=$(cat)
 # Kiro:    .tool_input.path (fs_write),   .tool_input.operations[].path (fs_read)
 # Collect all candidate paths; trim whitespace via sed (xargs would split paths with spaces).
 PATHS=$(echo "$INPUT" | jq -r '
+  (.file_path // ""),
   (.tool_input.file_path // ""),
   (.tool_input.path // ""),
   (.tool_input.operations // [] | .[].path // ""),

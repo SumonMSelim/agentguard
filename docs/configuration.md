@@ -38,7 +38,7 @@ The merge logic will preserve this value on re-runs.
 
 `audit-log.sh` appends to `~/.claude/audit.log` (or `~/.kiro/audit.log`) with no rotation. To cap growth, add a `logrotate` config:
 
-```
+```conf
 /Users/<you>/.claude/audit.log {
     weekly
     rotate 4
@@ -47,6 +47,8 @@ The merge logic will preserve this value on re-runs.
     notifempty
 }
 ```
+
+For Cursor, the audit log is project-local: `.cursor/audit.log`.
 
 ## Skills
 

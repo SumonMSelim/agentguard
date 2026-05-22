@@ -25,7 +25,7 @@
 # Exit 2 = blocked. The agent receives the stderr message as feedback.
 
 INPUT=$(cat)
-COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""') || exit 0
+COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // ""') || exit 0
 
 # Statement-boundary prefix: start-of-string or a shell separator, followed by
 # optional whitespace.  Covers:  git …  /  foo && git …  /  foo; git …  /
