@@ -11,6 +11,8 @@
 #   --skills <list>        — comma-separated skill names to append (e.g. karpathy-guidelines)
 #                            Skills tagged [core] are always appended unless --skills none
 #   --dry-run              — show what would be changed without writing anything
+#   --project              — append skills to the project-level instruction file in CWD
+#                            Claude: .claude/CLAUDE.md  Codex: AGENTS.md  Kiro: not supported
 #
 # Re-running install is safe. Existing files are backed up before any writes.
 # settings.json is merged (not overwritten) — personal settings are preserved.
@@ -25,6 +27,7 @@ SKILLS_ARG=""
 DRY_RUN=0
 UNINSTALL=0
 CHECK=0
+PROJECT=0
 
 # Detect uninstall/check subcommands: ./install.sh uninstall|check [agent]
 if [[ "$AGENT" == "uninstall" ]]; then
@@ -45,6 +48,9 @@ for i in "${!args[@]}"; do
   fi
   if [[ "${args[$i]}" == "--dry-run" ]]; then
     DRY_RUN=1
+  fi
+  if [[ "${args[$i]}" == "--project" ]]; then
+    PROJECT=1
   fi
 done
 
@@ -673,6 +679,65 @@ check_codex() {
   echo ""
 }
 
+# ── project-level installers ─────────────────────────────────────────────────
+#
+# --project appends skills only to the instruction file in the current working
+# directory. No hooks, no settings.json — those are global-only.
+#
+#   Claude: .claude/CLAUDE.md  (created if absent)
+#   Codex:  AGENTS.md          (created if absent)
+#   Kiro:   not supported      (prints warning, exits 0)
+
+install_project_claude() {
+  local dest
+  dest="$(pwd)/.claude"
+  local file="$dest/CLAUDE.md"
+
+  echo "Installing Claude Code project skills → $file"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
+
+  if [[ ! -f "$file" ]]; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would create $file (empty)"
+    else
+      mkdir -p "$dest"
+      touch "$file"
+      ok "Created $file"
+    fi
+  else
+    log "$file already exists — appending skills only"
+  fi
+
+  append_skills "$file"
+}
+
+install_project_codex() {
+  local file
+  file="$(pwd)/AGENTS.md"
+
+  echo "Installing Codex project skills → $file"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
+
+  if [[ ! -f "$file" ]]; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would create $file (empty)"
+    else
+      touch "$file"
+      ok "Created $file"
+    fi
+  else
+    log "$file already exists — appending skills only"
+  fi
+
+  append_skills "$file"
+}
+
+install_project_kiro() {
+  echo "Warning: Kiro does not support per-project instruction files." >&2
+  echo "  Kiro's agent.json references a single global file (~/.kiro/KIRO.md)." >&2
+  echo "  Install skills globally instead: ./install.sh kiro --skills <list>" >&2
+}
+
 # ── entry point ───────────────────────────────────────────────────────────────
 
 if [[ "$CHECK" -eq 1 ]]; then
@@ -703,6 +768,20 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   echo ""
   echo "Done."
   [[ "$DRY_RUN" -eq 1 ]] && echo "(dry-run: no files were changed)"
+  exit 0
+fi
+
+if [[ "$PROJECT" -eq 1 ]]; then
+  case "$AGENT" in
+    claude) install_project_claude ;;
+    codex)  install_project_codex  ;;
+    kiro)   install_project_kiro   ;;
+    all)    install_project_claude; echo; install_project_codex; echo; install_project_kiro ;;
+    *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | all" ;;
+  esac
+  echo ""
+  echo "Done."
+  [[ "$DRY_RUN" -eq 1 ]] && echo "(dry-run: no files were written)"
   exit 0
 fi
 

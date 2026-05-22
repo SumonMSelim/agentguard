@@ -191,12 +191,19 @@ run_install claude
 run_install claude  # second install
 run_install claude  # third install
 
+# Count how many core skills exist (the expected number of sentinels)
+core_count=0
+for skill_dir in "$SCRIPT_DIR/skills"/*/; do
+  awk '/^---/{if(NR==1){in_fm=1;next}else{exit}} in_fm{print}' "$skill_dir/SKILL.md" \
+    2>/dev/null | grep -qE '\bcore\b' && core_count=$((core_count + 1)) || true
+done
+
 count=$(grep -c 'agentguard:skill:' "$FAKE_HOME/.claude/CLAUDE.md" 2>/dev/null || echo 0)
-if [[ "$count" -eq 1 ]]; then
-  printf "  PASS  skill sentinel appears exactly once after 3 installs\n"
+if [[ "$count" -eq "$core_count" ]]; then
+  printf "  PASS  each core skill sentinel appears exactly once after 3 installs (%s skills)\n" "$core_count"
   ((pass++))
 else
-  printf "  FAIL  skill sentinel appears %s times (expected 1)\n" "$count"
+  printf "  FAIL  skill sentinels: %s found, expected %s (one per core skill)\n" "$count" "$core_count"
   ((fail++))
 fi
 
