@@ -21,11 +21,27 @@ See [docs/configuration.md](docs/configuration.md) for the full list of enforced
 Requires: `bash`, `jq`.
 
 ```bash
-./install.sh claude   # Claude Code (installs to ~/.claude/)
-./install.sh kiro     # Kiro (installs to ~/.kiro/)
-./install.sh cursor   # Cursor IDE (installs to .cursor/ in current directory)
-./install.sh codex    # Codex (installs to ~/AGENTS.md)
-./install.sh all      # All agents
+# Clone once, install globally
+git clone https://github.com/SumonMSelim/agentguard.git ~/agentguard
+~/agentguard/install.sh claude   # Claude Code (installs to ~/.claude/)
+~/agentguard/install.sh kiro     # Kiro (installs to ~/.kiro/)
+~/agentguard/install.sh cursor   # Cursor IDE (installs to .cursor/ in current directory)
+~/agentguard/install.sh codex    # Codex (installs to ~/AGENTS.md)
+~/agentguard/install.sh all      # All agents
+```
+
+Installing Claude Code guardrails also drops an `agentguard` CLI wrapper to `~/.local/bin/`. After that you can run `agentguard` from any directory:
+
+```bash
+agentguard claude --project --skills go,aws   # add skills to current project
+agentguard check claude                        # verify installation
+agentguard uninstall claude                    # remove
+```
+
+If `~/.local/bin` is not in your `PATH`, add this to your shell profile:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
 ```bash
@@ -40,29 +56,30 @@ Re-running is safe — existing files are backed up with a timestamp suffix. `se
 ## Uninstall
 
 ```bash
-./install.sh uninstall claude
-./install.sh uninstall all
-./install.sh uninstall claude --dry-run   # preview first
+agentguard uninstall claude
+agentguard uninstall all
+agentguard uninstall claude --dry-run   # preview first
 ```
 
-Removes only what agentguard owns: hooks, instruction file, Kiro agent config. Claude `settings.json` is surgically unmerged — your own keys untouched, file not deleted.
+Removes only what agentguard owns: hooks, instruction file, Kiro agent config, CLI wrapper. Claude `settings.json` is surgically unmerged — your own keys untouched, file not deleted.
 
 ## Check installation status
 
 ```bash
-./install.sh check claude
-./install.sh check all
+agentguard check claude
+agentguard check all
 ```
 
-Reports which hooks, files, and settings are present or missing. Exits 1 if anything is out of order — useful in CI to assert guardrails are in place.
+Reports which hooks, files, settings, and CLI wrapper are present or missing. Exits 1 if anything is out of order — useful in CI to assert guardrails are in place.
 
 ## Upgrade
 
-Re-running `install.sh` skips existing files — it only appends missing skills. To pick up a new agentguard version:
+Re-running install skips existing files — it only appends missing skills. To pick up a new agentguard version:
 
 ```bash
-./install.sh uninstall claude
-./install.sh claude
+cd ~/agentguard && git pull
+agentguard uninstall claude
+agentguard claude
 ```
 
 ## Skills
@@ -88,35 +105,37 @@ Install once, active in every project. Best for universal practices that apply r
 
 ```bash
 # Core skills only (default)
-./install.sh claude
+agentguard claude
 
 # Add language/cloud skills globally
-./install.sh claude --skills go,aws,kubernetes
+agentguard claude --skills go,aws,kubernetes
 
 # Skip all skills
-./install.sh claude --skills none
+agentguard claude --skills none
 ```
 
 ### Per-project skills
 
-`--project` appends skills to the instruction file in the **current directory** instead of `~`. No hooks or settings changes — skills only.
+`--project` appends skills to the instruction file in the **current directory** instead of `~`. No hooks or settings changes — skills only. Requires `agentguard` CLI (installed with Claude Code global install).
 
-| Agent       | File written                                                     |
-|-------------|------------------------------------------------------------------|
-| Claude Code | `.claude/CLAUDE.md` in CWD                                       |
-| Codex       | `AGENTS.md` in CWD                                               |
-| Cursor      | Always project-local — use `./install.sh cursor --skills <list>` |
-| Kiro        | Not supported — install globally                                 |
+| Agent       | File written                                          | Notes                            |
+|-------------|-------------------------------------------------------|----------------------------------|
+| Claude Code | `.claude/CLAUDE.md` in CWD                            |                                  |
+| Codex       | `AGENTS.md` in CWD                                    |                                  |
+| Cursor      | `.cursor/` in CWD (hooks + `AGENTS.md`)               | Always project-local; full install |
+| Kiro        | —                                                     | Not supported; prints warning    |
 
 ```bash
-# In your project root:
-./install.sh claude --project --skills go,aws     # → .claude/CLAUDE.md
-./install.sh codex  --project --skills go,aws     # → AGENTS.md
-./install.sh cursor --skills go,aws               # → AGENTS.md + hooks
-./install.sh kiro   --project --skills go,aws     # prints warning — not supported
+# All agents at once — recommended:
+agentguard all --project --skills go,aws
+
+# Or per-agent:
+agentguard claude --project --skills go,aws     # → .claude/CLAUDE.md
+agentguard codex  --project --skills go,aws     # → AGENTS.md
+agentguard cursor --skills go,aws               # → .cursor/ (hooks + AGENTS.md)
 
 # Preview without writing:
-./install.sh claude --project --skills go,aws --dry-run
+agentguard all --project --skills go,aws --dry-run
 ```
 
 Claude Code loads both `~/.claude/CLAUDE.md` (global) and `.claude/CLAUDE.md` (project) simultaneously — project skills layer on top. Codex checks `AGENTS.md` in CWD first, then `~/AGENTS.md`. Cursor reads only the project-local `AGENTS.md`.
@@ -130,7 +149,7 @@ Create `skills/<name>/SKILL.md` with YAML frontmatter (`name`, `tags`, `descript
 ## Notes
 
 - **Kiro** — guardrails only activate when using the `agentguard` agent. Switch to it in Kiro after install.
-- **Cursor** — guardrails are project-local. `./install.sh cursor` installs `.cursor/` into the current directory.
+- **Cursor** — guardrails are project-local. `agentguard cursor` installs `.cursor/` into the current directory.
 - **Codex** — instruction-only; no hooks, no automated enforcement backstop.
 - **`block-env.sh`** — best-effort on the bash surface. `block-env-read.sh` is the primary layer (intercepts Read/Write/Edit tools directly).
 
