@@ -19,5 +19,6 @@ run_suite "Claude"     "$DIR/claude.sh"
 run_suite "Kiro"       "$DIR/kiro.sh"
 run_suite "Uninstall"  "$DIR/uninstall.sh"
 run_suite "Check"      "$DIR/check.sh"
+run_suite "Project"    "$DIR/project.sh"
 
 exit $overall
