@@ -1,4 +1,4 @@
-# Global Rules
+# Global Rules — Apply to Every Project
 
 ---
 
@@ -16,25 +16,21 @@
 ## 🔁 Git Workflow
 
 ### Always ask before:
-
 - `git commit`, `git push`, opening or merging a PR
 - Any force push (`--force`, `-f`, `--force-with-lease`) — always blocked
 - `git reset --hard`, `git clean -f`, `git branch -D`
 - `git stash drop` / `git stash clear`
 
 ### Branch discipline
-
 - Check current branch first: `git branch --show-current`
 - On `main`/`master`: pull, then create a feature branch
   - `git checkout -b <type>/<short-description>`
 - NEVER commit or push directly to `main`/`master`
 
 ### Commit messages — Conventional Commits
-
 ```
 <type>[optional scope]: <short description>
 ```
-
 Types: `feat` | `fix` | `docs` | `style` | `refactor` | `perf` | `test` | `chore` | `build` | `ci` | `revert`
 
 - Subject ≤ 72 chars, lowercase, no trailing period
@@ -43,7 +39,6 @@ Types: `feat` | `fix` | `docs` | `style` | `refactor` | `perf` | `test` | `chore
 - No vague messages: "fix stuff", "WIP", "update", "changes"
 
 ### Attribution
-
 - NEVER add AI/tool attribution to commits, PR descriptions, or code comments.
 
 ---
@@ -60,6 +55,13 @@ Types: `feat` | `fix` | `docs` | `style` | `refactor` | `perf` | `test` | `chore
   - No `gem install` (system), `cargo install` to system paths
 - NEVER pipe-to-shell (`curl | bash`, `wget | sh`). Download first, inspect, then run.
 - Unsure if system install needed? Ask first.
+
+---
+
+## 🖥️ Shell Environment
+
+- Start of shell session: read `~/.zshrc` or `~/.bashrc` to understand aliases.
+- Command behaves unexpectedly? Check if it's aliased. Use aliased syntax or full path.
 
 ---
 
@@ -112,3 +114,4 @@ Types: `feat` | `fix` | `docs` | `style` | `refactor` | `perf` | `test` | `chore
 - No preamble: skip "Certainly!", "Great question!", "Of course!".
 - Direct and concise. Summarize at the end, don't pad.
 - Can't do something due to a rule → say so briefly and explain why.
+- Context compacted → re-read this file and restate current task.
