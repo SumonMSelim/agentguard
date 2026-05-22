@@ -92,12 +92,12 @@ Install once, active in every project. Best for universal practices and skills t
 
 `--project` appends skills to the instruction file in the **current directory** instead of `~`. No hooks or settings changes — skills only.
 
-| Agent       | File written                                                                        |
-|-------------|-------------------------------------------------------------------------------------|
-| Claude Code | `.claude/CLAUDE.md` in CWD                                                          |
-| Codex       | `AGENTS.md` in CWD                                                                  |
+| Agent       | File written                                                                              |
+|-------------|-------------------------------------------------------------------------------------------|
+| Claude Code | `.claude/CLAUDE.md` in CWD                                                                |
+| Codex       | `AGENTS.md` in CWD                                                                        |
 | Cursor      | `AGENTS.md` in CWD — `--project` for skills only, `--skills` for full install with hooks |
-| Kiro        | Not supported — install globally                                                    |
+| Kiro        | Not supported — install globally                                                          |
 
 ```bash
 # In your Go + AWS project root:
