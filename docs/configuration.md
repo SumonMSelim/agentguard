@@ -85,12 +85,11 @@ Skills are behavioural packs appended to the instruction file at install time.
 # From your project root:
 ./install.sh claude --project --skills go,aws    # → .claude/CLAUDE.md
 ./install.sh codex  --project --skills go,aws    # → AGENTS.md
+./install.sh cursor --skills go,aws              # → AGENTS.md + hooks (always project-local)
 ./install.sh kiro   --project --skills go,aws    # prints warning — not supported
 ```
 
 Kiro's `agent.json` hardcodes a single global file path; per-project overrides require manual `agent.json` edits.
-
-Cursor does not support `--project`. Skills are copied to `.cursor/skills/` during `./install.sh cursor` but are not auto-appended to `AGENTS.md` — copy the relevant `SKILL.md` content manually to activate them.
 
 ### Adding a skill
 
