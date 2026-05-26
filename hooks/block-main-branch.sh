@@ -8,8 +8,10 @@
 # 3. Blocks explicit pushes targeting protected branches regardless of current branch,
 #    including refspec-style pushes (HEAD:main, refs/heads/main).
 #
-# Protected branches: defaults to main and master. Override by setting
-# AGENTGUARD_PROTECTED_BRANCHES to a comma-separated list, e.g.:
+# Protected branches: defaults to main and master. Override sources in order:
+#   1. AGENTGUARD_PROTECTED_BRANCHES env var (wins if set)
+#   2. ~/.agentguard/config (written by install.sh; sourced when env unset)
+# Both accept a comma-separated list, e.g.:
 #   export AGENTGUARD_PROTECTED_BRANCHES="main,master,develop,trunk"
 #
 # Shared hook — used by both Claude (Bash tool) and Kiro (execute_bash tool).
@@ -45,6 +47,14 @@ if echo "$COMMAND" | grep -qE "${_GIT_STMT}push.*[[:space:]](-f|--force|--force-
   echo "Blocked: force push is not permitted in any form." >&2
   echo "Rewrite history locally if needed, then open a PR instead of force-pushing." >&2
   exit 2
+fi
+
+# Load config file when env var unset. Env var still wins so users can
+# override per-shell without touching the config.
+_config_file="${AGENTGUARD_CONFIG_FILE:-$HOME/.agentguard/config}"
+if [[ -z "${AGENTGUARD_PROTECTED_BRANCHES:-}" && -f "$_config_file" ]]; then
+  # shellcheck disable=SC1090
+  source "$_config_file"
 fi
 
 # Build the protected-branch regex from AGENTGUARD_PROTECTED_BRANCHES (comma-separated).

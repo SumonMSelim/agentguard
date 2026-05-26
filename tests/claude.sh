@@ -138,6 +138,20 @@ run_hook_tests() {
     check "blocks push to custom branch (develop)" \
     block '{"tool_input":{"command":"git push origin develop"}}' block-main-branch.sh
 
+  # Config file source: ~/.agentguard/config via AGENTGUARD_CONFIG_FILE override
+  CFG_TMP=$(mktemp)
+  trap 'rm -f "$CFG_TMP"; rm -rf "$MAIN_REPO" "${DEVELOP_REPO:-}"' EXIT
+  echo 'AGENTGUARD_PROTECTED_BRANCHES="trunk,release"' > "$CFG_TMP"
+  AGENTGUARD_CONFIG_FILE="$CFG_TMP" \
+    check "blocks push to branch from config file" \
+    block '{"tool_input":{"command":"git push origin trunk"}}' block-main-branch.sh
+  AGENTGUARD_CONFIG_FILE="$CFG_TMP" \
+    check "allows push to branch not in config" \
+    allow '{"tool_input":{"command":"git push origin main"}}' block-main-branch.sh
+  AGENTGUARD_PROTECTED_BRANCHES="main" AGENTGUARD_CONFIG_FILE="$CFG_TMP" \
+    check "env var wins over config file" \
+    block '{"tool_input":{"command":"git push origin main"}}' block-main-branch.sh
+
   echo ""
   echo "block-system-installs.sh"
   check "blocks brew install"         block '{"tool_input":{"command":"brew install node"}}'                  block-system-installs.sh
