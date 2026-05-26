@@ -99,7 +99,7 @@ backup_if_exists() {
 
 AGENTGUARD_CONFIG_DIR="$HOME/.agentguard"
 AGENTGUARD_CONFIG_FILE="$AGENTGUARD_CONFIG_DIR/config"
-DEFAULT_PROTECTED_BRANCHES="main,master,dev,staging,production"
+DEFAULT_PROTECTED_BRANCHES="main,master"
 
 prompt_protected_branches() {
   local default="$DEFAULT_PROTECTED_BRANCHES"
