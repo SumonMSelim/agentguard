@@ -9,6 +9,7 @@
 #   ./install.sh [claude|codex|kiro|cursor|all]           — install (default: claude)
 #   ./install.sh uninstall [claude|codex|kiro|cursor|all] — remove guardrails
 #   ./install.sh check [claude|codex|kiro|cursor|all]     — report installation status (no writes)
+#   ./install.sh upgrade                                   — git pull + reinstall all tracked agents
 #
 #   --skills <list>        — comma-separated skill names to append (e.g. karpathy-guidelines)
 #                            Skills tagged [core] are always appended unless --skills none
@@ -24,14 +25,16 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+AGENTGUARD_VERSION="$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "unknown")"
 AGENT="${1:-claude}"
 SKILLS_ARG=""
 DRY_RUN=0
 UNINSTALL=0
 CHECK=0
 PROJECT=0
+UPGRADE=0
 
-# Detect uninstall/check subcommands: ./install.sh uninstall|check [agent]
+# Detect subcommands: ./install.sh uninstall|check|upgrade [agent]
 if [[ "$AGENT" == "uninstall" ]]; then
   UNINSTALL=1
   AGENT="${2:-claude}"
@@ -39,6 +42,9 @@ if [[ "$AGENT" == "uninstall" ]]; then
 elif [[ "$AGENT" == "check" ]]; then
   CHECK=1
   AGENT="${2:-claude}"
+  shift || true
+elif [[ "$AGENT" == "upgrade" ]]; then
+  UPGRADE=1
   shift || true
 fi
 
@@ -374,6 +380,7 @@ install_claude() {
   merge_settings "$dest/settings.json" \
                  "$SCRIPT_DIR/agents/claude/settings.json" \
                  "$dest/settings.json"
+  track_installed_agent "claude"
 }
 
 install_cli_wrapper() {
@@ -435,6 +442,7 @@ install_kiro() {
     cp "$SCRIPT_DIR/agents/kiro/agent.json" "$agent_dest/agentguard.json"
     ok "agentguard agent config installed → $agent_dest/agentguard.json"
   fi
+  track_installed_agent "kiro"
 }
 
 install_codex() {
@@ -463,6 +471,7 @@ install_codex() {
     append_skills "$dest/AGENTS.md"
   fi
   log "Note: Codex does not support shell hooks — instruction file only."
+  track_installed_agent "codex"
 }
 
 install_cursor() {
@@ -521,6 +530,7 @@ install_cursor() {
   install_hooks "$dest/hooks"
 
   ok "Cursor config installed → $dest"
+  track_installed_agent "cursor"
 }
 
 # ── uninstallers ──────────────────────────────────────────────────────────────
@@ -603,6 +613,151 @@ remove_agentguard_config() {
   else
     log "~/.agentguard/config not found (already removed?)"
   fi
+}
+
+# ── version checking & upgrade ───────────────────────────────────────────────
+
+# check_for_update — fetches latest GitHub release tag and prints a notice if
+# a newer version is available. Silently skips if curl is absent or offline.
+check_for_update() {
+  command -v curl >/dev/null 2>&1 || return 0
+  [[ "$AGENTGUARD_VERSION" == "unknown" ]] && return 0
+
+  local latest
+  latest=$(curl -sf --max-time 3 \
+    "https://api.github.com/repos/SumonMSelim/agentguard/releases/latest" \
+    | grep '"tag_name"' \
+    | sed -E 's/.*"tag_name": *"v?([^"]+)".*/\1/') || return 0
+  [[ -z "$latest" ]] && return 0
+
+  # Simple semver comparison: split on dots, compare numerically field by field.
+  _semver_gt() {
+    local a="$1" b="$2"
+    IFS='.' read -r a1 a2 a3 <<< "$a"
+    IFS='.' read -r b1 b2 b3 <<< "$b"
+    [[ "${a1:-0}" -gt "${b1:-0}" ]] && return 0
+    [[ "${a1:-0}" -eq "${b1:-0}" && "${a2:-0}" -gt "${b2:-0}" ]] && return 0
+    [[ "${a1:-0}" -eq "${b1:-0}" && "${a2:-0}" -eq "${b2:-0}" && "${a3:-0}" -gt "${b3:-0}" ]] && return 0
+    return 1
+  }
+
+  if _semver_gt "$latest" "$AGENTGUARD_VERSION"; then
+    echo ""
+    echo "  ┌─────────────────────────────────────────────────────────┐"
+    printf  "  │  agentguard update available: v%s → v%s%*s│\n" \
+      "$AGENTGUARD_VERSION" "$latest" \
+      $((25 - ${#AGENTGUARD_VERSION} - ${#latest})) ""
+    echo "  │  Run: agentguard upgrade                                │"
+    echo "  └─────────────────────────────────────────────────────────┘"
+  fi
+}
+
+# track_installed_agent <agent> — persists agent name to config so upgrade
+# knows which agents to reinstall. Idempotent.
+track_installed_agent() {
+  local agent="$1"
+  [[ "$DRY_RUN" -eq 1 ]] && return 0
+  mkdir -p "$AGENTGUARD_CONFIG_DIR"
+
+  local current=""
+  if [[ -f "$AGENTGUARD_CONFIG_FILE" ]]; then
+    current=$(grep -E '^AGENTGUARD_INSTALLED_AGENTS=' "$AGENTGUARD_CONFIG_FILE" \
+              | tail -n1 \
+              | sed -E 's/^AGENTGUARD_INSTALLED_AGENTS=//; s/^"//; s/"$//') || true
+  fi
+
+  # Add agent if not already listed.
+  if ! echo " $current " | grep -qF " $agent "; then
+    local updated
+    updated=$(echo "$current $agent" | tr -s ' ' | sed 's/^ //; s/ $//')
+    # Write or replace the AGENTGUARD_INSTALLED_AGENTS line.
+    if grep -q '^AGENTGUARD_INSTALLED_AGENTS=' "$AGENTGUARD_CONFIG_FILE" 2>/dev/null; then
+      local tmp
+      tmp=$(mktemp)
+      grep -v '^AGENTGUARD_INSTALLED_AGENTS=' "$AGENTGUARD_CONFIG_FILE" > "$tmp"
+      echo "AGENTGUARD_INSTALLED_AGENTS=\"$updated\"" >> "$tmp"
+      mv "$tmp" "$AGENTGUARD_CONFIG_FILE"
+    else
+      mkdir -p "$AGENTGUARD_CONFIG_DIR"
+      echo "AGENTGUARD_INSTALLED_AGENTS=\"$updated\"" >> "$AGENTGUARD_CONFIG_FILE"
+    fi
+  fi
+}
+
+# untrack_installed_agent <agent> — removes agent from the tracked list.
+untrack_installed_agent() {
+  local agent="$1"
+  [[ -f "$AGENTGUARD_CONFIG_FILE" ]] || return 0
+
+  local current
+  current=$(grep -E '^AGENTGUARD_INSTALLED_AGENTS=' "$AGENTGUARD_CONFIG_FILE" \
+            | tail -n1 \
+            | sed -E 's/^AGENTGUARD_INSTALLED_AGENTS=//; s/^"//; s/"$//') || true
+
+  local updated
+  # grep -v exits 1 when no lines pass (last agent removed) — suppress with ||true.
+  updated=$(echo "$current" | tr ' ' '\n' | { grep -v "^${agent}$" || true; } | tr '\n' ' ' | sed 's/^ //; s/ $//')
+
+  local tmp
+  tmp=$(mktemp)
+  grep -v '^AGENTGUARD_INSTALLED_AGENTS=' "$AGENTGUARD_CONFIG_FILE" > "$tmp"
+  [[ -n "$updated" ]] && echo "AGENTGUARD_INSTALLED_AGENTS=\"$updated\"" >> "$tmp"
+  mv "$tmp" "$AGENTGUARD_CONFIG_FILE"
+}
+
+# do_upgrade — pulls latest agentguard from git, then reinstalls all
+# previously tracked agents.
+do_upgrade() {
+  echo "agentguard upgrade"
+  echo ""
+
+  # Verify this script lives inside a git repo (it should — it's the clone).
+  if ! git -C "$SCRIPT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+    fail "Cannot upgrade: $SCRIPT_DIR is not a git repository. Clone agentguard to upgrade."
+  fi
+
+  echo "Pulling latest agentguard from origin..."
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would run: git -C $SCRIPT_DIR pull --ff-only"
+  else
+    git -C "$SCRIPT_DIR" pull --ff-only || fail "git pull failed. Resolve conflicts manually."
+    ok "Repository updated"
+  fi
+
+  # Re-read version after pull.
+  local new_version
+  new_version=$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "unknown")
+
+  # Read tracked agents from config.
+  local tracked=""
+  if [[ -f "$AGENTGUARD_CONFIG_FILE" ]]; then
+    tracked=$(grep -E '^AGENTGUARD_INSTALLED_AGENTS=' "$AGENTGUARD_CONFIG_FILE" \
+              | tail -n1 \
+              | sed -E 's/^AGENTGUARD_INSTALLED_AGENTS=//; s/^"//; s/"$//') || true
+  fi
+
+  if [[ -z "$tracked" ]]; then
+    echo "No tracked agent installations found in $AGENTGUARD_CONFIG_FILE."
+    echo "Run './install.sh <agent>' to install and start tracking."
+    exit 0
+  fi
+
+  echo ""
+  echo "Reinstalling tracked agents: $tracked"
+  for agent in $tracked; do
+    echo ""
+    echo "── $agent ──"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would uninstall $agent then reinstall $agent"
+    else
+      bash "$SCRIPT_DIR/install.sh" uninstall "$agent"
+      echo ""
+      bash "$SCRIPT_DIR/install.sh" "$agent"
+    fi
+  done
+
+  echo ""
+  ok "Upgrade complete → agentguard v$new_version"
 }
 
 # unmerge_settings <settings_path> <guardrails_path>
@@ -707,6 +862,7 @@ uninstall_claude() {
   remove_file  "$dest/CLAUDE.md"
   unmerge_settings "$dest/settings.json" "$SCRIPT_DIR/agents/claude/settings.json"
   remove_file  "$HOME/.local/bin/agentguard"
+  untrack_installed_agent "claude"
 }
 
 uninstall_kiro() {
@@ -718,6 +874,7 @@ uninstall_kiro() {
   remove_hooks "$dest/hooks"
   remove_file  "$dest/KIRO.md"
   remove_file  "$dest/agents/agentguard.json"
+  untrack_installed_agent "kiro"
 }
 
 uninstall_codex() {
@@ -728,6 +885,7 @@ uninstall_codex() {
 
   remove_file "$dest/AGENTS.md"
   log "Note: no hooks to remove — Codex is instruction-file only."
+  untrack_installed_agent "codex"
 }
 
 CURSOR_AGENTGUARD_FILES=(
@@ -797,6 +955,7 @@ uninstall_cursor() {
   elif [[ "$DRY_RUN" -eq 0 ]]; then
     ok "Cursor guardrail files removed"
   fi
+  untrack_installed_agent "cursor"
 }
 
 # ── check ─────────────────────────────────────────────────────────────────────
@@ -1012,6 +1171,14 @@ install_project_kiro() {
 
 # ── entry point ───────────────────────────────────────────────────────────────
 
+if [[ "$UPGRADE" -eq 1 ]]; then
+  do_upgrade
+  echo ""
+  echo "Done."
+  [[ "$DRY_RUN" -eq 1 ]] && echo "(dry-run: no files were changed)"
+  exit 0
+fi
+
 if [[ "$CHECK" -eq 1 ]]; then
   case "$AGENT" in
     claude) check_claude ;;
@@ -1023,9 +1190,11 @@ if [[ "$CHECK" -eq 1 ]]; then
   esac
   if [[ "$_check_issues" -eq 0 ]]; then
     echo "All checks passed."
+    check_for_update
     exit 0
   else
     echo "$_check_issues issue(s) found. Run './install.sh [agent]' to fix."
+    check_for_update
     exit 1
   fi
 fi
