@@ -583,6 +583,28 @@ remove_file() {
   fi
 }
 
+# remove_agentguard_config — removes ~/.agentguard/config written by install.sh.
+# Removes the directory too if it is empty afterwards.
+remove_agentguard_config() {
+  local cfg_file="$HOME/.agentguard/config"
+  local cfg_dir="$HOME/.agentguard"
+  if [[ -f "$cfg_file" ]]; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would remove $cfg_file"
+    else
+      rm "$cfg_file"
+      ok "Removed $cfg_file"
+      # Remove the directory only if it is now empty.
+      if [[ -d "$cfg_dir" ]] && [[ -z "$(ls -A "$cfg_dir")" ]]; then
+        rmdir "$cfg_dir"
+        log "Removed empty directory $cfg_dir"
+      fi
+    fi
+  else
+    log "~/.agentguard/config not found (already removed?)"
+  fi
+}
+
 # unmerge_settings <settings_path> <guardrails_path>
 #
 # Strips agentguard entries from an existing settings.json:
@@ -1014,7 +1036,7 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     codex)  uninstall_codex  ;;
     kiro)   uninstall_kiro   ;;
     cursor) uninstall_cursor ;;
-    all)    uninstall_claude; echo; uninstall_codex; echo; uninstall_kiro; echo; uninstall_cursor ;;
+    all)    uninstall_claude; echo; uninstall_codex; echo; uninstall_kiro; echo; uninstall_cursor; echo; remove_agentguard_config ;;
     *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | all" ;;
   esac
   echo ""
@@ -1038,7 +1060,8 @@ if [[ "$PROJECT" -eq 1 ]]; then
   exit 0
 fi
 
-prompt_protected_branches
+# codex is instruction-only (no hooks), so protected-branch config is irrelevant.
+[[ "$AGENT" != "codex" ]] && prompt_protected_branches
 
 case "$AGENT" in
   claude) install_claude ;;
