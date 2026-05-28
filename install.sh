@@ -86,6 +86,75 @@ backup_if_exists() {
   fi
 }
 
+# ── interactive config ────────────────────────────────────────────────────────
+#
+# Prompts the user for git branches to protect from direct commit/push and
+# writes them to ~/.agentguard/config. hooks/block-main-branch.sh parses
+# that file at runtime (never sources it) when AGENTGUARD_PROTECTED_BRANCHES
+# is not already set. Input is validated against a strict charset before
+# being persisted so a malicious entry cannot reach the hook.
+#
+# Re-running install re-prompts; the previously saved value becomes the new
+# default so the user can keep it with one Enter.
+#
+# Non-TTY (CI, piped stdin): silently uses the default. Dry-run: no write.
+
+AGENTGUARD_CONFIG_DIR="$HOME/.agentguard"
+AGENTGUARD_CONFIG_FILE="$AGENTGUARD_CONFIG_DIR/config"
+DEFAULT_PROTECTED_BRANCHES="main,master"
+
+prompt_protected_branches() {
+  local default="$DEFAULT_PROTECTED_BRANCHES"
+
+  # If a previous install wrote a value, use it as the new default.
+  if [[ -f "$AGENTGUARD_CONFIG_FILE" ]]; then
+    local prev
+    prev=$(grep -E '^AGENTGUARD_PROTECTED_BRANCHES=' "$AGENTGUARD_CONFIG_FILE" \
+           | tail -n1 \
+           | sed -E 's/^AGENTGUARD_PROTECTED_BRANCHES=//; s/^"//; s/"$//') || true
+    [[ -n "$prev" ]] && default="$prev"
+  fi
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would prompt for protected branches; default: $default"
+    dry "Would write → $AGENTGUARD_CONFIG_FILE"
+    return
+  fi
+
+  local input=""
+  if [[ -t 0 ]]; then
+    echo ""
+    echo "Which git branches should be protected from direct commit/push?"
+    echo "Enter a comma-separated list, or press Enter to keep the default."
+    printf "Branches [%s]: " "$default"
+    read -r input || true
+  else
+    log "No TTY — using default protected branches: $default"
+  fi
+
+  local value="${input:-$default}"
+  value=$(echo "$value" | tr -d '[:space:]')
+
+  # Validate before writing — the config file is sourced/parsed at hook
+  # runtime, so anything outside the documented charset must be rejected
+  # to prevent shell injection via the persisted value.
+  if [[ ! "$value" =~ ^[a-zA-Z0-9_,/.-]+$ ]]; then
+    log "Invalid characters in '$value' — falling back to default '$DEFAULT_PROTECTED_BRANCHES'"
+    value="$DEFAULT_PROTECTED_BRANCHES"
+  fi
+
+  mkdir -p "$AGENTGUARD_CONFIG_DIR"
+  cat > "$AGENTGUARD_CONFIG_FILE" <<EOF
+# agentguard config — written by install.sh
+# Parsed (not sourced) by hooks/block-main-branch.sh when
+# AGENTGUARD_PROTECTED_BRANCHES is not already set in the environment.
+AGENTGUARD_PROTECTED_BRANCHES="$value"
+EOF
+  chmod 644 "$AGENTGUARD_CONFIG_FILE"
+  ok "Protected branches saved → $AGENTGUARD_CONFIG_FILE"
+  log "  branches: $value"
+}
+
 # ── hook installation ─────────────────────────────────────────────────────────
 
 install_hooks() {
@@ -968,6 +1037,8 @@ if [[ "$PROJECT" -eq 1 ]]; then
   [[ "$DRY_RUN" -eq 1 ]] && echo "(dry-run: no files were written)"
   exit 0
 fi
+
+prompt_protected_branches
 
 case "$AGENT" in
   claude) install_claude ;;
