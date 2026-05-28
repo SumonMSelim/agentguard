@@ -51,10 +51,21 @@ fi
 
 # Load config file when env var unset. Env var still wins so users can
 # override per-shell without touching the config.
+#
+# The config file is user-writable, so we never `source` it — that would
+# execute any shell payload an attacker placed there. We parse only the one
+# variable we expect and validate its value against a strict character set
+# before accepting it. Anything that doesn't match falls back to the default.
 _config_file="${AGENTGUARD_CONFIG_FILE:-$HOME/.agentguard/config}"
 if [[ -z "${AGENTGUARD_PROTECTED_BRANCHES:-}" && -f "$_config_file" ]]; then
-  # shellcheck disable=SC1090
-  source "$_config_file"
+  _cfg_val=$(grep -E '^AGENTGUARD_PROTECTED_BRANCHES=' "$_config_file" \
+             | tail -n1 \
+             | sed -E 's/^AGENTGUARD_PROTECTED_BRANCHES=//; s/^"//; s/"$//' \
+             | tr -d '[:space:]')
+  if [[ -n "$_cfg_val" && "$_cfg_val" =~ ^[a-zA-Z0-9_,/.-]+$ ]]; then
+    AGENTGUARD_PROTECTED_BRANCHES="$_cfg_val"
+  fi
+  unset _cfg_val
 fi
 
 # Build the protected-branch regex from AGENTGUARD_PROTECTED_BRANCHES (comma-separated).

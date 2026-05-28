@@ -89,8 +89,10 @@ backup_if_exists() {
 # ── interactive config ────────────────────────────────────────────────────────
 #
 # Prompts the user for git branches to protect from direct commit/push and
-# writes them to ~/.agentguard/config. hooks/block-main-branch.sh sources this
-# file at runtime when AGENTGUARD_PROTECTED_BRANCHES is not already set.
+# writes them to ~/.agentguard/config. hooks/block-main-branch.sh parses
+# that file at runtime (never sources it) when AGENTGUARD_PROTECTED_BRANCHES
+# is not already set. Input is validated against a strict charset before
+# being persisted so a malicious entry cannot reach the hook.
 #
 # Re-running install re-prompts; the previously saved value becomes the new
 # default so the user can keep it with one Enter.
@@ -133,11 +135,19 @@ prompt_protected_branches() {
   local value="${input:-$default}"
   value=$(echo "$value" | tr -d '[:space:]')
 
+  # Validate before writing — the config file is sourced/parsed at hook
+  # runtime, so anything outside the documented charset must be rejected
+  # to prevent shell injection via the persisted value.
+  if [[ ! "$value" =~ ^[a-zA-Z0-9_,/.-]+$ ]]; then
+    log "Invalid characters in '$value' — falling back to default '$DEFAULT_PROTECTED_BRANCHES'"
+    value="$DEFAULT_PROTECTED_BRANCHES"
+  fi
+
   mkdir -p "$AGENTGUARD_CONFIG_DIR"
   cat > "$AGENTGUARD_CONFIG_FILE" <<EOF
 # agentguard config — written by install.sh
-# Sourced by hooks/block-main-branch.sh when AGENTGUARD_PROTECTED_BRANCHES
-# is not already set in the environment.
+# Parsed (not sourced) by hooks/block-main-branch.sh when
+# AGENTGUARD_PROTECTED_BRANCHES is not already set in the environment.
 AGENTGUARD_PROTECTED_BRANCHES="$value"
 EOF
   chmod 644 "$AGENTGUARD_CONFIG_FILE"

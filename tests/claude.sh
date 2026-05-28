@@ -152,6 +152,34 @@ run_hook_tests() {
     check "env var wins over config file" \
     block '{"tool_input":{"command":"git push origin main"}}' block-main-branch.sh
 
+  # Security: malicious config never executes; injected payload value rejected.
+  # If `source` were still used, this rm would run. We verify both: the marker
+  # file is NOT created, and the bad value falls back to default (main,master).
+  CFG_RCE=$(mktemp)
+  RCE_MARKER=$(mktemp -u)
+  cat > "$CFG_RCE" <<EOF
+AGENTGUARD_PROTECTED_BRANCHES="main; touch $RCE_MARKER"
+EOF
+  AGENTGUARD_CONFIG_FILE="$CFG_RCE" \
+    bash "$HOOKS_DIR/block-main-branch.sh" \
+    <<<'{"tool_input":{"command":"ls"}}' >/dev/null 2>&1 || true
+  if [[ ! -e "$RCE_MARKER" ]]; then
+    printf "  PASS  %s\n" "config file is parsed, not sourced (no RCE)"
+    ((pass++))
+  else
+    printf "  FAIL  %s\n" "config file was sourced — RCE marker created at $RCE_MARKER"
+    ((fail++))
+  fi
+  # Injected value should be rejected → fall back to default main,master,
+  # so a push to "main" still blocks, and a push to a non-default branch passes.
+  AGENTGUARD_CONFIG_FILE="$CFG_RCE" \
+    check "rejects injected value, falls back to default (blocks main)" \
+    block '{"tool_input":{"command":"git push origin main"}}' block-main-branch.sh
+  AGENTGUARD_CONFIG_FILE="$CFG_RCE" \
+    check "rejects injected value, falls back to default (allows feat)" \
+    allow '{"tool_input":{"command":"git push origin feat/x"}}' block-main-branch.sh
+  rm -f "$CFG_RCE" "$RCE_MARKER"
+
   echo ""
   echo "block-system-installs.sh"
   check "blocks brew install"         block '{"tool_input":{"command":"brew install node"}}'                  block-system-installs.sh
