@@ -140,17 +140,17 @@ run_hook_tests() {
 
   # Config file source: ~/.agentguard/config via AGENTGUARD_CONFIG_FILE override
   CFG_TMP=$(mktemp)
-  trap 'rm -f "$CFG_TMP"; rm -rf "$MAIN_REPO" "${DEVELOP_REPO:-}"' EXIT
   echo 'AGENTGUARD_PROTECTED_BRANCHES="trunk,release"' > "$CFG_TMP"
   AGENTGUARD_CONFIG_FILE="$CFG_TMP" \
-    check "blocks push to branch from config file" \
+    check "blocks push to branch from config file (trunk)" \
     block '{"tool_input":{"command":"git push origin trunk"}}' block-main-branch.sh
   AGENTGUARD_CONFIG_FILE="$CFG_TMP" \
-    check "allows push to branch not in config" \
+    check "config overrides default — allows push to branch not in config (main replaced by trunk,release)" \
     allow '{"tool_input":{"command":"git push origin main"}}' block-main-branch.sh
   AGENTGUARD_PROTECTED_BRANCHES="main" AGENTGUARD_CONFIG_FILE="$CFG_TMP" \
     check "env var wins over config file" \
     block '{"tool_input":{"command":"git push origin main"}}' block-main-branch.sh
+  rm -f "$CFG_TMP"
 
   # Security: malicious config never executes; injected payload value rejected.
   # If `source` were still used, this rm would run. We verify both: the marker

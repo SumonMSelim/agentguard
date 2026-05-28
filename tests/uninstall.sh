@@ -204,10 +204,12 @@ echo "uninstall all — removes everything"
 run_install all
 run_uninstall all
 
-check_false "CLAUDE.md removed (all)"        test -f "$FAKE_HOME/.claude/CLAUDE.md"
-check_false "KIRO.md removed (all)"          test -f "$FAKE_HOME/.kiro/KIRO.md"
-check_false "agentguard.json removed (all)"  test -f "$FAKE_HOME/.kiro/agents/agentguard.json"
-check_false "AGENTS.md removed (all)"        test -f "$FAKE_HOME/AGENTS.md"
+check_false "CLAUDE.md removed (all)"             test -f "$FAKE_HOME/.claude/CLAUDE.md"
+check_false "KIRO.md removed (all)"               test -f "$FAKE_HOME/.kiro/KIRO.md"
+check_false "agentguard.json removed (all)"       test -f "$FAKE_HOME/.kiro/agents/agentguard.json"
+check_false "AGENTS.md removed (all)"             test -f "$FAKE_HOME/AGENTS.md"
+check_false "~/.agentguard/config removed (all)"  test -f "$FAKE_HOME/.agentguard/config"
+check_false "~/.agentguard/ dir removed (all)"    test -d "$FAKE_HOME/.agentguard"
 for h in "${HOOKS[@]}"; do
   check_false "claude hook $h removed (all)" test -f "$FAKE_HOME/.claude/hooks/$h"
   check_false "kiro hook $h removed (all)"   test -f "$FAKE_HOME/.kiro/hooks/$h"
