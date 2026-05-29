@@ -74,12 +74,17 @@ Reports which hooks, files, settings, and CLI wrapper are present or missing. Ex
 
 ## Upgrade
 
-Re-running install skips existing files — it only appends missing skills. To pick up a new agentguard version:
+```bash
+agentguard upgrade
+```
+
+Pulls the latest agentguard, then uninstalls and reinstalls every agent you previously set up — in one step. Your personal settings and skills are preserved.
+
+To check if an update is available without upgrading:
 
 ```bash
-cd ~/agentguard && git pull
-agentguard uninstall claude
-agentguard claude
+agentguard check claude
+# prints an update notice if a newer version exists
 ```
 
 ## Skills
@@ -152,6 +157,7 @@ Create `skills/<name>/SKILL.md` with YAML frontmatter (`name`, `tags`, `descript
 - **Cursor** — guardrails are project-local. `agentguard cursor` installs `.cursor/` into the current directory.
 - **Codex** — instruction-only; no hooks, no automated enforcement backstop.
 - **`block-env.sh`** — best-effort on the bash surface. `block-env-read.sh` is the primary layer (intercepts Read/Write/Edit tools directly).
+- **Protected branches** — install prompts for which branches to protect from direct commit/push (default: `main,master`). Your answer is saved to `~/.agentguard/config` and applies across all agents. Override per-shell with `export AGENTGUARD_PROTECTED_BRANCHES="main,master,develop"`.
 
 → [Configuration reference](docs/configuration.md) — protected branches, settings.json merge rules, audit log rotation.
 
