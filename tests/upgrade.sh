@@ -93,9 +93,9 @@ else
 fi
 
 echo ""
-echo "agent tracking — install all tracks all agents"
+echo "agent tracking — install all tracks global agents (not cursor)"
 run_install all
-for agent in claude kiro codex cursor; do
+for agent in claude kiro codex; do
   if grep 'AGENTGUARD_INSTALLED_AGENTS=' "$CFG" | grep -q "$agent"; then
     printf "  PASS  %s tracked after install all\n" "$agent"
     ((pass++))
@@ -104,6 +104,14 @@ for agent in claude kiro codex cursor; do
     ((fail++))
   fi
 done
+# cursor is project-local — must NOT be tracked
+if ! grep 'AGENTGUARD_INSTALLED_AGENTS=' "$CFG" | grep -q 'cursor'; then
+  printf "  PASS  cursor not tracked (project-local)\n"
+  ((pass++))
+else
+  printf "  FAIL  cursor should not be in tracked agents\n"
+  ((fail++))
+fi
 
 echo ""
 echo "agent tracking — uninstall removes from config"
@@ -150,7 +158,7 @@ check_output_contains \
 
 check_output_contains \
   "upgrade dry-run reports would reinstall" \
-  "dry-run" \
+  "Would uninstall" \
   bash "$SCRIPT_DIR/install.sh" upgrade --dry-run
 
 # ── check_for_update silent when no network ───────────────────────────────────
