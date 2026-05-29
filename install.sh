@@ -69,10 +69,27 @@ fi
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-log()  { printf '  %s\n' "$*"; }
-ok()   { printf '✓ %s\n' "$*"; }
-fail() { printf '✗ %s\n' "$*" >&2; exit 1; }
-dry()  { printf '  [dry-run] %s\n' "$*"; }
+# ANSI color codes — stdout colors disabled when not a terminal; stderr colors
+# checked separately so fail() stays colored even when stdout is redirected.
+if [[ -t 1 ]]; then
+  _C_GREEN='\033[0;32m'; _C_YELLOW='\033[0;33m'
+  _C_CYAN='\033[0;36m';  _C_GRAY='\033[0;90m'; _C_BOLD='\033[1m'; _C_RESET='\033[0m'
+else
+  _C_GREEN=''; _C_YELLOW=''; _C_CYAN=''; _C_GRAY=''; _C_BOLD=''; _C_RESET=''
+fi
+if [[ -t 2 ]]; then
+  _C_ERR_RED='\033[0;31m'; _C_ERR_BOLD='\033[1m'; _C_ERR_RESET='\033[0m'
+else
+  _C_ERR_RED=''; _C_ERR_BOLD=''; _C_ERR_RESET=''
+fi
+
+log()  { printf "${_C_GRAY}  [INFO]${_C_RESET}    %s\n" "$*"; }
+ok()   { printf "${_C_GREEN}  [SUCCESS]${_C_RESET} %s\n" "$*"; }
+fail() { printf "${_C_ERR_BOLD}${_C_ERR_RED}\n  [ERROR]   %s\n\n${_C_ERR_RESET}" "$*" >&2; exit 1; }
+dry()  { printf "${_C_CYAN}  [DRY-RUN]${_C_RESET} %s\n" "$*"; }
+warn() { printf "${_C_YELLOW}  [WARNING]${_C_RESET}  %s\n" "$*"; }
+
+section() { printf "\n${_C_BOLD}%s${_C_RESET}\n" "$*"; }
 
 require() {
   command -v "$1" >/dev/null 2>&1 || fail "'$1' is required but not installed."
@@ -130,9 +147,10 @@ prompt_protected_branches() {
   local input=""
   if [[ -t 0 ]]; then
     echo ""
-    echo "Which git branches should be protected from direct commit/push?"
-    echo "Enter a comma-separated list, or press Enter to keep the default."
-    printf "Branches [%s]: " "$default"
+    printf "\n${_C_BOLD}Protected branches${_C_RESET}\n"
+    echo "  Which branches should be protected from direct commit/push?"
+    echo "  Enter a comma-separated list, or press Enter to keep the default."
+    printf "  Branches [%s]: " "$default"
     read -r input || true
   else
     log "No TTY — using default protected branches: $default"
@@ -350,7 +368,7 @@ append_skills() {
 install_claude() {
   local dest="$HOME/.claude"
 
-  echo "Installing Claude Code guardrails → $dest"
+  section "Installing Claude Code guardrails → $dest"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
 
   install_hooks "$dest/hooks"
@@ -409,7 +427,7 @@ WRAPPER
 install_kiro() {
   local dest="$HOME/.kiro"
 
-  echo "Installing Kiro guardrails → $dest"
+  section "Installing Kiro guardrails → $dest"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
 
   install_hooks "$dest/hooks"
@@ -450,7 +468,7 @@ install_codex() {
   # Shell hooks are not supported — AGENTS.md is the only enforcement layer.
   local dest="$HOME"
 
-  echo "Installing Codex guardrails → $dest/AGENTS.md"
+  section "Installing Codex guardrails → $dest/AGENTS.md"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
 
   # Only write AGENTS.md if it doesn't already exist — same rationale as CLAUDE.md above.
@@ -487,7 +505,7 @@ install_cursor() {
   local src_agents
   src_agents="$src_base/AGENTS.md"
 
-  echo "Installing Cursor guardrails → $dest"
+  section "Installing Cursor guardrails → $dest"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
 
   if [[ ! -d "$src_cursor" ]]; then
@@ -530,7 +548,7 @@ install_cursor() {
   install_hooks "$dest/hooks"
 
   ok "Cursor config installed → $dest"
-  track_installed_agent "cursor"
+  # Cursor is project-local — not tracked for upgrade (no single home dir to reinstall to).
 }
 
 # ── uninstallers ──────────────────────────────────────────────────────────────
@@ -643,12 +661,13 @@ check_for_update() {
 
   if _semver_gt "$latest" "$AGENTGUARD_VERSION"; then
     echo ""
-    echo "  ┌─────────────────────────────────────────────────────────┐"
-    printf  "  │  agentguard update available: v%s → v%s%*s│\n" \
-      "$AGENTGUARD_VERSION" "$latest" \
-      $((25 - ${#AGENTGUARD_VERSION} - ${#latest})) ""
-    echo "  │  Run: agentguard upgrade                                │"
-    echo "  └─────────────────────────────────────────────────────────┘"
+    printf "${_C_YELLOW}${_C_BOLD}  ┌─────────────────────────────────────────────────────────┐${_C_RESET}\n"
+    local _pad=$(( 21 - ${#AGENTGUARD_VERSION} - ${#latest} ))
+    [[ "$_pad" -lt 1 ]] && _pad=1
+    printf "${_C_YELLOW}${_C_BOLD}  │  [UPDATE]  agentguard v%s → v%s available%*s│${_C_RESET}\n" \
+      "$AGENTGUARD_VERSION" "$latest" "$_pad" ""
+    printf "${_C_YELLOW}${_C_BOLD}  │  Run: agentguard upgrade                                │${_C_RESET}\n"
+    printf "${_C_YELLOW}${_C_BOLD}  └─────────────────────────────────────────────────────────┘${_C_RESET}\n"
   fi
 }
 
@@ -708,15 +727,14 @@ untrack_installed_agent() {
 # do_upgrade — pulls latest agentguard from git, then reinstalls all
 # previously tracked agents.
 do_upgrade() {
-  echo "agentguard upgrade"
-  echo ""
+  section "agentguard upgrade"
 
   # Verify this script lives inside a git repo (it should — it's the clone).
   if ! git -C "$SCRIPT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
     fail "Cannot upgrade: $SCRIPT_DIR is not a git repository. Clone agentguard to upgrade."
   fi
 
-  echo "Pulling latest agentguard from origin..."
+  log "Pulling latest agentguard from origin..."
   if [[ "$DRY_RUN" -eq 1 ]]; then
     dry "Would run: git -C $SCRIPT_DIR pull --ff-only"
   else
@@ -737,16 +755,15 @@ do_upgrade() {
   fi
 
   if [[ -z "$tracked" ]]; then
-    echo "No tracked agent installations found in $AGENTGUARD_CONFIG_FILE."
-    echo "Run './install.sh <agent>' to install and start tracking."
+    warn "No tracked agent installations found in $AGENTGUARD_CONFIG_FILE."
+    log "Run './install.sh <agent>' to install and start tracking."
     exit 0
   fi
 
   echo ""
-  echo "Reinstalling tracked agents: $tracked"
+  log "Reinstalling tracked agents: $tracked"
   for agent in $tracked; do
-    echo ""
-    echo "── $agent ──"
+    section "── $agent ──"
     if [[ "$DRY_RUN" -eq 1 ]]; then
       dry "Would uninstall $agent then reinstall $agent"
     else
@@ -855,7 +872,7 @@ unmerge_settings() {
 uninstall_claude() {
   local dest="$HOME/.claude"
 
-  echo "Uninstalling Claude Code guardrails from $dest"
+  section "Uninstalling Claude Code guardrails from $dest"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be changed)"
 
   remove_hooks "$dest/hooks"
@@ -868,7 +885,7 @@ uninstall_claude() {
 uninstall_kiro() {
   local dest="$HOME/.kiro"
 
-  echo "Uninstalling Kiro guardrails from $dest"
+  section "Uninstalling Kiro guardrails from $dest"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be changed)"
 
   remove_hooks "$dest/hooks"
@@ -880,7 +897,7 @@ uninstall_kiro() {
 uninstall_codex() {
   local dest="$HOME"
 
-  echo "Uninstalling Codex guardrails from $dest/AGENTS.md"
+  section "Uninstalling Codex guardrails from $dest/AGENTS.md"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be changed)"
 
   remove_file "$dest/AGENTS.md"
@@ -906,7 +923,7 @@ uninstall_cursor() {
   local src_agents
   src_agents="$SCRIPT_DIR/agents/cursor/AGENTS.md"
 
-  echo "Uninstalling Cursor guardrails from $dest/.cursor"
+  section "Uninstalling Cursor guardrails from $dest/.cursor"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be changed)"
 
   # Remove AGENTS.md only if agentguard owns it: the file must start with our
@@ -955,7 +972,6 @@ uninstall_cursor() {
   elif [[ "$DRY_RUN" -eq 0 ]]; then
     ok "Cursor guardrail files removed"
   fi
-  untrack_installed_agent "cursor"
 }
 
 # ── check ─────────────────────────────────────────────────────────────────────
@@ -965,8 +981,8 @@ uninstall_cursor() {
 
 _check_issues=0
 
-_check_ok()   { printf '  ✓ %s\n' "$*"; }
-_check_fail() { printf '  ✗ %s\n' "$*"; _check_issues=$((_check_issues + 1)); }
+_check_ok()   { printf "${_C_GREEN}  [OK]${_C_RESET}      %s\n" "$*"; }
+_check_fail() { printf "${_C_RED}  [MISSING]${_C_RESET} %s\n" "$*"; _check_issues=$((_check_issues + 1)); }
 
 # check_hooks <hooks_dir>
 check_hooks() {
@@ -1059,7 +1075,7 @@ check_settings() {
 
 check_claude() {
   local dest="$HOME/.claude"
-  echo "Checking Claude Code installation → $dest"
+  section "Checking Claude Code installation → $dest"
   check_hooks   "$dest/hooks"
   check_file    "$dest/CLAUDE.md" "CLAUDE.md"
   check_settings "$dest/settings.json" "$SCRIPT_DIR/agents/claude/settings.json"
@@ -1069,7 +1085,7 @@ check_claude() {
 
 check_kiro() {
   local dest="$HOME/.kiro"
-  echo "Checking Kiro installation → $dest"
+  section "Checking Kiro installation → $dest"
   check_hooks  "$dest/hooks"
   check_file   "$dest/KIRO.md" "KIRO.md"
   check_file   "$dest/agents/agentguard.json" "agentguard.json"
@@ -1078,7 +1094,7 @@ check_kiro() {
 
 check_codex() {
   local dest="$HOME"
-  echo "Checking Codex installation → $dest"
+  section "Checking Codex installation → $dest"
   check_file "$dest/AGENTS.md" "AGENTS.md"
   echo ""
 }
@@ -1097,7 +1113,7 @@ check_exec() {
 check_cursor() {
   local dest
   dest="$(pwd)/.cursor"
-  echo "Checking Cursor installation → $dest"
+  section "Checking Cursor installation → $dest"
   check_file "$(pwd)/AGENTS.md" "AGENTS.md"
   check_file "$dest/hooks.json" "hooks.json"
   check_exec "$dest/hooks/audit-log.sh" "audit-log.sh"
@@ -1124,7 +1140,7 @@ install_project_claude() {
   dest="$(pwd)/.claude"
   local file="$dest/CLAUDE.md"
 
-  echo "Installing Claude Code project skills → $file"
+  section "Installing Claude Code project skills → $file"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
 
   if [[ ! -f "$file" ]]; then
@@ -1146,7 +1162,7 @@ install_project_codex() {
   local file
   file="$(pwd)/AGENTS.md"
 
-  echo "Installing Codex project skills → $file"
+  section "Installing Codex project skills → $file"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
 
   if [[ ! -f "$file" ]]; then
@@ -1164,9 +1180,9 @@ install_project_codex() {
 }
 
 install_project_kiro() {
-  echo "Warning: Kiro does not support per-project instruction files." >&2
-  echo "  Kiro's agent.json references a single global file (~/.kiro/KIRO.md)." >&2
-  echo "  Install skills globally instead: ./install.sh kiro --skills <list>" >&2
+  warn "Kiro does not support per-project instruction files." >&2
+  log  "Kiro's agent.json references a single global file (~/.kiro/KIRO.md)." >&2
+  log  "Install skills globally instead: ./install.sh kiro --skills <list>" >&2
 }
 
 # ── entry point ───────────────────────────────────────────────────────────────
@@ -1174,8 +1190,8 @@ install_project_kiro() {
 if [[ "$UPGRADE" -eq 1 ]]; then
   do_upgrade
   echo ""
-  echo "Done."
-  [[ "$DRY_RUN" -eq 1 ]] && echo "(dry-run: no files were changed)"
+  ok "Done."
+  [[ "$DRY_RUN" -eq 1 ]] && dry "no files were changed"
   exit 0
 fi
 
@@ -1189,11 +1205,11 @@ if [[ "$CHECK" -eq 1 ]]; then
     *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | all" ;;
   esac
   if [[ "$_check_issues" -eq 0 ]]; then
-    echo "All checks passed."
+    ok "All checks passed."
     check_for_update
     exit 0
   else
-    echo "$_check_issues issue(s) found. Run './install.sh [agent]' to fix."
+    warn "$_check_issues issue(s) found. Run './install.sh [agent]' to fix."
     check_for_update
     exit 1
   fi
@@ -1209,8 +1225,8 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | all" ;;
   esac
   echo ""
-  echo "Done."
-  [[ "$DRY_RUN" -eq 1 ]] && echo "(dry-run: no files were changed)"
+  ok "Done."
+  [[ "$DRY_RUN" -eq 1 ]] && dry "no files were changed"
   exit 0
 fi
 
@@ -1224,13 +1240,14 @@ if [[ "$PROJECT" -eq 1 ]]; then
     *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | cursor | kiro | all" ;;
   esac
   echo ""
-  echo "Done."
-  [[ "$DRY_RUN" -eq 1 ]] && echo "(dry-run: no files were written)"
+  ok "Done."
+  [[ "$DRY_RUN" -eq 1 ]] && dry "no files were written"
   exit 0
 fi
 
 # codex is instruction-only (no hooks), so protected-branch config is irrelevant.
-[[ "$AGENT" != "codex" ]] && prompt_protected_branches
+# upgrade reuses existing config — skip prompt to avoid interrupting the reinstall loop.
+[[ "$AGENT" != "codex" && "$UPGRADE" -eq 0 ]] && prompt_protected_branches
 
 case "$AGENT" in
   claude) install_claude ;;
@@ -1244,9 +1261,8 @@ esac
 install_cli_wrapper
 
 echo ""
-echo "Done."
-[[ "$DRY_RUN" -eq 1 ]] && echo "(dry-run: no files were written)"
-[[ "$AGENT" == "claude" || "$AGENT" == "all" ]] && [[ "$DRY_RUN" -eq 0 ]] && \
-  echo "Run 'claude --print-config' to verify Claude settings."
+ok "Done."
+[[ "$DRY_RUN" -eq 1 ]] && dry "no files were written"
 [[ "$AGENT" == "kiro" || "$AGENT" == "all" ]] && [[ "$DRY_RUN" -eq 0 ]] && \
-  echo "Switch to the 'agentguard' agent in Kiro to activate guardrails."
+  log "Switch to the 'agentguard' agent in Kiro to activate guardrails."
+exit 0

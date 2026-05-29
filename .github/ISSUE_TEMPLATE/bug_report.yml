@@ -1,0 +1,71 @@
+name: Bug report
+description: Something isn't working as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in as much detail as you can.
+
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent
+      description: Which AI agent are you using?
+      options:
+        - Claude Code
+        - Kiro
+        - Cursor
+        - Codex
+        - All / multiple
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: agentguard version
+      description: Run `cat ~/agentguard/VERSION` or `agentguard check <agent>` to find the version.
+      placeholder: "e.g. 1.2.0"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS and shell
+      placeholder: "e.g. macOS 15.1, zsh"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `agentguard install claude`
+        2. Ask agent to run `rm -rf /`
+        3. Hook did not block the command
+    validations:
+      required: true
+
+  - type: textarea
+    id: hook-output
+    attributes:
+      label: Hook output or error message
+      description: Paste the relevant terminal output. Redact any secrets.
+      render: shell
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Anything else that might be relevant.

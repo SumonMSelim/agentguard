@@ -1,0 +1,49 @@
+name: Feature request
+description: Suggest a new hook, skill, agent, or improvement
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before submitting, check the [roadmap discussions](https://github.com/SumonMSelim/agentguard/issues) to see if this is already planned.
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type of feature
+      options:
+        - New hook (block a dangerous operation)
+        - New skill (behaviour pack for instruction file)
+        - New agent support
+        - Installer / upgrade improvement
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the gap or risk this feature would address.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How should it work? What should be blocked / allowed / added?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any other approaches you thought about?
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Examples, links, related issues.
