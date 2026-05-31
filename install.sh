@@ -35,7 +35,10 @@ PROJECT=0
 UPGRADE=0
 
 # Detect subcommands: ./install.sh uninstall|check|upgrade [agent]
-if [[ "$AGENT" == "uninstall" ]]; then
+if [[ "$AGENT" == "version" || "$AGENT" == "--version" || "$AGENT" == "-v" ]]; then
+  echo "agentguard ${AGENTGUARD_VERSION}"
+  exit 0
+elif [[ "$AGENT" == "uninstall" ]]; then
   UNINSTALL=1
   AGENT="${2:-claude}"
   shift || true

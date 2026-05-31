@@ -18,6 +18,34 @@ See [docs/configuration.md](docs/configuration.md) for the full list of enforced
 
 ## Installation
 
+### Homebrew (macOS and Linux)
+
+```bash
+brew tap SumonMSelim/agentguard
+brew install agentguard
+```
+
+### apt / deb (Debian, Ubuntu, WSL)
+
+Download the latest `.deb` from [GitHub Releases](https://github.com/SumonMSelim/agentguard/releases/latest) and install:
+
+```bash
+VERSION=1.3.0
+curl -LO https://github.com/SumonMSelim/agentguard/releases/download/v${VERSION}/agentguard_${VERSION}_all.deb
+sudo dpkg -i agentguard_${VERSION}_all.deb
+```
+
+Requires: `jq` (`sudo apt-get install jq`).
+
+After installing via either method, install guardrails for your agent:
+
+```bash
+agentguard claude   # Claude Code
+agentguard all      # All agents
+```
+
+### Manual
+
 Requires: `bash`, `jq`.
 
 ```bash
