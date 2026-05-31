@@ -1,0 +1,25 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        run: sudo apt-get install -y jq dpkg-dev lintian
+
+      - name: Build .deb package
+        run: bash packaging/deb/build.sh dist/
+
+      - name: Upload .deb to GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*.deb

@@ -148,18 +148,19 @@ else
 fi
 
 # ── upgrade --dry-run ─────────────────────────────────────────────────────────
+# claude is already tracked in FAKE_HOME from the tracking tests above.
 
 echo ""
 echo "upgrade --dry-run"
 check_output_contains \
   "upgrade dry-run reports would pull" \
   "Would run:" \
-  bash "$SCRIPT_DIR/install.sh" upgrade --dry-run
+  bash -c "cd \"$FAKE_PROJECT\" && HOME=\"$FAKE_HOME\" bash \"$SCRIPT_DIR/install.sh\" upgrade --dry-run"
 
 check_output_contains \
   "upgrade dry-run reports would reinstall" \
   "Would uninstall" \
-  bash "$SCRIPT_DIR/install.sh" upgrade --dry-run
+  bash -c "cd \"$FAKE_PROJECT\" && HOME=\"$FAKE_HOME\" bash \"$SCRIPT_DIR/install.sh\" upgrade --dry-run"
 
 # ── check_for_update silent when no network ───────────────────────────────────
 
