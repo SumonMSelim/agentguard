@@ -14,10 +14,40 @@ on:
         type: string
 
 jobs:
+  # ── Wait for GitHub CDN tarball to stabilise (Homebrew only) ───────────────
+  # GitHub auto-generated tarballs have a non-deterministic SHA for ~2-3 min
+  # after tag creation. Homebrew verifies the SHA; deb tests don't use it.
+  wait-for-cdn:
+    name: Wait for tarball SHA to stabilise
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - name: Poll until tarball SHA is stable
+        id: check
+        run: |
+          VERSION="${{ github.event.release.tag_name || format('v{0}', inputs.version) }}"
+          VERSION="${VERSION#v}"
+          URL="https://github.com/${{ github.repository }}/archive/refs/tags/v${VERSION}.tar.gz"
+          for i in $(seq 1 10); do
+            SHA1=$(curl -sL "$URL" | sha256sum | awk '{print $1}')
+            sleep 15
+            SHA2=$(curl -sL "$URL" | sha256sum | awk '{print $1}')
+            if [[ "$SHA1" == "$SHA2" && -n "$SHA1" ]]; then
+              echo "SHA stable after $i attempt(s): $SHA1"
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Attempt $i: SHA unstable, retrying..."
+          done
+          echo "ERROR: SHA never stabilised"
+          exit 1
+
   # ── Homebrew: macOS (Apple Silicon) ────────────────────────────────────────
   homebrew-macos:
     name: Homebrew / macOS (macos-latest)
     runs-on: macos-latest
+    needs: wait-for-cdn
     steps:
       - name: Tap and install
         run: |
@@ -66,6 +96,7 @@ jobs:
   homebrew-linux:
     name: Homebrew / Linux (ubuntu-latest)
     runs-on: ubuntu-latest
+    needs: wait-for-cdn
     steps:
       - name: Install Homebrew
         run: |
