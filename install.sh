@@ -75,10 +75,10 @@ fi
 # ANSI color codes — stdout colors disabled when not a terminal; stderr colors
 # checked separately so fail() stays colored even when stdout is redirected.
 if [[ -t 1 ]]; then
-  _C_GREEN='\033[0;32m'; _C_YELLOW='\033[0;33m'
+  _C_GREEN='\033[0;32m'; _C_YELLOW='\033[0;33m'; _C_RED='\033[0;31m'
   _C_CYAN='\033[0;36m';  _C_GRAY='\033[0;90m'; _C_BOLD='\033[1m'; _C_RESET='\033[0m'
 else
-  _C_GREEN=''; _C_YELLOW=''; _C_CYAN=''; _C_GRAY=''; _C_BOLD=''; _C_RESET=''
+  _C_GREEN=''; _C_YELLOW=''; _C_RED=''; _C_CYAN=''; _C_GRAY=''; _C_BOLD=''; _C_RESET=''
 fi
 if [[ -t 2 ]]; then
   _C_ERR_RED='\033[0;31m'; _C_ERR_BOLD='\033[1m'; _C_ERR_RESET='\033[0m'
