@@ -1,0 +1,91 @@
+name: test-homebrew
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  homebrew-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Tap and install
+        run: |
+          brew tap SumonMSelim/agentguard
+          brew install agentguard
+
+      - name: Version check
+        run: |
+          agentguard version | grep -E '^agentguard [0-9]+\.[0-9]+\.[0-9]+$'
+
+      - name: Binary present
+        run: test -x "$(brew --prefix)/bin/agentguard"
+
+      - name: Hooks present in libexec
+        run: |
+          LIBEXEC="$(brew --prefix)/opt/agentguard/libexec"
+          for hook in block-env.sh block-env-read.sh block-main-branch.sh \
+                      block-system-installs.sh block-destructive-ops.sh audit-log.sh; do
+            test -f "$LIBEXEC/hooks/$hook" || { echo "MISSING: $hook"; exit 1; }
+            echo "OK: $hook"
+          done
+
+      - name: Unknown agent returns error
+        run: |
+          agentguard __test__ 2>&1 | grep -q "Unknown agent"
+
+      - name: Install claude smoke test
+        run: |
+          agentguard claude 2>&1 | grep -qE "Done|SUCCESS|installed"
+
+      - name: Check claude
+        run: agentguard check claude
+
+      - name: brew test
+        run: brew test agentguard
+
+  homebrew-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Homebrew
+        run: |
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" </dev/null
+          echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+          echo "HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew" >> "$GITHUB_ENV"
+
+      - name: Tap and install
+        run: |
+          brew tap SumonMSelim/agentguard
+          brew install agentguard
+
+      - name: Version check
+        run: agentguard version | grep -E '^agentguard [0-9]+\.[0-9]+\.[0-9]+$'
+
+      - name: Binary present
+        run: test -x "$(brew --prefix)/bin/agentguard"
+
+      - name: Hooks present in libexec
+        run: |
+          LIBEXEC="$(brew --prefix)/opt/agentguard/libexec"
+          for hook in block-env.sh block-env-read.sh block-main-branch.sh \
+                      block-system-installs.sh block-destructive-ops.sh audit-log.sh; do
+            test -f "$LIBEXEC/hooks/$hook" || { echo "MISSING: $hook"; exit 1; }
+            echo "OK: $hook"
+          done
+
+      - name: Unknown agent returns error
+        run: agentguard __test__ 2>&1 | grep -q "Unknown agent"
+
+      - name: Install claude smoke test
+        run: agentguard claude 2>&1 | grep -qE "Done|SUCCESS|installed"
+
+      - name: Check claude
+        run: agentguard check claude
+
+      - name: brew test
+        run: brew test agentguard
