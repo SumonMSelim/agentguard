@@ -108,7 +108,8 @@ jobs:
             SHA2=$(curl -sL "$URL" | sha256sum | awk '{print $1}')
             if [[ "$SHA1" == "$SHA2" && -n "$SHA1" ]]; then
               echo "SHA256 stable after $i attempt(s): $SHA1"
-              echo "SHA256=$SHA1" >> "$GITHUB_ENV"
+              SHA256="$SHA1"
+              echo "SHA256=$SHA256" >> "$GITHUB_ENV"
               break
             fi
             echo "Attempt $i: SHA256 unstable ($SHA1 vs $SHA2), retrying..."
