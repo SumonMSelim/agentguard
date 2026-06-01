@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to test (e.g. 1.4.0 — no leading v)'
+        description: 'Version to test (e.g. 1.4.2 — no leading v)'
         required: true
         type: string
 
@@ -28,11 +28,9 @@ jobs:
         run: |
           VERSION="${{ github.event.release.tag_name || format('v{0}', inputs.version) }}"
           VERSION="${VERSION#v}"
-          agentguard version | grep -q "$VERSION" || {
-            echo "FAIL: expected $VERSION, got: $(agentguard version)"
-            exit 1
-          }
-          echo "PASS: version $VERSION"
+          out=$(agentguard version 2>&1)
+          echo "$out"
+          echo "$out" | grep -q "$VERSION" || { echo "FAIL: expected $VERSION"; exit 1; }
 
       - name: Binary present and executable
         run: test -x "$(brew --prefix)/bin/agentguard"
@@ -50,14 +48,16 @@ jobs:
         run: agentguard __test__ 2>&1 | grep -q "Unknown agent"
 
       - name: Install claude
-        run: agentguard claude 2>&1 | grep -qE "Done|SUCCESS|installed"
+        run: |
+          out=$(agentguard claude 2>&1)
+          echo "$out"
+          echo "$out" | grep -qE "Done|SUCCESS|installed" || { echo "FAIL: install output unexpected"; exit 1; }
 
       - name: Verify claude install artifacts
-        # Homebrew puts binary at $(brew --prefix)/bin — not ~/.local/bin; check files directly
         run: |
-          test -f "$HOME/.claude/CLAUDE.md"       && echo "OK: CLAUDE.md"       || { echo "MISSING: CLAUDE.md"; exit 1; }
-          test -f "$HOME/.claude/settings.json"   && echo "OK: settings.json"   || { echo "MISSING: settings.json"; exit 1; }
-          test -d "$HOME/.claude/hooks"           && echo "OK: hooks dir"       || { echo "MISSING: hooks dir"; exit 1; }
+          test -f "$HOME/.claude/CLAUDE.md"     && echo "OK: CLAUDE.md"     || { echo "MISSING: CLAUDE.md"; exit 1; }
+          test -f "$HOME/.claude/settings.json" && echo "OK: settings.json" || { echo "MISSING: settings.json"; exit 1; }
+          test -d "$HOME/.claude/hooks"         && echo "OK: hooks dir"     || { echo "MISSING: hooks dir"; exit 1; }
 
       - name: brew test
         run: brew test agentguard
@@ -81,11 +81,9 @@ jobs:
         run: |
           VERSION="${{ github.event.release.tag_name || format('v{0}', inputs.version) }}"
           VERSION="${VERSION#v}"
-          agentguard version | grep -q "$VERSION" || {
-            echo "FAIL: expected $VERSION, got: $(agentguard version)"
-            exit 1
-          }
-          echo "PASS: version $VERSION"
+          out=$(agentguard version 2>&1)
+          echo "$out"
+          echo "$out" | grep -q "$VERSION" || { echo "FAIL: expected $VERSION"; exit 1; }
 
       - name: Binary present and executable
         run: test -x "$(brew --prefix)/bin/agentguard"
@@ -103,13 +101,16 @@ jobs:
         run: agentguard __test__ 2>&1 | grep -q "Unknown agent"
 
       - name: Install claude
-        run: agentguard claude 2>&1 | grep -qE "Done|SUCCESS|installed"
+        run: |
+          out=$(agentguard claude 2>&1)
+          echo "$out"
+          echo "$out" | grep -qE "Done|SUCCESS|installed" || { echo "FAIL: install output unexpected"; exit 1; }
 
       - name: Verify claude install artifacts
         run: |
-          test -f "$HOME/.claude/CLAUDE.md"       && echo "OK: CLAUDE.md"       || { echo "MISSING: CLAUDE.md"; exit 1; }
-          test -f "$HOME/.claude/settings.json"   && echo "OK: settings.json"   || { echo "MISSING: settings.json"; exit 1; }
-          test -d "$HOME/.claude/hooks"           && echo "OK: hooks dir"       || { echo "MISSING: hooks dir"; exit 1; }
+          test -f "$HOME/.claude/CLAUDE.md"     && echo "OK: CLAUDE.md"     || { echo "MISSING: CLAUDE.md"; exit 1; }
+          test -f "$HOME/.claude/settings.json" && echo "OK: settings.json" || { echo "MISSING: settings.json"; exit 1; }
+          test -d "$HOME/.claude/hooks"         && echo "OK: hooks dir"     || { echo "MISSING: hooks dir"; exit 1; }
 
       - name: brew test
         run: brew test agentguard
@@ -132,11 +133,9 @@ jobs:
 
       - name: Version matches release
         run: |
-          agentguard version | grep -q "$VERSION" || {
-            echo "FAIL: expected $VERSION, got: $(agentguard version)"
-            exit 1
-          }
-          echo "PASS: version $VERSION"
+          out=$(agentguard version 2>&1)
+          echo "$out"
+          echo "$out" | grep -q "$VERSION" || { echo "FAIL: expected $VERSION"; exit 1; }
 
       - name: Binary present and executable
         run: test -x /usr/bin/agentguard
@@ -153,14 +152,16 @@ jobs:
         run: agentguard __test__ 2>&1 | grep -q "Unknown agent"
 
       - name: Install claude
-        run: agentguard claude 2>&1 | grep -qE "Done|SUCCESS|installed"
+        run: |
+          out=$(agentguard claude 2>&1)
+          echo "$out"
+          echo "$out" | grep -qE "Done|SUCCESS|installed" || { echo "FAIL: install output unexpected"; exit 1; }
 
       - name: Verify claude install artifacts
-        # deb puts binary at /usr/bin — no ~/.local/bin wrapper; check hooks+files directly
         run: |
-          test -f "$HOME/.claude/CLAUDE.md"       && echo "OK: CLAUDE.md"       || { echo "MISSING: CLAUDE.md"; exit 1; }
-          test -f "$HOME/.claude/settings.json"   && echo "OK: settings.json"   || { echo "MISSING: settings.json"; exit 1; }
-          test -d "$HOME/.claude/hooks"           && echo "OK: hooks dir"       || { echo "MISSING: hooks dir"; exit 1; }
+          test -f "$HOME/.claude/CLAUDE.md"     && echo "OK: CLAUDE.md"     || { echo "MISSING: CLAUDE.md"; exit 1; }
+          test -f "$HOME/.claude/settings.json" && echo "OK: settings.json" || { echo "MISSING: settings.json"; exit 1; }
+          test -d "$HOME/.claude/hooks"         && echo "OK: hooks dir"     || { echo "MISSING: hooks dir"; exit 1; }
 
   # ── apt/deb: Ubuntu 22.04 ───────────────────────────────────────────────────
   deb-ubuntu-22:
@@ -179,7 +180,10 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Version matches release
-        run: agentguard version | grep -q "$VERSION"
+        run: |
+          out=$(agentguard version 2>&1)
+          echo "$out"
+          echo "$out" | grep -q "$VERSION" || { echo "FAIL: expected $VERSION"; exit 1; }
 
       - name: Binary present and executable
         run: test -x /usr/bin/agentguard
@@ -189,13 +193,17 @@ jobs:
           for hook in block-env.sh block-env-read.sh block-main-branch.sh \
                       block-system-installs.sh block-destructive-ops.sh audit-log.sh; do
             test -f "/usr/lib/agentguard/hooks/$hook" || { echo "MISSING: $hook"; exit 1; }
+            echo "OK: $hook"
           done
 
       - name: Install claude
-        run: agentguard claude 2>&1 | grep -qE "Done|SUCCESS|installed"
+        run: |
+          out=$(agentguard claude 2>&1)
+          echo "$out"
+          echo "$out" | grep -qE "Done|SUCCESS|installed" || { echo "FAIL: install output unexpected"; exit 1; }
 
       - name: Verify claude install artifacts
         run: |
-          test -f "$HOME/.claude/CLAUDE.md"       && echo "OK: CLAUDE.md"       || { echo "MISSING: CLAUDE.md"; exit 1; }
-          test -f "$HOME/.claude/settings.json"   && echo "OK: settings.json"   || { echo "MISSING: settings.json"; exit 1; }
-          test -d "$HOME/.claude/hooks"           && echo "OK: hooks dir"       || { echo "MISSING: hooks dir"; exit 1; }
+          test -f "$HOME/.claude/CLAUDE.md"     && echo "OK: CLAUDE.md"     || { echo "MISSING: CLAUDE.md"; exit 1; }
+          test -f "$HOME/.claude/settings.json" && echo "OK: settings.json" || { echo "MISSING: settings.json"; exit 1; }
+          test -d "$HOME/.claude/hooks"         && echo "OK: hooks dir"     || { echo "MISSING: hooks dir"; exit 1; }

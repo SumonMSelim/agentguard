@@ -98,13 +98,22 @@ jobs:
       # ── 6. compute tarball SHA256 and update Homebrew formula ───────────────
       - name: Compute tarball SHA256
         run: |
-          # Wait for GitHub CDN to stabilise the archive (non-deterministic, ~30-60s)
-          sleep 60
-          SHA256=$(curl -sL \
-            "https://github.com/${{ github.repository }}/archive/refs/tags/v$VERSION.tar.gz" \
-            | sha256sum | awk '{print $1}')
-          echo "SHA256=$SHA256" >> "$GITHUB_ENV"
-          echo "SHA256: $SHA256"
+          # GitHub auto-generated tarballs are non-deterministic for a short window after
+          # tag creation. Fetch twice 30s apart; retry until both hashes agree (max 5 tries).
+          URL="https://github.com/${{ github.repository }}/archive/refs/tags/v$VERSION.tar.gz"
+          for i in 1 2 3 4 5; do
+            sleep 30
+            SHA1=$(curl -sL "$URL" | sha256sum | awk '{print $1}')
+            sleep 10
+            SHA2=$(curl -sL "$URL" | sha256sum | awk '{print $1}')
+            if [[ "$SHA1" == "$SHA2" && -n "$SHA1" ]]; then
+              echo "SHA256 stable after $i attempt(s): $SHA1"
+              echo "SHA256=$SHA1" >> "$GITHUB_ENV"
+              break
+            fi
+            echo "Attempt $i: SHA256 unstable ($SHA1 vs $SHA2), retrying..."
+          done
+          [[ -n "${SHA256:-}" ]] || { echo "ERROR: SHA256 never stabilised"; exit 1; }
 
       - name: Update Homebrew formula in this repo
         run: |
