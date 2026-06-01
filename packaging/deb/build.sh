@@ -111,9 +111,10 @@ rm -f "$changelog_tmp"
 
 # ── DEBIAN/lintian-overrides ──────────────────────────────────────────────────
 # no-manual-page: intentional — agentguard is a CLI tool without a man page
+# Lintian 2.117+ requires bracket notation for the context field
 mkdir -p "$PKG_ROOT/usr/share/lintian/overrides"
 cat > "$PKG_ROOT/usr/share/lintian/overrides/agentguard" <<'EOF'
-agentguard: no-manual-page usr/bin/agentguard
+agentguard: no-manual-page [usr/bin/agentguard]
 EOF
 
 # ── DEBIAN/postinst ───────────────────────────────────────────────────────────
