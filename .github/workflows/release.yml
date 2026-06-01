@@ -98,8 +98,8 @@ jobs:
       # ── 6. compute tarball SHA256 and update Homebrew formula ───────────────
       - name: Compute tarball SHA256
         run: |
-          # Wait briefly for GitHub to finalise the archive
-          sleep 10
+          # Wait for GitHub CDN to stabilise the archive (non-deterministic, ~30-60s)
+          sleep 60
           SHA256=$(curl -sL \
             "https://github.com/${{ github.repository }}/archive/refs/tags/v$VERSION.tar.gz" \
             | sha256sum | awk '{print $1}')

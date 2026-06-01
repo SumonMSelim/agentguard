@@ -52,8 +52,12 @@ jobs:
       - name: Install claude
         run: agentguard claude 2>&1 | grep -qE "Done|SUCCESS|installed"
 
-      - name: Check claude
-        run: agentguard check claude
+      - name: Verify claude install artifacts
+        # Homebrew puts binary at $(brew --prefix)/bin — not ~/.local/bin; check files directly
+        run: |
+          test -f "$HOME/.claude/CLAUDE.md"       && echo "OK: CLAUDE.md"       || { echo "MISSING: CLAUDE.md"; exit 1; }
+          test -f "$HOME/.claude/settings.json"   && echo "OK: settings.json"   || { echo "MISSING: settings.json"; exit 1; }
+          test -d "$HOME/.claude/hooks"           && echo "OK: hooks dir"       || { echo "MISSING: hooks dir"; exit 1; }
 
       - name: brew test
         run: brew test agentguard
@@ -101,8 +105,11 @@ jobs:
       - name: Install claude
         run: agentguard claude 2>&1 | grep -qE "Done|SUCCESS|installed"
 
-      - name: Check claude
-        run: agentguard check claude
+      - name: Verify claude install artifacts
+        run: |
+          test -f "$HOME/.claude/CLAUDE.md"       && echo "OK: CLAUDE.md"       || { echo "MISSING: CLAUDE.md"; exit 1; }
+          test -f "$HOME/.claude/settings.json"   && echo "OK: settings.json"   || { echo "MISSING: settings.json"; exit 1; }
+          test -d "$HOME/.claude/hooks"           && echo "OK: hooks dir"       || { echo "MISSING: hooks dir"; exit 1; }
 
       - name: brew test
         run: brew test agentguard
@@ -148,8 +155,12 @@ jobs:
       - name: Install claude
         run: agentguard claude 2>&1 | grep -qE "Done|SUCCESS|installed"
 
-      - name: Check claude
-        run: agentguard check claude
+      - name: Verify claude install artifacts
+        # deb puts binary at /usr/bin — no ~/.local/bin wrapper; check hooks+files directly
+        run: |
+          test -f "$HOME/.claude/CLAUDE.md"       && echo "OK: CLAUDE.md"       || { echo "MISSING: CLAUDE.md"; exit 1; }
+          test -f "$HOME/.claude/settings.json"   && echo "OK: settings.json"   || { echo "MISSING: settings.json"; exit 1; }
+          test -d "$HOME/.claude/hooks"           && echo "OK: hooks dir"       || { echo "MISSING: hooks dir"; exit 1; }
 
   # ── apt/deb: Ubuntu 22.04 ───────────────────────────────────────────────────
   deb-ubuntu-22:
@@ -183,5 +194,8 @@ jobs:
       - name: Install claude
         run: agentguard claude 2>&1 | grep -qE "Done|SUCCESS|installed"
 
-      - name: Check claude
-        run: agentguard check claude
+      - name: Verify claude install artifacts
+        run: |
+          test -f "$HOME/.claude/CLAUDE.md"       && echo "OK: CLAUDE.md"       || { echo "MISSING: CLAUDE.md"; exit 1; }
+          test -f "$HOME/.claude/settings.json"   && echo "OK: settings.json"   || { echo "MISSING: settings.json"; exit 1; }
+          test -d "$HOME/.claude/hooks"           && echo "OK: hooks dir"       || { echo "MISSING: hooks dir"; exit 1; }
