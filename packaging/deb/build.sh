@@ -19,7 +19,7 @@ trap 'rm -rf "$PKG_ROOT"' EXIT
 # ── layout ────────────────────────────────────────────────────────────────────
 # /usr/lib/agentguard/          — source tree (hooks/, agents/, skills/, install.sh, VERSION)
 # /usr/bin/agentguard           — thin wrapper
-# /usr/share/doc/agentguard/    — copyright, changelog.Debian.gz
+# /usr/share/doc/agentguard/    — copyright, changelog.gz
 
 LIB="$PKG_ROOT/usr/lib/agentguard"
 BIN="$PKG_ROOT/usr/bin"
@@ -45,12 +45,13 @@ SH
 chmod +x "$BIN/agentguard"
 
 # ── DEBIAN/control ────────────────────────────────────────────────────────────
+# bash is an essential package on Debian/Ubuntu — must not be listed in Depends
 cat > "$DEBIAN/control" <<EOF
 Package: agentguard
 Version: ${VERSION}
 Architecture: all
 Maintainer: Muhammad Sumon Molla Selim <sumon@cielara.com>
-Depends: bash, jq
+Depends: jq
 Section: utils
 Priority: optional
 Homepage: https://github.com/SumonMSelim/agentguard
@@ -64,7 +65,6 @@ Description: Security guardrails for AI coding agents
 EOF
 
 # ── /usr/share/doc/agentguard/copyright (Debian Policy §12.5) ────────────────
-# Debian policy requires copyright at /usr/share/doc/<pkg>/copyright (DEP-5 format)
 cat > "$DOC/copyright" <<EOF
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: agentguard
@@ -95,32 +95,45 @@ License: MIT
  SOFTWARE.
 EOF
 
-# ── /usr/share/doc/agentguard/changelog.Debian.gz ────────────────────────────
-# Minimal changelog — required by lintian
+# ── /usr/share/doc/agentguard/changelog.gz ───────────────────────────────────
+# Native packages use changelog.gz (not changelog.Debian.gz)
+# Changelog lines must be <= 80 chars
 changelog_tmp="$(mktemp)"
 cat > "$changelog_tmp" <<EOF
 agentguard (${VERSION}) stable; urgency=low
 
-  * Release ${VERSION}. See https://github.com/SumonMSelim/agentguard/releases for full changelog.
+  * Release ${VERSION}. See GitHub releases for full changelog.
 
  -- Muhammad Sumon Molla Selim <sumon@cielara.com>  ${BUILD_DATE}
 EOF
-gzip -9 -n -c "$changelog_tmp" > "$DOC/changelog.Debian.gz"
+gzip -9 -n -c "$changelog_tmp" > "$DOC/changelog.gz"
 rm -f "$changelog_tmp"
 
-# ── DEBIAN/postinst — PATH notice ─────────────────────────────────────────────
+# ── DEBIAN/lintian-overrides ──────────────────────────────────────────────────
+# no-manual-page: intentional — agentguard is a CLI tool without a man page
+mkdir -p "$PKG_ROOT/usr/share/lintian/overrides"
+cat > "$PKG_ROOT/usr/share/lintian/overrides/agentguard" <<'EOF'
+agentguard: no-manual-page usr/bin/agentguard
+EOF
+
+# ── DEBIAN/postinst ───────────────────────────────────────────────────────────
 cat > "$DEBIAN/postinst" <<'EOF'
 #!/bin/bash
 set -e
-echo ""
-echo "agentguard installed. Run it to install guardrails for your AI coding agent:"
-echo ""
-echo "  agentguard claude        # Claude Code"
-echo "  agentguard kiro          # Kiro"
-echo "  agentguard cursor        # Cursor (run from project root)"
-echo "  agentguard codex         # Codex"
-echo "  agentguard all           # All agents"
-echo ""
+case "$1" in
+  configure)
+    echo ""
+    echo "agentguard installed. Run it to set up guardrails for your AI agent:"
+    echo ""
+    echo "  agentguard claude        # Claude Code"
+    echo "  agentguard kiro          # Kiro"
+    echo "  agentguard cursor        # Cursor (run from project root)"
+    echo "  agentguard codex         # Codex"
+    echo "  agentguard all           # All agents"
+    echo ""
+    ;;
+esac
+exit 0
 EOF
 chmod 0755 "$DEBIAN/postinst"
 
