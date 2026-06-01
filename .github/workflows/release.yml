@@ -1,25 +1,142 @@
 name: release
 
+# Triggered manually with a version number.
+# Full flow:
+#   1. Validate version (semver, greater than current)
+#   2. Run test suite — abort on failure
+#   3. Bump VERSION, commit, push to main
+#   4. Create annotated tag
+#   5. Build .deb, create GitHub Release, attach artifact
+#   6. Compute tarball SHA256, update Homebrew formula in this repo
+#   7. Push updated formula to homebrew-agentguard tap repo
+
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 1.5.0 — no leading v)'
+        required: true
+        type: string
 
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
+      # ── 1. validate input ───────────────────────────────────────────────────
+      - name: Validate version input
+        run: |
+          VERSION="${{ inputs.version }}"
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "ERROR: '$VERSION' is not valid semver (expected X.Y.Z)"
+            exit 1
+          fi
+          CURRENT="$(cat VERSION | tr -d '[:space:]')"
+          # semver_gt: returns 0 if $1 > $2
+          semver_gt() {
+            [ "$1" = "$2" ] && return 1
+            [ "$(printf '%s\n%s' "$1" "$2" | sort -V | head -1)" != "$1" ]
+          }
+          if ! semver_gt "$VERSION" "$CURRENT"; then
+            echo "ERROR: $VERSION is not greater than current $CURRENT"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Releasing $VERSION (current: $CURRENT)"
+
+      # ── 2. run test suite ───────────────────────────────────────────────────
+      - name: Install test dependencies
+        run: sudo apt-get install -y jq
+
+      - name: Run tests
+        run: |
+          bash tests/check-sync.sh
+          bash install.sh all
+          bash tests/run_all.sh
+
+      # ── 3. bump VERSION ─────────────────────────────────────────────────────
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump VERSION and commit
+        run: |
+          echo "$VERSION" > VERSION
+          git add VERSION
+          git commit -m "chore(release): bump version to $VERSION"
+          git push origin main
+
+      # ── 4. create tag ───────────────────────────────────────────────────────
+      - name: Create and push tag
+        run: |
+          git tag -a "v$VERSION" -m "v$VERSION"
+          git push origin "v$VERSION"
+
+      # ── 5. build .deb and create GitHub Release ─────────────────────────────
       - name: Install build dependencies
-        run: sudo apt-get install -y jq dpkg-dev lintian
+        run: sudo apt-get install -y dpkg-dev lintian
 
       - name: Build .deb package
         run: bash packaging/deb/build.sh dist/
 
-      - name: Upload .deb to GitHub Release
+      - name: Create GitHub Release and upload .deb
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: v${{ env.VERSION }}
+          name: v${{ env.VERSION }}
+          generate_release_notes: true
           files: dist/*.deb
+
+      # ── 6. compute tarball SHA256 and update Homebrew formula ───────────────
+      - name: Compute tarball SHA256
+        run: |
+          # Wait briefly for GitHub to finalise the archive
+          sleep 10
+          SHA256=$(curl -sL \
+            "https://github.com/${{ github.repository }}/archive/refs/tags/v$VERSION.tar.gz" \
+            | sha256sum | awk '{print $1}')
+          echo "SHA256=$SHA256" >> "$GITHUB_ENV"
+          echo "SHA256: $SHA256"
+
+      - name: Update Homebrew formula in this repo
+        run: |
+          sed -i "s|archive/refs/tags/v.*/|archive/refs/tags/v$VERSION/|" homebrew/Formula/agentguard.rb
+          sed -i "s/sha256 \"[a-f0-9]*\"/sha256 \"$SHA256\"/" homebrew/Formula/agentguard.rb
+          git add homebrew/Formula/agentguard.rb
+          git diff --cached --quiet || git commit -m "chore(homebrew): update formula to v$VERSION"
+          git push origin main
+
+      # ── 7. push formula to tap repo ─────────────────────────────────────────
+      - name: Push formula to homebrew-agentguard tap
+        env:
+          TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
+        run: |
+          # Set up SSH deploy key for the tap repo
+          mkdir -p ~/.ssh
+          echo "$TAP_DEPLOY_KEY" > ~/.ssh/tap_deploy_key
+          chmod 600 ~/.ssh/tap_deploy_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/tap_deploy_key -o IdentitiesOnly=yes"
+
+          git clone git@github.com:SumonMSelim/homebrew-agentguard.git /tmp/tap
+          mkdir -p /tmp/tap/Formula
+          cp homebrew/Formula/agentguard.rb /tmp/tap/Formula/agentguard.rb
+
+          cd /tmp/tap
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/agentguard.rb
+          git diff --cached --quiet || git commit -m "feat: update agentguard to v$VERSION"
+          git push origin main
+
+          # Clean up key
+          rm -f ~/.ssh/tap_deploy_key
