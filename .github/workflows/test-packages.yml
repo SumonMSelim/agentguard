@@ -1,0 +1,187 @@
+name: test-packages
+
+# Runs after a release is published — tests the actual released artifacts
+# on all supported OS targets. Not triggered on push/PR (that's test.yml).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to test (e.g. 1.4.0 — no leading v)'
+        required: true
+        type: string
+
+jobs:
+  # ── Homebrew: macOS (Apple Silicon) ────────────────────────────────────────
+  homebrew-macos:
+    name: Homebrew / macOS (macos-latest)
+    runs-on: macos-latest
+    steps:
+      - name: Tap and install
+        run: |
+          brew tap SumonMSelim/agentguard
+          brew install agentguard
+
+      - name: Version matches release
+        run: |
+          VERSION="${{ github.event.release.tag_name || format('v{0}', inputs.version) }}"
+          VERSION="${VERSION#v}"
+          agentguard version | grep -q "$VERSION" || {
+            echo "FAIL: expected $VERSION, got: $(agentguard version)"
+            exit 1
+          }
+          echo "PASS: version $VERSION"
+
+      - name: Binary present and executable
+        run: test -x "$(brew --prefix)/bin/agentguard"
+
+      - name: Hooks present in libexec
+        run: |
+          LIBEXEC="$(brew --prefix)/opt/agentguard/libexec"
+          for hook in block-env.sh block-env-read.sh block-main-branch.sh \
+                      block-system-installs.sh block-destructive-ops.sh audit-log.sh; do
+            test -f "$LIBEXEC/hooks/$hook" || { echo "MISSING: $hook"; exit 1; }
+            echo "OK: $hook"
+          done
+
+      - name: Unknown agent returns error
+        run: agentguard __test__ 2>&1 | grep -q "Unknown agent"
+
+      - name: Install claude
+        run: agentguard claude 2>&1 | grep -qE "Done|SUCCESS|installed"
+
+      - name: Check claude
+        run: agentguard check claude
+
+      - name: brew test
+        run: brew test agentguard
+
+  # ── Homebrew: Linux ─────────────────────────────────────────────────────────
+  homebrew-linux:
+    name: Homebrew / Linux (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Homebrew
+        run: |
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" </dev/null
+          echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+
+      - name: Tap and install
+        run: |
+          brew tap SumonMSelim/agentguard
+          brew install agentguard
+
+      - name: Version matches release
+        run: |
+          VERSION="${{ github.event.release.tag_name || format('v{0}', inputs.version) }}"
+          VERSION="${VERSION#v}"
+          agentguard version | grep -q "$VERSION" || {
+            echo "FAIL: expected $VERSION, got: $(agentguard version)"
+            exit 1
+          }
+          echo "PASS: version $VERSION"
+
+      - name: Binary present and executable
+        run: test -x "$(brew --prefix)/bin/agentguard"
+
+      - name: Hooks present in libexec
+        run: |
+          LIBEXEC="$(brew --prefix)/opt/agentguard/libexec"
+          for hook in block-env.sh block-env-read.sh block-main-branch.sh \
+                      block-system-installs.sh block-destructive-ops.sh audit-log.sh; do
+            test -f "$LIBEXEC/hooks/$hook" || { echo "MISSING: $hook"; exit 1; }
+            echo "OK: $hook"
+          done
+
+      - name: Unknown agent returns error
+        run: agentguard __test__ 2>&1 | grep -q "Unknown agent"
+
+      - name: Install claude
+        run: agentguard claude 2>&1 | grep -qE "Done|SUCCESS|installed"
+
+      - name: Check claude
+        run: agentguard check claude
+
+      - name: brew test
+        run: brew test agentguard
+
+  # ── apt/deb: Ubuntu 24.04 ───────────────────────────────────────────────────
+  deb-ubuntu-24:
+    name: apt/deb / Ubuntu 24.04
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download and install .deb
+        run: |
+          VERSION="${{ github.event.release.tag_name || format('v{0}', inputs.version) }}"
+          VERSION="${VERSION#v}"
+          DEB="agentguard_${VERSION}_all.deb"
+          curl -fsSL -o "/tmp/${DEB}" \
+            "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${DEB}"
+          sudo apt-get install -y jq
+          sudo dpkg -i "/tmp/${DEB}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Version matches release
+        run: |
+          agentguard version | grep -q "$VERSION" || {
+            echo "FAIL: expected $VERSION, got: $(agentguard version)"
+            exit 1
+          }
+          echo "PASS: version $VERSION"
+
+      - name: Binary present and executable
+        run: test -x /usr/bin/agentguard
+
+      - name: Hooks present
+        run: |
+          for hook in block-env.sh block-env-read.sh block-main-branch.sh \
+                      block-system-installs.sh block-destructive-ops.sh audit-log.sh; do
+            test -f "/usr/lib/agentguard/hooks/$hook" || { echo "MISSING: $hook"; exit 1; }
+            echo "OK: $hook"
+          done
+
+      - name: Unknown agent returns error
+        run: agentguard __test__ 2>&1 | grep -q "Unknown agent"
+
+      - name: Install claude
+        run: agentguard claude 2>&1 | grep -qE "Done|SUCCESS|installed"
+
+      - name: Check claude
+        run: agentguard check claude
+
+  # ── apt/deb: Ubuntu 22.04 ───────────────────────────────────────────────────
+  deb-ubuntu-22:
+    name: apt/deb / Ubuntu 22.04
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download and install .deb
+        run: |
+          VERSION="${{ github.event.release.tag_name || format('v{0}', inputs.version) }}"
+          VERSION="${VERSION#v}"
+          DEB="agentguard_${VERSION}_all.deb"
+          curl -fsSL -o "/tmp/${DEB}" \
+            "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${DEB}"
+          sudo apt-get install -y jq
+          sudo dpkg -i "/tmp/${DEB}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Version matches release
+        run: agentguard version | grep -q "$VERSION"
+
+      - name: Binary present and executable
+        run: test -x /usr/bin/agentguard
+
+      - name: Hooks present
+        run: |
+          for hook in block-env.sh block-env-read.sh block-main-branch.sh \
+                      block-system-installs.sh block-destructive-ops.sh audit-log.sh; do
+            test -f "/usr/lib/agentguard/hooks/$hook" || { echo "MISSING: $hook"; exit 1; }
+          done
+
+      - name: Install claude
+        run: agentguard claude 2>&1 | grep -qE "Done|SUCCESS|installed"
+
+      - name: Check claude
+        run: agentguard check claude
