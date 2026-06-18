@@ -25,6 +25,11 @@
         "description": "Block rm on root/home and pipe-to-shell"
       },
       {
+        "matcher": "execute_bash",
+        "command": "bash ~/.kiro/hooks/block-self-edit.sh",
+        "description": "Block Bash writes to agentguard's own configuration"
+      },
+      {
         "matcher": "fs_read",
         "command": "bash ~/.kiro/hooks/block-env-read.sh",
         "description": "Block reads of .env and credential files"

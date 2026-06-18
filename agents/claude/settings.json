@@ -91,6 +91,10 @@
           {
             "type": "command",
             "command": "bash ~/.claude/hooks/block-destructive-ops.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/block-self-edit.sh"
           }
         ]
       },

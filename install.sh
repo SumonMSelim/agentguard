@@ -589,6 +589,7 @@ AGENTGUARD_HOOKS=(
   block-env-read.sh
   block-env.sh
   block-main-branch.sh
+  block-self-edit.sh
   block-system-installs.sh
 )
 
@@ -933,6 +934,7 @@ CURSOR_AGENTGUARD_FILES=(
   ".cursor/hooks/block-env-read.sh"
   ".cursor/hooks/block-env.sh"
   ".cursor/hooks/block-main-branch.sh"
+  ".cursor/hooks/block-self-edit.sh"
   ".cursor/hooks/block-system-installs.sh"
   ".cursor/rules/karpathy-guidelines.mdc"
   ".cursor/skills/karpathy-guidelines/SKILL.md"

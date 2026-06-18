@@ -23,7 +23,7 @@ PATHS=$(echo "$INPUT" | jq -r '
   (.tool_input.edits // [] | .[].file_path // "")
 ' 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)
 
-SENSITIVE_RE='(^|/)\.env(\.|$)|(^|/)\.env$|\.envrc$|secrets/|\.aws/|\.ssh/|credentials|\.netrc$|\.(pem|key|p12|pfx)$|/\.agentguard($|/)'
+SENSITIVE_RE='(^|/)\.env(\.|$)|(^|/)\.env$|\.envrc$|secrets/|\.aws/|\.ssh/|credentials|\.netrc$|\.(pem|key|p12|pfx)$|/\.agentguard($|/)|/\.claude/(settings\.json|hooks/|CLAUDE\.md$)|/\.kiro/(settings\.json|hooks/|agents/|KIRO\.md$)|(^|/)\.cursor/(hooks\.json$|hooks/)'
 
 while IFS= read -r FILE; do
   if echo "$FILE" | grep -qE "$SENSITIVE_RE"; then
