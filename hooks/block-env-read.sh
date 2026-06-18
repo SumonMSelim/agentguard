@@ -8,6 +8,9 @@
 #
 # Exit 2 = blocked. The agent receives the stderr message as feedback.
 
+# Skip all checks if the current directory is in the agentguard disabled list.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_check-disabled.sh"
+
 INPUT=$(cat)
 # Claude:  .tool_input.path (Read/Write), .tool_input.file_path (Edit), .tool_input.file_path (MultiEdit)
 # Kiro:    .tool_input.path (fs_write),   .tool_input.operations[].path (fs_read)
@@ -20,7 +23,7 @@ PATHS=$(echo "$INPUT" | jq -r '
   (.tool_input.edits // [] | .[].file_path // "")
 ' 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)
 
-SENSITIVE_RE='(^|/)\.env(\.|$)|(^|/)\.env$|\.envrc$|secrets/|\.aws/|\.ssh/|credentials|\.netrc$|\.(pem|key|p12|pfx)$'
+SENSITIVE_RE='(^|/)\.env(\.|$)|(^|/)\.env$|\.envrc$|secrets/|\.aws/|\.ssh/|credentials|\.netrc$|\.(pem|key|p12|pfx)$|/\.agentguard($|/)'
 
 while IFS= read -r FILE; do
   if echo "$FILE" | grep -qE "$SENSITIVE_RE"; then
