@@ -50,6 +50,8 @@ jobs:
     needs: wait-for-cdn
     steps:
       - name: Tap and install
+        env:
+          HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
         run: |
           brew tap SumonMSelim/agentguard
           brew install agentguard
@@ -68,8 +70,8 @@ jobs:
       - name: Hooks present in libexec
         run: |
           LIBEXEC="$(brew --prefix)/opt/agentguard/libexec"
-          for hook in block-env.sh block-env-read.sh block-main-branch.sh \
-                      block-system-installs.sh block-destructive-ops.sh audit-log.sh; do
+          for hook in _check-disabled.sh block-env.sh block-env-read.sh block-main-branch.sh \
+                      block-system-installs.sh block-destructive-ops.sh block-self-edit.sh audit-log.sh; do
             test -f "$LIBEXEC/hooks/$hook" || { echo "MISSING: $hook"; exit 1; }
             echo "OK: $hook"
           done
@@ -90,6 +92,8 @@ jobs:
           test -d "$HOME/.claude/hooks"         && echo "OK: hooks dir"     || { echo "MISSING: hooks dir"; exit 1; }
 
       - name: brew test
+        env:
+          HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
         run: brew test agentguard
 
   # ── Homebrew: Linux ─────────────────────────────────────────────────────────
@@ -104,6 +108,8 @@ jobs:
           echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
 
       - name: Tap and install
+        env:
+          HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
         run: |
           brew tap SumonMSelim/agentguard
           brew install agentguard
@@ -122,8 +128,8 @@ jobs:
       - name: Hooks present in libexec
         run: |
           LIBEXEC="$(brew --prefix)/opt/agentguard/libexec"
-          for hook in block-env.sh block-env-read.sh block-main-branch.sh \
-                      block-system-installs.sh block-destructive-ops.sh audit-log.sh; do
+          for hook in _check-disabled.sh block-env.sh block-env-read.sh block-main-branch.sh \
+                      block-system-installs.sh block-destructive-ops.sh block-self-edit.sh audit-log.sh; do
             test -f "$LIBEXEC/hooks/$hook" || { echo "MISSING: $hook"; exit 1; }
             echo "OK: $hook"
           done
@@ -144,6 +150,8 @@ jobs:
           test -d "$HOME/.claude/hooks"         && echo "OK: hooks dir"     || { echo "MISSING: hooks dir"; exit 1; }
 
       - name: brew test
+        env:
+          HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
         run: brew test agentguard
 
   # ── apt/deb: Ubuntu 24.04 ───────────────────────────────────────────────────
@@ -173,8 +181,8 @@ jobs:
 
       - name: Hooks present
         run: |
-          for hook in block-env.sh block-env-read.sh block-main-branch.sh \
-                      block-system-installs.sh block-destructive-ops.sh audit-log.sh; do
+          for hook in _check-disabled.sh block-env.sh block-env-read.sh block-main-branch.sh \
+                      block-system-installs.sh block-destructive-ops.sh block-self-edit.sh audit-log.sh; do
             test -f "/usr/lib/agentguard/hooks/$hook" || { echo "MISSING: $hook"; exit 1; }
             echo "OK: $hook"
           done
@@ -221,8 +229,8 @@ jobs:
 
       - name: Hooks present
         run: |
-          for hook in block-env.sh block-env-read.sh block-main-branch.sh \
-                      block-system-installs.sh block-destructive-ops.sh audit-log.sh; do
+          for hook in _check-disabled.sh block-env.sh block-env-read.sh block-main-branch.sh \
+                      block-system-installs.sh block-destructive-ops.sh block-self-edit.sh audit-log.sh; do
             test -f "/usr/lib/agentguard/hooks/$hook" || { echo "MISSING: $hook"; exit 1; }
             echo "OK: $hook"
           done
