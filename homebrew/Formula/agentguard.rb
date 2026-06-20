@@ -40,8 +40,7 @@ class Agentguard < Formula
   end
 
   test do
-    bash = Formula["bash"].opt_bin/"bash"
-    assert_match "Unknown agent", shell_output("#{bash} #{libexec}/install.sh __test__ 2>&1", 1)
-    assert_match version.to_s, shell_output("#{bash} #{libexec}/install.sh version 2>&1")
+    assert_match "Unknown agent", shell_output("#{bin}/agentguard __test__ 2>&1", 1)
+    assert_match version.to_s, shell_output("#{bin}/agentguard version 2>&1")
   end
 end
