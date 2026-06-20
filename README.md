@@ -1,6 +1,8 @@
 # agentguard
 
 [![CI](https://github.com/SumonMSelim/agentguard/actions/workflows/test.yml/badge.svg)](https://github.com/SumonMSelim/agentguard/actions/workflows/test.yml)
+[![Release](https://github.com/SumonMSelim/agentguard/actions/workflows/release.yml/badge.svg)](https://github.com/SumonMSelim/agentguard/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/SumonMSelim/agentguard)](https://github.com/SumonMSelim/agentguard/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Security guardrails and workflow policies for AI coding agents. Blocks dangerous operations at the hook level — not just as instructions.
