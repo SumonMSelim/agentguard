@@ -1,8 +1,8 @@
 class Agentguard < Formula
   desc "Security guardrails for AI coding agents (Claude Code, Kiro, Cursor, Codex)"
   homepage "https://github.com/SumonMSelim/agentguard"
-  url "https://github.com/SumonMSelim/agentguard/archive/refs/tags/v1.6.0.tar.gz"
-  sha256 "1e64f4d5b8eec2ae4dee0362eafa6a34c18acc25fa0a2fb56acf9c764ddfd37f"
+  url "https://github.com/SumonMSelim/agentguard/archive/refs/tags/v1.7.0.tar.gz"
+  sha256 "743ce4c51e2cde4c932276b32e8a0be6094e0eab8e0fbf1a1767574e93524ff6"
   license "MIT"
 
   depends_on "bash" => [:runtime, :test]
