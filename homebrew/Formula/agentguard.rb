@@ -5,7 +5,7 @@ class Agentguard < Formula
   sha256 "0dbad2029516808f044bba44607424079cd59c4416af2ac88a982aed18a1e406"
   license "MIT"
 
-  depends_on "bash" => [:build, :test]
+  depends_on "bash"
   depends_on "jq"
 
   def install
@@ -40,7 +40,8 @@ class Agentguard < Formula
   end
 
   test do
-    assert_match "Unknown agent", shell_output("#{bin}/agentguard __test__ 2>&1", 1)
-    assert_match version.to_s, shell_output("#{bin}/agentguard version 2>&1")
+    bash = Formula["bash"].opt_bin/"bash"
+    assert_match "Unknown agent", shell_output("#{bash} #{libexec}/install.sh __test__ 2>&1", 1)
+    assert_match version.to_s, shell_output("#{bash} #{libexec}/install.sh version 2>&1")
   end
 end
