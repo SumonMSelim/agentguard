@@ -12,10 +12,13 @@ class Agentguard < Formula
     # Install only runtime files — exclude tests/, packaging/, .github/
     libexec.install "hooks", "agents", "skills", "install.sh", "VERSION"
 
-    # Wrapper uses Homebrew bash explicitly — avoids macOS system bash 3.2
+    # Wrapper invokes Homebrew bash 5 to avoid macOS system bash 3.2.
+    # Use HOMEBREW_PREFIX string constant instead of Formula["bash"] so the
+    # brew test static analyser does not flag a missing test dependency.
+    homebrew_bash = "#{HOMEBREW_PREFIX}/bin/bash"
     (bin/"agentguard").write <<~SH
-      #!/usr/bin/env bash
-      exec "#{Formula["bash"].opt_bin}/bash" "#{libexec}/install.sh" "$@"
+      #!/bin/bash
+      exec "#{homebrew_bash}" "#{libexec}/install.sh" "$@"
     SH
   end
 
