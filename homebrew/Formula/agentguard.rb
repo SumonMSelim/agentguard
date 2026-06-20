@@ -20,6 +20,7 @@ class Agentguard < Formula
       #!/bin/bash
       exec "#{homebrew_bash}" "#{libexec}/install.sh" "$@"
     SH
+    chmod 0755, bin/"agentguard"
   end
 
   def caveats
