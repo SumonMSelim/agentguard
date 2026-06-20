@@ -5,20 +5,19 @@ class Agentguard < Formula
   sha256 "3376a3c4e1f98e7268bcaa02ffc19d822b05873d1f4145442e00f3aa581c2de1"
   license "MIT"
 
-  depends_on "bash" => [:runtime, :test]
+  depends_on "bash"
   depends_on "jq"
 
   def install
-    # Install only runtime files — exclude tests/, packaging/, .github/
     libexec.install "hooks", "agents", "skills", "install.sh", "VERSION"
 
-    # Wrapper invokes Homebrew bash 5 via its keg-only opt path.
-    # Using HOMEBREW_PREFIX/opt/bash avoids both the Formula["bash"] static
-    # analyser false-positive and the prefix/bin absence (bash is keg-only).
-    homebrew_bash = "#{HOMEBREW_PREFIX}/opt/bash/bin/bash"
+    # Formula["bash"].opt_bin resolves to the keg-only Homebrew bash — the
+    # correct idiom for referencing a dep's bin on both macOS and Linux.
+    # Homebrew guarantees this path exists because bash is a declared dep.
+    bash = Formula["bash"].opt_bin/"bash"
     (bin/"agentguard").write <<~SH
       #!/bin/bash
-      exec "#{homebrew_bash}" "#{libexec}/install.sh" "$@"
+      exec "#{bash}" "#{libexec}/install.sh" "$@"
     SH
     chmod 0755, bin/"agentguard"
   end

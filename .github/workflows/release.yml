@@ -379,6 +379,8 @@ jobs:
         run: |
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" </dev/null
           echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+          # Export HOMEBREW_PREFIX and other env vars for subsequent steps.
+          /home/linuxbrew/.linuxbrew/bin/brew shellenv >> "$GITHUB_ENV"
 
       - name: Tap and install
         env:
