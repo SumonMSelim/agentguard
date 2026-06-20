@@ -5,7 +5,7 @@ class Agentguard < Formula
   sha256 "746ffaf298f5e163bae95f0c9285d9fdfeb778cb2b451480796c4b894f2d7042"
   license "MIT"
 
-  depends_on "bash"
+  depends_on "bash" => [:build, :runtime, :test]
   depends_on "jq"
 
   def install
