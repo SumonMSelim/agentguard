@@ -12,10 +12,10 @@ class Agentguard < Formula
     # Install only runtime files — exclude tests/, packaging/, .github/
     libexec.install "hooks", "agents", "skills", "install.sh", "VERSION"
 
-    # Wrapper invokes Homebrew bash 5 to avoid macOS system bash 3.2.
-    # Use HOMEBREW_PREFIX string constant instead of Formula["bash"] so the
-    # brew test static analyser does not flag a missing test dependency.
-    homebrew_bash = "#{HOMEBREW_PREFIX}/bin/bash"
+    # Wrapper invokes Homebrew bash 5 via its keg-only opt path.
+    # Using HOMEBREW_PREFIX/opt/bash avoids both the Formula["bash"] static
+    # analyser false-positive and the prefix/bin absence (bash is keg-only).
+    homebrew_bash = "#{HOMEBREW_PREFIX}/opt/bash/bin/bash"
     (bin/"agentguard").write <<~SH
       #!/bin/bash
       exec "#{homebrew_bash}" "#{libexec}/install.sh" "$@"
