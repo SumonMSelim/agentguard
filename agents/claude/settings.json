@@ -58,7 +58,14 @@
       "Bash(git push -f *)",
       "Bash(git push --force-with-lease)",
       "Bash(git push --force-with-lease *)",
-      "Bash(git push --force-with-lease=*)"
+      "Bash(git push --force-with-lease=*)",
+      "Bash(agentguard disable)",
+      "Bash(agentguard disable *)",
+      "Bash(./install.sh disable)",
+      "Bash(./install.sh disable *)",
+      "Read(~/.agentguard/**)",
+      "Write(~/.agentguard/**)",
+      "Edit(~/.agentguard/**)"
     ]
   },
   "includeCoAuthoredBy": false,
@@ -84,6 +91,10 @@
           {
             "type": "command",
             "command": "bash ~/.claude/hooks/block-destructive-ops.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/block-self-edit.sh"
           }
         ]
       },

@@ -33,8 +33,12 @@ UNINSTALL=0
 CHECK=0
 PROJECT=0
 UPGRADE=0
+DISABLE_CMD=0
+ENABLE_CMD=0
+STATUS_CMD=0
+TARGET_DIR=""
 
-# Detect subcommands: ./install.sh uninstall|check|upgrade [agent]
+# Detect subcommands: ./install.sh uninstall|check|upgrade|disable|enable|status [arg]
 if [[ "$AGENT" == "version" || "$AGENT" == "--version" || "$AGENT" == "-v" ]]; then
   echo "agentguard ${AGENTGUARD_VERSION}"
   exit 0
@@ -48,6 +52,18 @@ elif [[ "$AGENT" == "check" ]]; then
   shift || true
 elif [[ "$AGENT" == "upgrade" ]]; then
   UPGRADE=1
+  shift || true
+elif [[ "$AGENT" == "disable" ]]; then
+  DISABLE_CMD=1
+  TARGET_DIR="${2:-}"
+  shift || true
+elif [[ "$AGENT" == "enable" ]]; then
+  ENABLE_CMD=1
+  TARGET_DIR="${2:-}"
+  shift || true
+elif [[ "$AGENT" == "status" ]]; then
+  STATUS_CMD=1
+  TARGET_DIR="${2:-}"
   shift || true
 fi
 
@@ -567,11 +583,13 @@ install_cursor() {
 
 # Our hook filenames — used to identify which files to remove
 AGENTGUARD_HOOKS=(
+  _check-disabled.sh
   audit-log.sh
   block-destructive-ops.sh
   block-env-read.sh
   block-env.sh
   block-main-branch.sh
+  block-self-edit.sh
   block-system-installs.sh
 )
 
@@ -910,11 +928,13 @@ uninstall_codex() {
 
 CURSOR_AGENTGUARD_FILES=(
   ".cursor/hooks.json"
+  ".cursor/hooks/_check-disabled.sh"
   ".cursor/hooks/audit-log.sh"
   ".cursor/hooks/block-destructive-ops.sh"
   ".cursor/hooks/block-env-read.sh"
   ".cursor/hooks/block-env.sh"
   ".cursor/hooks/block-main-branch.sh"
+  ".cursor/hooks/block-self-edit.sh"
   ".cursor/hooks/block-system-installs.sh"
   ".cursor/rules/karpathy-guidelines.mdc"
   ".cursor/skills/karpathy-guidelines/SKILL.md"
@@ -1188,7 +1208,132 @@ install_project_kiro() {
   log  "Install skills globally instead: ./install.sh kiro --skills <list>" >&2
 }
 
+# ── disable / enable / status ────────────────────────────────────────────────
+#
+# `agentguard disable [<dir>]` adds <dir> (or $PWD) to ~/.agentguard/disabled-dirs.
+# Hooks check this file at runtime and exit 0 (allow) when the active directory
+# matches an entry — making agentguard a no-op for that subtree.
+#
+# Disabling is gated to the user: the command refuses when CLAUDECODE=1 is set,
+# and settings.json deny rules block Claude from invoking it via Bash. Enabling
+# is open — restoring guardrails is never a risk.
+
+AGENTGUARD_DISABLED_DIRS_FILE="${AGENTGUARD_DISABLED_DIRS_FILE:-$AGENTGUARD_CONFIG_DIR/disabled-dirs}"
+
+_resolve_target_dir() {
+  local raw="${TARGET_DIR:-}"
+  if [[ -z "$raw" ]]; then
+    raw="$(pwd -P)"
+  elif [[ -d "$raw" ]]; then
+    raw="$(cd "$raw" && pwd -P)"
+  fi
+  # Non-existent paths are allowed (enabling a since-deleted dir is reasonable).
+  # Validate: absolute path, no embedded newlines, restricted charset to keep
+  # the persisted file unambiguous to read back.
+  if [[ "${raw:0:1}" != "/" ]]; then
+    fail "Refusing non-absolute path: $raw"
+  fi
+  if [[ "$raw" == *$'\n'* ]]; then
+    fail "Refusing path with embedded newline."
+  fi
+  printf '%s' "$raw"
+}
+
+cmd_disable() {
+  if [[ "${CLAUDECODE:-}" == "1" || -n "${CLAUDE_CODE_ENTRYPOINT:-}" ]]; then
+    fail "'agentguard disable' refuses to run inside a Claude Code session. Run it directly in your shell."
+  fi
+  local target
+  target="$(_resolve_target_dir)"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would disable agentguard in: $target"
+    dry "Would write → $AGENTGUARD_DISABLED_DIRS_FILE"
+    return
+  fi
+
+  mkdir -p "$AGENTGUARD_CONFIG_DIR"
+  touch "$AGENTGUARD_DISABLED_DIRS_FILE"
+  if grep -qxF "$target" "$AGENTGUARD_DISABLED_DIRS_FILE" 2>/dev/null; then
+    log "Already disabled: $target"
+    return
+  fi
+  printf '%s\n' "$target" >> "$AGENTGUARD_DISABLED_DIRS_FILE"
+  chmod 644 "$AGENTGUARD_DISABLED_DIRS_FILE"
+  ok "agentguard DISABLED in: $target"
+  log "Guardrails will not fire for this directory or any subdirectory."
+  log "Re-enable with: agentguard enable"
+}
+
+cmd_enable() {
+  local target
+  target="$(_resolve_target_dir)"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would enable agentguard in: $target"
+    return
+  fi
+
+  if [[ ! -f "$AGENTGUARD_DISABLED_DIRS_FILE" ]]; then
+    log "Nothing disabled — file does not exist."
+    return
+  fi
+  if ! grep -qxF "$target" "$AGENTGUARD_DISABLED_DIRS_FILE" 2>/dev/null; then
+    log "Not disabled: $target"
+    return
+  fi
+  # grep -v exits 1 when no lines match (i.e. the file becomes empty), which
+  # would short-circuit the chain and leave the original file untouched. Wrap
+  # in a group with `|| true` so the empty-result case still produces a tmp.
+  local tmp="$AGENTGUARD_DISABLED_DIRS_FILE.tmp"
+  { grep -vxF "$target" "$AGENTGUARD_DISABLED_DIRS_FILE" || true; } > "$tmp"
+  mv "$tmp" "$AGENTGUARD_DISABLED_DIRS_FILE"
+  ok "agentguard ENABLED in: $target"
+}
+
+cmd_status() {
+  local target
+  target="$(_resolve_target_dir)"
+  local hit=""
+  if [[ -f "$AGENTGUARD_DISABLED_DIRS_FILE" ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      line="${line%$'\r'}"
+      line="${line#"${line%%[![:space:]]*}"}"
+      line="${line%"${line##*[![:space:]]}"}"
+      [[ -z "$line" || "${line:0:1}" == "#" ]] && continue
+      if [[ "$target" == "$line" || "$target" == "$line"/* ]]; then
+        hit="$line"
+        break
+      fi
+    done < "$AGENTGUARD_DISABLED_DIRS_FILE"
+  fi
+  if [[ -n "$hit" ]]; then
+    if [[ "$hit" == "$target" ]]; then
+      printf "agentguard: DISABLED in %s\n" "$target"
+    else
+      printf "agentguard: DISABLED in %s (via ancestor %s)\n" "$target" "$hit"
+    fi
+  else
+    printf "agentguard: enabled in %s\n" "$target"
+  fi
+}
+
 # ── entry point ───────────────────────────────────────────────────────────────
+
+if [[ "$DISABLE_CMD" -eq 1 ]]; then
+  cmd_disable
+  exit 0
+fi
+
+if [[ "$ENABLE_CMD" -eq 1 ]]; then
+  cmd_enable
+  exit 0
+fi
+
+if [[ "$STATUS_CMD" -eq 1 ]]; then
+  cmd_status
+  exit 0
+fi
 
 if [[ "$UPGRADE" -eq 1 ]]; then
   do_upgrade

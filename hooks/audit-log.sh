@@ -12,6 +12,9 @@
 # Logging failures are silenced — they must never block tool execution.
 # Exit 0 always.
 
+# Skip logging if the current directory is in the agentguard disabled list.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_check-disabled.sh"
+
 INPUT=$(cat)
 
 # Derive the log path from this script's own location so the hook always writes

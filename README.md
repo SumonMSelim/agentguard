@@ -100,6 +100,25 @@ agentguard check all
 
 Reports which hooks, files, settings, and CLI wrapper are present or missing. Exits 1 if anything is out of order — useful in CI to assert guardrails are in place.
 
+## Disable per directory
+
+For throwaway projects (pet projects, POCs, sandboxes) where you want the AI to have full access, disable agentguard for that directory:
+
+```bash
+# In the project root, in your shell (NOT inside Claude):
+agentguard disable          # disable in current dir
+agentguard enable           # re-enable
+agentguard status           # show state for current dir
+
+# Or target another path:
+agentguard disable /path/to/poc
+agentguard enable  /path/to/poc
+```
+
+Disabling adds the absolute path to `~/.agentguard/disabled-dirs`. Every hook reads that file on each tool call and short-circuits (no-op) when the active directory matches an entry or sits below one. Other directories keep their guardrails.
+
+**Gated:** `agentguard disable` refuses to run inside a Claude Code session (`CLAUDECODE=1`), and the Claude `Bash(agentguard disable*)` permission is denied. The AI cannot disable itself — only you can, from your own shell. Re-enabling is open.
+
 ## Upgrade
 
 ```bash

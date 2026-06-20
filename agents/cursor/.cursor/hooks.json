@@ -5,7 +5,8 @@
       { "command": ".cursor/hooks/block-destructive-ops.sh" },
       { "command": ".cursor/hooks/block-system-installs.sh" },
       { "command": ".cursor/hooks/block-env.sh" },
-      { "command": ".cursor/hooks/block-main-branch.sh" }
+      { "command": ".cursor/hooks/block-main-branch.sh" },
+      { "command": ".cursor/hooks/block-self-edit.sh" }
     ],
     "beforeReadFile": [
       { "command": ".cursor/hooks/block-env-read.sh", "failClosed": true }

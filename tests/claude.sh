@@ -236,6 +236,143 @@ EOF
       ((fail++))
     fi
   fi
+
+  echo ""
+  echo "block-self-edit.sh"
+  ECHO_SETTINGS='echo hi > ~/.claude/settings.json'
+  check "blocks echo > ~/.claude/settings.json" \
+    block "{\"tool_input\":{\"command\":\"$ECHO_SETTINGS\"}}" block-self-edit.sh
+  APPEND_SETTINGS='cat /tmp/x >> ~/.claude/settings.json'
+  check "blocks append to ~/.claude/settings.json" \
+    block "{\"tool_input\":{\"command\":\"$APPEND_SETTINGS\"}}" block-self-edit.sh
+  SED_SETTINGS='sed -i s/x/y/ ~/.claude/settings.json'
+  check "blocks sed -i on settings.json" \
+    block "{\"tool_input\":{\"command\":\"$SED_SETTINGS\"}}" block-self-edit.sh
+  SED_BSD='sed -i.bak s/x/y/ ~/.claude/settings.json'
+  check "blocks BSD sed -i.bak on settings.json" \
+    block "{\"tool_input\":{\"command\":\"$SED_BSD\"}}" block-self-edit.sh
+  RM_HOOK='rm ~/.claude/hooks/block-main-branch.sh'
+  check "blocks rm of a hook script" \
+    block "{\"tool_input\":{\"command\":\"$RM_HOOK\"}}" block-self-edit.sh
+  CP_HOOK='cp /tmp/empty.sh ~/.claude/hooks/block-main-branch.sh'
+  check "blocks cp overwrite of hook script" \
+    block "{\"tool_input\":{\"command\":\"$CP_HOOK\"}}" block-self-edit.sh
+  MV_HOOK='mv /tmp/empty.sh ~/.claude/hooks/block-main-branch.sh'
+  check "blocks mv overwrite of hook script" \
+    block "{\"tool_input\":{\"command\":\"$MV_HOOK\"}}" block-self-edit.sh
+  TEE_SETTINGS='echo hi | tee ~/.claude/settings.json'
+  check "blocks tee to settings.json" \
+    block "{\"tool_input\":{\"command\":\"$TEE_SETTINGS\"}}" block-self-edit.sh
+  CHMOD_HOOK='chmod -x ~/.claude/hooks/block-main-branch.sh'
+  check "blocks chmod -x of hook" \
+    block "{\"tool_input\":{\"command\":\"$CHMOD_HOOK\"}}" block-self-edit.sh
+  KIRO_AGENT='echo hi > ~/.kiro/agents/agentguard.json'
+  check "blocks write to kiro agentguard.json" \
+    block "{\"tool_input\":{\"command\":\"$KIRO_AGENT\"}}" block-self-edit.sh
+  CURSOR_HOOKS='echo hi > .cursor/hooks.json'
+  check "blocks write to cursor hooks.json" \
+    block "{\"tool_input\":{\"command\":\"$CURSOR_HOOKS\"}}" block-self-edit.sh
+  check "allows normal redirect" \
+    allow '{"tool_input":{"command":"echo hi > /tmp/foo"}}' block-self-edit.sh
+  check "allows sed on unrelated file" \
+    allow '{"tool_input":{"command":"sed -i s/a/b/ /tmp/foo"}}' block-self-edit.sh
+  check "allows echo of settings.json (no write)" \
+    allow '{"tool_input":{"command":"echo cat ~/.claude/settings.json"}}' block-self-edit.sh
+  check "allows git commit even if message quotes attack" \
+    allow '{"tool_input":{"command":"git commit -m echo-redirect-to-~/.claude/settings.json"}}' block-self-edit.sh
+  check "allows git add of repo-local path containing claude" \
+    allow '{"tool_input":{"command":"git add agents/claude/settings.json"}}' block-self-edit.sh
+
+  echo ""
+  echo "block-env-read.sh — agentguard self-config"
+  check "blocks Edit on ~/.claude/settings.json" \
+    block '{"tool_input":{"file_path":"/Users/farhan/.claude/settings.json"}}' block-env-read.sh
+  check "blocks Read on ~/.claude/hooks/*" \
+    block '{"tool_input":{"path":"/Users/farhan/.claude/hooks/block-main-branch.sh"}}' block-env-read.sh
+  check "blocks Edit on ~/.kiro/agents/agentguard.json" \
+    block '{"tool_input":{"file_path":"/Users/farhan/.kiro/agents/agentguard.json"}}' block-env-read.sh
+  check "blocks Write on .cursor/hooks/audit-log.sh" \
+    block '{"tool_input":{"file_path":"/Users/farhan/project/.cursor/hooks/audit-log.sh"}}' block-env-read.sh
+
+  echo ""
+  echo "per-directory disable"
+  # AGENTGUARD_DISABLED_DIRS_FILE points to a list containing $PWD → all hooks no-op.
+  DISABLED_TMP=$(mktemp)
+  echo "$(pwd -P)" > "$DISABLED_TMP"
+  AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
+    check "block-env: no-op when dir disabled" \
+    allow '{"tool_input":{"command":"cat .env"}}' block-env.sh
+  AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
+    check "block-main-branch: no-op when dir disabled" \
+    allow '{"tool_input":{"command":"git push origin main"}}' block-main-branch.sh
+  AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
+    check "block-destructive: no-op when dir disabled" \
+    allow '{"tool_input":{"command":"rm -rf /"}}' block-destructive-ops.sh
+  AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
+    check "block-system-installs: no-op when dir disabled" \
+    allow '{"tool_input":{"command":"brew install node"}}' block-system-installs.sh
+  AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
+    check "block-env-read: no-op when dir disabled" \
+    allow '{"tool_input":{"path":"/project/.env"}}' block-env-read.sh
+  AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
+    check "block-self-edit: no-op when dir disabled" \
+    allow '{"tool_input":{"command":"echo {} > ~/.claude/settings.json"}}' block-self-edit.sh
+
+  # File with a non-matching dir → hooks act normally (block as expected).
+  echo "/some/other/dir" > "$DISABLED_TMP"
+  AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
+    check "block-env: blocks normally when dir not in list" \
+    block '{"tool_input":{"command":"cat .env"}}' block-env.sh
+
+  # Ancestor entry covers descendants.
+  ANCESTOR=$(dirname "$(pwd -P)")
+  echo "$ANCESTOR" > "$DISABLED_TMP"
+  AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
+    check "block-env: ancestor entry disables descendant" \
+    allow '{"tool_input":{"command":"cat .env"}}' block-env.sh
+
+  # Comments and blank lines ignored.
+  printf '# a comment\n\n   \n/some/other/dir\n' > "$DISABLED_TMP"
+  AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
+    check "block-env: ignores comments and blanks, no match" \
+    block '{"tool_input":{"command":"cat .env"}}' block-env.sh
+
+  # block-env-read blocks writes to ~/.agentguard/
+  check "block-env-read: blocks Write on ~/.agentguard/" \
+    block '{"tool_input":{"file_path":"/Users/farhan/.agentguard/disabled-dirs"}}' block-env-read.sh
+
+  rm -f "$DISABLED_TMP"
+
+  echo ""
+  echo "agentguard enable CLI"
+  # Regression: when the disabled-dirs file has ONE matching line, enable
+  # must empty it. The earlier `grep -vxF && mv` pattern left the file
+  # untouched in this case because grep -v exits 1 when no lines match.
+  CLI_TMP=$(mktemp)
+  echo "/tmp/agentguard-enable-test" > "$CLI_TMP"
+  AGENTGUARD_DISABLED_DIRS_FILE="$CLI_TMP" \
+    bash "$SCRIPT_DIR/install.sh" enable /tmp/agentguard-enable-test >/dev/null 2>&1
+  if [[ ! -s "$CLI_TMP" ]]; then
+    printf "  PASS  %s\n" "enable empties single-line file"
+    ((pass++))
+  else
+    printf "  FAIL  %s (file still contains: %s)\n" "enable empties single-line file" "$(cat "$CLI_TMP")"
+    ((fail++))
+  fi
+
+  # Enable should preserve other entries when removing one
+  printf '/tmp/keep-a\n/tmp/agentguard-enable-test\n/tmp/keep-b\n' > "$CLI_TMP"
+  AGENTGUARD_DISABLED_DIRS_FILE="$CLI_TMP" \
+    bash "$SCRIPT_DIR/install.sh" enable /tmp/agentguard-enable-test >/dev/null 2>&1
+  if grep -qxF "/tmp/keep-a" "$CLI_TMP" && grep -qxF "/tmp/keep-b" "$CLI_TMP" && ! grep -qxF "/tmp/agentguard-enable-test" "$CLI_TMP"; then
+    printf "  PASS  %s\n" "enable removes only target entry, preserves others"
+    ((pass++))
+  else
+    printf "  FAIL  %s\n" "enable removes only target entry, preserves others"
+    ((fail++))
+  fi
+
+  rm -f "$CLI_TMP"
 }
 
 # ── Claude install verification ───────────────────────────────────────────────

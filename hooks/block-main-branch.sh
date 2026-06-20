@@ -26,6 +26,9 @@
 #
 # Exit 2 = blocked. The agent receives the stderr message as feedback.
 
+# Skip all checks if the current directory is in the agentguard disabled list.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_check-disabled.sh"
+
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // ""') || exit 0
 
