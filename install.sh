@@ -1393,6 +1393,12 @@ if [[ "$PROJECT" -eq 1 ]]; then
   exit 0
 fi
 
+# Reject unknown agents before any interactive prompt.
+case "$AGENT" in
+  claude|codex|kiro|cursor|all) ;;
+  *) fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | all" ;;
+esac
+
 # codex is instruction-only (no hooks), so protected-branch config is irrelevant.
 # upgrade reuses existing config — skip prompt to avoid interrupting the reinstall loop.
 [[ "$AGENT" != "codex" && "$UPGRADE" -eq 0 ]] && prompt_protected_branches
@@ -1403,7 +1409,6 @@ case "$AGENT" in
   kiro)   install_kiro   ;;
   cursor) install_cursor ;;
   all)    install_claude; echo; install_codex; echo; install_kiro; echo; install_cursor ;;
-  *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | all" ;;
 esac
 
 install_cli_wrapper
