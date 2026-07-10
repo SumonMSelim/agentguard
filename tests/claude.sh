@@ -187,6 +187,14 @@ EOF
   check "blocks npm install -g"       block '{"tool_input":{"command":"npm install -g typescript"}}'         block-system-installs.sh
   check "blocks yarn global add"      block '{"tool_input":{"command":"yarn global add ts-node"}}'           block-system-installs.sh
   check "blocks sudo pip install"     block '{"tool_input":{"command":"sudo pip install requests"}}'         block-system-installs.sh
+
+  # Grok payload shape (toolName + toolInput) — ensure extraction + block works
+  echo ""
+  echo "grok-shaped payloads (toolName/toolInput)"
+  check "grok blocks cat .env"         block '{"toolName":"run_terminal_command","toolInput":{"command":"cat .env"}}' block-env.sh
+  check "grok blocks read .env"        block '{"toolName":"read_file","toolInput":{"target_file":".env"}}'   block-env-read.sh
+  check "grok blocks search .env"      block '{"toolName":"search_replace","toolInput":{"file_path":".env","new_string":"x"}}' block-env-read.sh
+  check "grok allows normal cmd"       allow '{"toolName":"run_terminal_command","toolInput":{"command":"ls -l"}}' block-env.sh
   check "blocks pip install outside venv" block '{"tool_input":{"command":"pip install requests"}}'          block-system-installs.sh
   VIRTUAL_ENV=/tmp/fakevenv check "allows pip install inside venv" allow '{"tool_input":{"command":"pip install requests"}}' block-system-installs.sh
   check "allows local npm install"    allow '{"tool_input":{"command":"npm install lodash"}}'                block-system-installs.sh
@@ -381,7 +389,7 @@ run_install_check() {
   local S="$HOME/.claude/settings.json"
 
   if [[ ! -f "$S" ]]; then
-    printf "  SKIP  ~/.claude/settings.json not found — run ./install.sh claude first\n"
+    printf "  SKIP  ~/.claude/settings.json not found — run 'agentguard claude' (or ./install.sh claude) first\n"
     return
   fi
 

@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "run_terminal_command|Bash",
+        "hooks": [
+          { "type": "command", "command": "block-env.sh" },
+          { "type": "command", "command": "block-main-branch.sh" },
+          { "type": "command", "command": "block-system-installs.sh" },
+          { "type": "command", "command": "block-destructive-ops.sh" },
+          { "type": "command", "command": "block-self-edit.sh" }
+        ]
+      },
+      {
+        "matcher": "read_file|Read|Glob|Grep|list_dir|ListDir",
+        "hooks": [
+          { "type": "command", "command": "block-env-read.sh" }
+        ]
+      },
+      {
+        "matcher": "search_replace|Write|Edit|MultiEdit|fs_write|fs_read",
+        "hooks": [
+          { "type": "command", "command": "block-env-read.sh" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "audit-log.sh" }
+        ]
+      }
+    ]
+  }
+}

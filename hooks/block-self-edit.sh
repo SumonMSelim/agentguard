@@ -25,7 +25,9 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_check-disabled.sh"
 
 INPUT=$(cat)
-COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // ""') || exit 0
+COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // .toolInput.command // ""') || exit 0
+# Grok: emit JSON decision on stdout for blocks (in addition to exit 2 + stderr)
+_grok_block() { echo "$1" >&2; if echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
 
 # Allowlist: git invocations don't modify ~/.claude/ etc directly. Commit
 # messages and diff hunks routinely contain text that would otherwise trip
@@ -39,7 +41,7 @@ fi
 # Paths covering agentguard's own configuration across all agents. Anchored
 # so "myclaude/..." doesn't false-match; preceded by start-of-string, slash,
 # or any non-identifier character (space, quote, ~, etc).
-_SELF_PATH='(^|[^a-zA-Z0-9_-])(\.claude/(settings\.json|hooks(/|$)|CLAUDE\.md)|\.kiro/(settings\.json|hooks(/|$)|agents(/|$)|KIRO\.md)|\.cursor/(hooks\.json|hooks(/|$))|\.agentguard(/|$))'
+_SELF_PATH='(^|[^a-zA-Z0-9_-])(\.claude/(settings\.json|hooks(/|$)|CLAUDE\.md)|\.kiro/(settings\.json|hooks(/|$)|agents(/|$)|KIRO\.md)|\.cursor/(hooks\.json|hooks(/|$))|\.agentguard(/|$)|(\.grok/(hooks(/|$)|config\.toml|AGENTS\.md|skills(/|$)|memory(/|$))))'
 
 # Write-style operators that, combined with a self-config path, indicate an
 # attempt to modify the configuration.
@@ -47,9 +49,7 @@ _WRITE_OPS='(>>?|(^|[^a-zA-Z0-9_-])(tee|rm|cp|mv|chmod|chown|install|ln|truncate
 
 if echo "$COMMAND" | grep -qE "$_SELF_PATH" \
   && echo "$COMMAND" | grep -qE "$_WRITE_OPS"; then
-  echo "Blocked: modifying agentguard's own configuration via Bash is not permitted." >&2
-  echo "If you really need to change the hook configuration, edit it from your own shell, outside the agent." >&2
-  exit 2
+  _grok_block "Blocked: modifying agentguard's own configuration via Bash is not permitted. If you really need to change the hook configuration, edit it from your own shell, outside the agent."
 fi
 
 exit 0

@@ -5,11 +5,14 @@
 # Also installs an `agentguard` CLI wrapper to ~/.local/bin/ so you can run
 # `agentguard <cmd>` from any directory after the initial install.
 #
-# Usage:
-#   ./install.sh [claude|codex|kiro|cursor|all]           — install (default: claude)
-#   ./install.sh uninstall [claude|codex|kiro|cursor|all] — remove guardrails
-#   ./install.sh check [claude|codex|kiro|cursor|all]     — report installation status (no writes)
-#   ./install.sh upgrade                                   — git pull + reinstall all tracked agents
+# Preferred usage (after the `agentguard` CLI wrapper is installed):
+#   agentguard [claude|codex|kiro|cursor|grok|all]
+#   agentguard uninstall ...
+#   agentguard check ...
+#   agentguard upgrade
+#
+# Bootstrap from a fresh clone (one time only, installs the wrapper):
+#   ./install.sh claude   # then use `agentguard` for all future commands
 #
 #   --skills <list>        — comma-separated skill names to append (e.g. karpathy-guidelines)
 #                            Skills tagged [core] are always appended unless --skills none
@@ -38,7 +41,7 @@ ENABLE_CMD=0
 STATUS_CMD=0
 TARGET_DIR=""
 
-# Detect subcommands: ./install.sh uninstall|check|upgrade|disable|enable|status [arg]
+# Detect subcommands (can be invoked as `agentguard` or directly as ./install.sh for bootstrap)
 if [[ "$AGENT" == "version" || "$AGENT" == "--version" || "$AGENT" == "-v" ]]; then
   echo "agentguard ${AGENTGUARD_VERSION}"
   exit 0
@@ -81,7 +84,7 @@ for i in "${!args[@]}"; do
   fi
 done
 
-# If the first positional arg is a flag (e.g. ./install.sh --dry-run), default agent to claude
+# If the first positional arg is a flag (e.g. agentguard --dry-run or direct ./install.sh), default agent to claude
 if [[ "$AGENT" == --* ]]; then
   AGENT="claude"
 fi
@@ -570,6 +573,48 @@ install_cursor() {
   # Cursor is project-local — not tracked for upgrade (no single home dir to reinstall to).
 }
 
+install_grok() {
+  local dest="$HOME/.grok"
+
+  section "Installing Grok guardrails → $dest"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
+
+  # Install shared hook scripts to ~/.grok/hooks/
+  install_hooks "$dest/hooks"
+
+  # Install Grok-specific hook registration (JSON wires the scripts for PreToolUse etc.)
+  local hooks_json_src="$SCRIPT_DIR/agents/grok/hooks.json"
+  local hooks_json_dest="$dest/hooks/agentguard.json"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would copy $hooks_json_src → $hooks_json_dest"
+  else
+    mkdir -p "$dest/hooks"
+    cp "$hooks_json_src" "$hooks_json_dest"
+    ok "Grok hooks registered → $hooks_json_dest"
+  fi
+
+  # Grok uses AGENTS.md (and variants) for global rules. Reuse the canonical content.
+  # Only write if missing (skills append handles re-runs via sentinel).
+  if [[ ! -f "$HOME/AGENTS.md" ]]; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would copy AGENTS.md → $HOME/AGENTS.md"
+    else
+      cp "$SCRIPT_DIR/agents/codex/AGENTS.md" "$HOME/AGENTS.md"
+      ok "AGENTS.md installed → $HOME/AGENTS.md"
+    fi
+    append_skills "$HOME/AGENTS.md"
+  else
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "AGENTS.md already present — skipping base copy, checking skills"
+    else
+      log "AGENTS.md already present — skipping base copy"
+    fi
+    append_skills "$HOME/AGENTS.md"
+  fi
+
+  track_installed_agent "grok"
+}
+
 # ── uninstallers ──────────────────────────────────────────────────────────────
 #
 # Uninstall removes only the files agentguard owns:
@@ -777,7 +822,7 @@ do_upgrade() {
 
   if [[ -z "$tracked" ]]; then
     warn "No tracked agent installations found in $AGENTGUARD_CONFIG_FILE."
-    log "Run './install.sh <agent>' to install and start tracking."
+    log "Run 'agentguard <agent>' (or './install.sh <agent>' for initial bootstrap) to install and start tracking."
     exit 0
   fi
 
@@ -997,6 +1042,36 @@ uninstall_cursor() {
   fi
 }
 
+uninstall_grok() {
+  local dest="$HOME/.grok"
+
+  section "Uninstalling Grok guardrails from $dest"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be changed)"
+
+  # Remove our hook scripts (shared names) and our registration json.
+  remove_hooks "$dest/hooks"
+  remove_file "$dest/hooks/agentguard.json"
+  # Only remove AGENTS.md at ~ if agentguard owns the content (shared with codex).
+  local src_agents="$SCRIPT_DIR/agents/codex/AGENTS.md"
+  if [[ -f "$HOME/AGENTS.md" && -f "$src_agents" ]]; then
+    local src_lines
+    src_lines=$(wc -l < "$src_agents")
+    if diff -q <(head -n "$src_lines" "$HOME/AGENTS.md") "$src_agents" >/dev/null 2>&1; then
+      remove_file "$HOME/AGENTS.md"
+    else
+      log "AGENTS.md present but not owned by agentguard — leaving in place"
+    fi
+  fi
+
+  # Clean empty hooks dir if possible (non-fatal).
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    rmdir "$dest/hooks" 2>/dev/null || true
+    rmdir "$dest" 2>/dev/null || true
+  fi
+
+  untrack_installed_agent "grok"
+}
+
 # ── check ─────────────────────────────────────────────────────────────────────
 #
 # Reports whether the installation matches expected state. No writes.
@@ -1148,6 +1223,16 @@ check_cursor() {
   echo ""
 }
 
+check_grok() {
+  local dest="$HOME/.grok"
+  section "Checking Grok installation → $dest"
+  check_file "$dest/hooks/agentguard.json" "agentguard.json (grok hooks)"
+  check_exec "$dest/hooks/audit-log.sh" "audit-log.sh"
+  check_exec "$dest/hooks/block-env-read.sh" "block-env-read.sh"
+  check_file "$HOME/AGENTS.md" "AGENTS.md"
+  echo ""
+}
+
 # ── project-level installers ─────────────────────────────────────────────────
 #
 # --project appends skills only to the instruction file in the current working
@@ -1157,6 +1242,7 @@ check_cursor() {
 #   Codex:  AGENTS.md          (created if absent)
 #   Cursor: always project-local — --project runs full install instead
 #   Kiro:   not supported      (prints warning, exits 0)
+#   Grok:   AGENTS.md          (created if absent; Grok also supports .grok/ for project)
 
 install_project_claude() {
   local dest
@@ -1205,7 +1291,28 @@ install_project_codex() {
 install_project_kiro() {
   warn "Kiro does not support per-project instruction files." >&2
   log  "Kiro's agent.json references a single global file (~/.kiro/KIRO.md)." >&2
-  log  "Install skills globally instead: ./install.sh kiro --skills <list>" >&2
+  log  "Install skills globally instead: agentguard kiro --skills <list> (or ./install.sh for bootstrap)" >&2
+}
+
+install_project_grok() {
+  local file
+  file="$(pwd)/AGENTS.md"
+
+  section "Installing Grok project skills → $file"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
+
+  if [[ ! -f "$file" ]]; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would create $file (empty)"
+    else
+      touch "$file"
+      ok "Created $file"
+    fi
+  else
+    log "$file already exists — appending skills only"
+  fi
+
+  append_skills "$file"
 }
 
 # ── disable / enable / status ────────────────────────────────────────────────
@@ -1349,15 +1456,16 @@ if [[ "$CHECK" -eq 1 ]]; then
     codex)  check_codex  ;;
     kiro)   check_kiro   ;;
     cursor) check_cursor ;;
-    all)    check_claude; check_codex; check_kiro; check_cursor ;;
-    *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | all" ;;
+    grok)   check_grok   ;;
+    all)    check_claude; check_codex; check_kiro; check_cursor; check_grok ;;
+    *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | grok | all" ;;
   esac
   if [[ "$_check_issues" -eq 0 ]]; then
     ok "All checks passed."
     check_for_update
     exit 0
   else
-    warn "$_check_issues issue(s) found. Run './install.sh [agent]' to fix."
+    warn "$_check_issues issue(s) found. Run 'agentguard [agent]' to fix."
     check_for_update
     exit 1
   fi
@@ -1369,8 +1477,9 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     codex)  uninstall_codex  ;;
     kiro)   uninstall_kiro   ;;
     cursor) uninstall_cursor ;;
-    all)    uninstall_claude; echo; uninstall_codex; echo; uninstall_kiro; echo; uninstall_cursor; echo; remove_agentguard_config ;;
-    *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | all" ;;
+    grok)   uninstall_grok   ;;
+    all)    uninstall_claude; echo; uninstall_codex; echo; uninstall_kiro; echo; uninstall_cursor; echo; uninstall_grok; echo; remove_agentguard_config ;;
+    *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | grok | all" ;;
   esac
   echo ""
   ok "Done."
@@ -1384,8 +1493,9 @@ if [[ "$PROJECT" -eq 1 ]]; then
     codex)  install_project_codex  ;;
     cursor) log "Cursor is always project-local — running full install instead"; install_cursor ;;
     kiro)   install_project_kiro   ;;
-    all)    install_project_claude; echo; install_project_codex; echo; install_project_kiro ;;
-    *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | cursor | kiro | all" ;;
+    grok)   install_project_grok   ;;
+    all)    install_project_claude; echo; install_project_codex; echo; install_project_kiro; echo; install_project_grok ;;
+    *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | cursor | kiro | grok | all" ;;
   esac
   echo ""
   ok "Done."
@@ -1395,8 +1505,8 @@ fi
 
 # Reject unknown agents before any interactive prompt.
 case "$AGENT" in
-  claude|codex|kiro|cursor|all) ;;
-  *) fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | all" ;;
+  claude|codex|kiro|cursor|grok|all) ;;
+  *) fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | grok | all" ;;
 esac
 
 # codex is instruction-only (no hooks), so protected-branch config is irrelevant.
@@ -1408,7 +1518,8 @@ case "$AGENT" in
   codex)  install_codex  ;;
   kiro)   install_kiro   ;;
   cursor) install_cursor ;;
-  all)    install_claude; echo; install_codex; echo; install_kiro; echo; install_cursor ;;
+  grok)   install_grok   ;;
+  all)    install_claude; echo; install_codex; echo; install_kiro; echo; install_cursor; echo; install_grok ;;
 esac
 
 install_cli_wrapper

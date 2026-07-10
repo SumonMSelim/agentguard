@@ -20,7 +20,9 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_check-disabled.sh"
 
 INPUT=$(cat)
-COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // ""') || exit 0
+COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // .toolInput.command // ""') || exit 0
+# Grok: emit JSON decision on stdout for blocks (in addition to exit 2 + stderr)
+_grok_block() { echo "$1" >&2; if echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
 
 # Statement-boundary prefix — see block-main-branch.sh for rationale.
 _STMT_START='(^|[;&|]|\$\()[[:space:]]*'
@@ -30,32 +32,24 @@ _STMT_START='(^|[;&|]|\$\()[[:space:]]*'
 # Handles unquoted, single-quoted, and double-quoted paths (e.g. cat ".env.local").
 if echo "$COMMAND" | grep -qE \
   "${_STMT_START}(cat|less|head|tail|more|bat|zcat|nano|vim|nvim|vi|emacs|code|cursor|subl|open)[[:space:]]+[\"']?[^\"']*\.env"; then
-  echo "Blocked: reading .env files or dumping environment variables is not permitted." >&2
-  echo "If a secret is needed for this task, ask the user to supply it directly." >&2
-  exit 2
+  _grok_block "Blocked: reading .env files or dumping environment variables is not permitted. If a secret is needed for this task, ask the user to supply it directly." 
 fi
 
 # Block printenv at a statement boundary (with or without arguments).
 if echo "$COMMAND" | grep -qE "${_STMT_START}printenv([[:space:]]|\$)"; then
-  echo "Blocked: reading .env files or dumping environment variables is not permitted." >&2
-  echo "If a secret is needed for this task, ask the user to supply it directly." >&2
-  exit 2
+  _grok_block "Blocked: reading .env files or dumping environment variables is not permitted. If a secret is needed for this task, ask the user to supply it directly." 
 fi
 
 # Block bare `env` used as a dump (no args, or piped/redirected).
 # Must be at a statement boundary. Does NOT block `env VAR=value command`.
 if echo "$COMMAND" | grep -qE "${_STMT_START}env[[:space:]]*(\$|[|>&])"; then
-  echo "Blocked: bare 'env' to dump environment variables is not permitted." >&2
-  echo "If a secret is needed for this task, ask the user to supply it directly." >&2
-  exit 2
+  _grok_block "Blocked: bare 'env' to dump environment variables is not permitted. If a secret is needed for this task, ask the user to supply it directly."
 fi
 
 # Block GitHub CLI auth token exposure.
 # gh must be at a statement boundary.
 if echo "$COMMAND" | grep -qE "${_STMT_START}gh[[:space:]]+auth[[:space:]]+token"; then
-  echo "Blocked: 'gh auth token' exposes the GitHub authentication token." >&2
-  echo "If this token is needed for a task, ask the user to supply it directly." >&2
-  exit 2
+  _grok_block "Blocked: 'gh auth token' exposes the GitHub authentication token. If this token is needed for a task, ask the user to supply it directly."
 fi
 
 exit 0

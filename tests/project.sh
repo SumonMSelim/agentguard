@@ -1,5 +1,5 @@
 #!/bin/bash
-# tests/project.sh — agentguard --project flag test suite
+# tests/project.sh — agentguard --project flag test suite (tests use direct script invocation)
 #
 # Tests per-project skill installation for Claude, Codex, and Cursor.
 # Verifies: file creation, skill content, sentinel dedup, dry-run, Kiro warning.

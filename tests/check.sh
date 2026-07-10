@@ -1,7 +1,7 @@
 #!/bin/bash
 # tests/check.sh — agentguard check command test suite
 #
-# Verifies that ./install.sh check [agent] correctly reports
+# Verifies that `agentguard check` (or ./install.sh check) correctly reports
 # pass/fail for installed and missing installations.
 #
 # Requirements: bash, jq
@@ -48,6 +48,7 @@ check_false "claude check fails when not installed" run_check claude
 check_false "kiro check fails when not installed"   run_check kiro
 check_false "codex check fails when not installed"  run_check codex
 check_false "cursor check fails when not installed" run_check cursor
+check_false "grok check fails when not installed"   run_check grok
 check_false "all check fails when not installed"    run_check all
 
 # ── fully installed → check passes ───────────────────────────────────────────
@@ -60,6 +61,7 @@ check_true "claude check passes after install" run_check claude
 check_true "kiro check passes after install"   run_check kiro
 check_true "codex check passes after install"  run_check codex
 check_true "cursor check passes after install" run_check cursor
+check_true "grok check passes after install"   run_check grok
 check_true "all check passes after install"    run_check all
 
 # ── partial install → check fails ────────────────────────────────────────────
