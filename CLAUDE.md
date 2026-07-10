@@ -4,28 +4,32 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 ## What this repo is
 
-agentguard installs security guardrails for AI coding agents (Claude Code, Kiro, Cursor, Codex). Enforces rules at shell hook level — not just instructions. Install target: user home (`~/.claude/`, `~/.kiro/`) or project dir (`.cursor/`), not this repo.
+agentguard installs security guardrails for AI coding agents (Claude Code, Kiro, Cursor, Codex, Grok). Enforces rules at shell hook level — not just instructions. Install target: user home (`~/.claude/`, `~/.kiro/`, `~/.grok/`) or project dir (`.cursor/`), not this repo.
 
 ## Commands
 
+**Preferred:** Use the `agentguard` command (installed by the wrapper or packages).
+
 ```bash
-# Install
-./install.sh claude                          # Claude Code (global)
-./install.sh kiro                            # Kiro (global)
-./install.sh cursor                          # Cursor (project-local, runs from CWD)
-./install.sh all                             # All agents
-./install.sh claude --dry-run                # Preview without writing
-./install.sh claude --skills go,aws          # With specific skill packs
-./install.sh cursor --skills go,aws          # Cursor full install + skills
-./install.sh claude --project --skills go    # Append skills to CWD only (no hooks)
+# Install / manage guardrails
+agentguard claude                          # Claude Code (global)
+agentguard kiro                            # Kiro (global)
+agentguard grok                            # Grok
+agentguard cursor                          # Cursor (project-local, run from CWD)
+agentguard all                             # All agents
+agentguard claude --dry-run                # Preview without writing
+agentguard claude --skills go,aws          # With specific skill packs
+agentguard cursor --skills go,aws          # Cursor full install + skills
+agentguard claude --project --skills go    # Append skills to CWD only (no hooks)
 
-# Uninstall
-./install.sh uninstall claude
-./install.sh uninstall claude --dry-run
+# Uninstall / check
+agentguard uninstall claude
+agentguard uninstall claude --dry-run
+agentguard check claude
+agentguard check all
 
-# Check installation health (exits 1 if anything missing)
-./install.sh check claude
-./install.sh check all
+# Bootstrap (one time only, from a fresh clone — this installs the `agentguard` CLI wrapper)
+#   ./install.sh claude     # after this, use `agentguard claude` etc. for everything
 
 # Tests
 bash tests/run_all.sh                        # All suites
@@ -66,7 +70,7 @@ Per-agent config installed to agent's home dir:
 
 **Instruction file sync rule**: `agents/claude/CLAUDE.md` is canonical source. `agents/kiro/KIRO.md` and `agents/cursor/AGENTS.md` must be byte-for-byte identical. `agents/codex/AGENTS.md` must match modulo 3-line Codex header (lines 3-5). `tests/check-sync.sh` enforces all four.
 
-### Settings merge (`install.sh: merge_settings`)
+### Settings merge (`install.sh`: merge_settings)
 When `~/.claude/settings.json` exists, installer merges rather than overwrites:
 - `permissions.allow/ask/deny` → union + deduplicate
 - `hooks.PreToolUse/PostToolUse` → merge by matcher key, append hooks (dedup by command string)
@@ -84,7 +88,7 @@ Duplication prevented by sentinel comment: `<!-- agentguard:skill:<name> -->`.
 - `claude.sh` / `kiro.sh` — pipe JSON payloads to hooks, assert exit codes. `check()` for path-independent tests, `check_in()` for tests needing specific git branch (creates temp repos).
 - `check-sync.sh` — diffs instruction files.
 - `uninstall.sh` — installs then uninstalls, verifies clean state.
-- `check.sh` — exercises `./install.sh check`.
+- `check.sh` — exercises `agentguard check` (or direct script during development).
 - `project.sh` — exercises `--project` flag installs.
 - `run_all.sh` — runs all suites, exits 1 if any fail.
 
@@ -92,6 +96,6 @@ Duplication prevented by sentinel comment: `<!-- agentguard:skill:<name> -->`.
 
 - `block-env-read.sh` is primary `.env` guard (intercepts Read/Write/Edit tools). `block-env.sh` is best-effort on bash surface only.
 - Kiro guardrails only activate under `agentguard` agent — user must switch after install.
-- Cursor install always project-local (CWD). Run `./install.sh cursor` from target project root.
-- Upgrade path: uninstall then reinstall. Re-running install skips existing files.
+- Cursor (and Grok project) installs are project-local (CWD). Run `agentguard cursor` from the target project root (after the CLI wrapper is installed). For the initial bootstrap you may run the `install.sh` script directly.
+- Upgrade path: use `agentguard upgrade` (or uninstall then reinstall). Re-running skips existing files.
 - Adding new hook: add to `AGENTGUARD_HOOKS` array in `install.sh` and `CURSOR_AGENTGUARD_FILES` for Cursor uninstall tracking.

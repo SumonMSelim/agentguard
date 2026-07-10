@@ -29,7 +29,7 @@ Set this in your shell profile, a project-level `.claude/settings.json` hook env
 
 ## settings.json merge rules (Claude)
 
-When an existing `~/.claude/settings.json` is found, `install.sh` merges rather than replaces:
+When an existing `~/.claude/settings.json` is found, the installer merges rather than replaces:
 
 | Key                                                           | Behavior                                                 |
 |---------------------------------------------------------------|----------------------------------------------------------|
@@ -69,7 +69,8 @@ agentguard claude --skills none               # skip all skills
 # From your project root:
 agentguard claude --project --skills go,aws    # → .claude/CLAUDE.md
 agentguard codex  --project --skills go,aws    # → AGENTS.md
-agentguard all    --project --skills go,aws    # → claude + codex (kiro warns)
+agentguard grok   --project --skills go,aws    # → AGENTS.md
+agentguard all    --project --skills go,aws    # → claude + codex + grok (kiro warns)
 agentguard kiro   --project --skills go,aws    # prints warning — not supported
 ```
 
@@ -77,7 +78,7 @@ Kiro's `agent.json` hardcodes a single global file path; per-project overrides r
 
 ### Adding a skill
 
-Create `skills/<name>/SKILL.md` with YAML front-matter (`name`, `tags`, `description`, `license`) followed by the content. Tag it `core` to include by default. `install.sh` picks it up automatically.
+Create `skills/<name>/SKILL.md` with YAML front-matter (`name`, `tags`, `description`, `license`) followed by the content. Tag it `core` to include by default. The installer picks it up automatically.
 
 ## Audit log rotation
 
@@ -86,6 +87,7 @@ Create `skills/<name>/SKILL.md` with YAML front-matter (`name`, `tags`, `descrip
 - Claude: `~/.claude/audit.log`
 - Kiro: `~/.kiro/audit.log`
 - Cursor: `.cursor/audit.log` (project-local)
+- Grok: `~/.grok/audit.log` (if using Grok's native hooks dir)
 
 To cap growth, add a `logrotate` config:
 

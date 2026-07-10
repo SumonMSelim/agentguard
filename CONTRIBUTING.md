@@ -47,14 +47,14 @@ license: MIT
 ---
 ```
 
-Followed by markdown content. No registration needed — `install.sh` picks it up automatically.
+Followed by markdown content. No registration needed — `agentguard` (via install.sh) picks it up automatically.
 
 ### New agent support
 
 Each agent lives in `agents/<name>/`. At minimum:
 - An instruction file (CLAUDE.md / KIRO.md / AGENTS.md equivalent)
 - A settings/config file wiring up the hooks
-- Install and uninstall functions in `install.sh`
+- Install and uninstall functions in `install.sh` (the `agentguard` CLI is a thin wrapper around it)
 - A test suite in `tests/<agent>.sh`
 - Sync rules updated in `tests/check-sync.sh` if the instruction file must match others
 

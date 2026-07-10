@@ -14,6 +14,7 @@ Security guardrails and workflow policies for AI coding agents. Blocks dangerous
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code/hooks) | Shell hooks + settings.json + instruction file      |
 | [Kiro](https://kiro.dev/docs/cli/hooks/)                            | Shell hooks + agent config + instruction file       |
 | [Cursor](https://cursor.com)                                        | Project-level hooks + rules/skills (via `.cursor/`) |
+| [Grok](https://x.ai)                                                | Shell hooks (via `~/.grok/hooks/`) + AGENTS.md      |
 | [OpenAI Codex](https://github.com/openai/codex)                     | Instruction file only (no hook support)             |
 
 See [docs/configuration.md](docs/configuration.md) for the full list of enforced rules.
@@ -51,21 +52,22 @@ agentguard all      # All agents
 Requires: `bash`, `jq`.
 
 ```bash
-# Clone once, install globally
+# Clone once
 git clone https://github.com/SumonMSelim/agentguard.git ~/agentguard
-~/agentguard/install.sh claude   # Claude Code (installs to ~/.claude/)
-~/agentguard/install.sh kiro     # Kiro (installs to ~/.kiro/)
-~/agentguard/install.sh cursor   # Cursor IDE (installs to .cursor/ in current directory)
-~/agentguard/install.sh codex    # Codex (installs to ~/AGENTS.md)
-~/agentguard/install.sh all      # All agents
+
+# Bootstrap the `agentguard` CLI (one-time only)
+~/agentguard/install.sh claude   # one-time only: bootstraps the `agentguard` CLI wrapper into ~/.local/bin
 ```
 
-Every install also drops an `agentguard` CLI wrapper to `~/.local/bin/`. After that you can run `agentguard` from any directory:
+The script installs the `agentguard` wrapper to `~/.local/bin/`. After this, use the `agentguard` command for everything:
 
 ```bash
-agentguard claude --project --skills go,aws   # add skills to current project
-agentguard check claude                        # verify installation
-agentguard uninstall claude                    # remove
+agentguard claude   # Claude Code
+agentguard grok     # Grok
+agentguard all      # All agents
+agentguard check claude
+agentguard uninstall claude
+agentguard claude --project --skills go,aws
 ```
 
 If `~/.local/bin` is not in your `PATH`, add this to your shell profile:
@@ -73,6 +75,8 @@ If `~/.local/bin` is not in your `PATH`, add this to your shell profile:
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
+
+Common options:
 
 ```bash
 --dry-run                              # preview changes without writing anything
@@ -177,6 +181,7 @@ agentguard claude --skills none
 | Claude Code | `.claude/CLAUDE.md` in CWD                            |                                  |
 | Codex       | `AGENTS.md` in CWD                                    |                                  |
 | Cursor      | `.cursor/` in CWD (hooks + `AGENTS.md`)               | Always project-local; full install |
+| Grok        | `AGENTS.md` in CWD                                    | Hooks global only (project rules supported) |
 | Kiro        | —                                                     | Not supported; prints warning    |
 
 ```bash
@@ -186,6 +191,7 @@ agentguard all --project --skills go,aws
 # Or per-agent:
 agentguard claude --project --skills go,aws     # → .claude/CLAUDE.md
 agentguard codex  --project --skills go,aws     # → AGENTS.md
+agentguard grok   --project --skills go,aws     # → AGENTS.md (Grok loads it)
 agentguard cursor --skills go,aws               # → .cursor/ (hooks + AGENTS.md)
 
 # Preview without writing:
@@ -198,12 +204,13 @@ Claude Code loads both `~/.claude/CLAUDE.md` (global) and `.claude/CLAUDE.md` (p
 
 ### Adding a skill
 
-Create `skills/<name>/SKILL.md` with YAML frontmatter (`name`, `tags`, `description`, `license`) followed by markdown content. Tag `core` to auto-include on every install. `install.sh` picks it up automatically — no registration needed.
+Create `skills/<name>/SKILL.md` with YAML frontmatter (`name`, `tags`, `description`, `license`) followed by markdown content. Tag `core` to auto-include on every install. The installer picks it up automatically — no registration needed.
 
 ## Notes
 
 - **Kiro** — guardrails only activate when using the `agentguard` agent. Switch to it in Kiro after install.
 - **Cursor** — guardrails are project-local. `agentguard cursor` installs `.cursor/` into the current directory.
+- **Grok** — native hooks via `~/.grok/hooks/agentguard.json` + shared scripts; global rules via `~/AGENTS.md`. Grok also loads Claude/Cursor locations for compatibility.
 - **Codex** — instruction-only; no hooks, no automated enforcement backstop.
 - **`block-env.sh`** — best-effort on the bash surface. `block-env-read.sh` is the primary layer (intercepts Read/Write/Edit tools directly).
 - **Protected branches** — install prompts for which branches to protect from direct commit/push (default: `main,master`). Your answer is saved to `~/.agentguard/config` and applies across all agents. Override per-shell with `export AGENTGUARD_PROTECTED_BRANCHES="main,master,develop"`.
