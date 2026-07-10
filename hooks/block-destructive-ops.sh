@@ -20,7 +20,9 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_check-disabled.sh"
 
 INPUT=$(cat)
-COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // ""') || exit 0
+COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // .toolInput.command // ""') || exit 0
+# Grok: emit JSON decision on stdout for blocks (in addition to exit 2 + stderr)
+_grok_block() { echo "$1" >&2; if echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
 
 # Statement-boundary prefix — see block-main-branch.sh for rationale.
 _STMT_START='(^|[;&|]|\$\()[[:space:]]*(sudo[[:space:]]+)?'
@@ -34,9 +36,7 @@ _STMT_START='(^|[;&|]|\$\()[[:space:]]*(sudo[[:space:]]+)?'
 # argument and don't fire on /var/log etc.
 if echo "$COMMAND" | grep -qE \
   "${_STMT_START}rm[[:space:]]([^[:space:]]+[[:space:]]+)*(/\*?|~/?\*?|\$HOME/?\*?)([[:space:]]|\$)"; then
-  echo "Blocked: rm on root or home directory is not permitted." >&2
-  echo "If you need to remove specific files, use an explicit path." >&2
-  exit 2
+  _grok_block "Blocked: rm on root or home directory is not permitted. If you need to remove specific files, use an explicit path."
 fi
 
 # Block pipe-to-shell patterns (supply chain risk).
@@ -44,9 +44,7 @@ fi
 # Catches: curl url | bash, wget -O- url | sh, curl url | sudo bash, etc.
 if echo "$COMMAND" | grep -qE \
   "${_STMT_START}(curl|wget)[[:space:]].*\|[[:space:]]*(sudo[[:space:]]+)?(bash|sh|zsh|fish|dash|ash|ksh)([[:space:]]|\$)"; then
-  echo "Blocked: pipe-to-shell (curl|bash, wget|sh, etc.) is not permitted." >&2
-  echo "Download the script first, inspect it, then run it explicitly." >&2
-  exit 2
+  _grok_block "Blocked: pipe-to-shell (curl|bash, wget|sh, etc.) is not permitted. Download the script first, inspect it, then run it explicitly."
 fi
 
 exit 0

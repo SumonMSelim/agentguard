@@ -18,7 +18,9 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_check-disabled.sh"
 
 INPUT=$(cat)
-COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // ""') || exit 0
+COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // .toolInput.command // ""') || exit 0
+# Grok: emit JSON decision on stdout for blocks (in addition to exit 2 + stderr)
+_grok_block() { echo "$1" >&2; if echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
 
 # Statement-boundary prefix — see block-main-branch.sh for rationale.
 # sudo is included as an optional prefix since package managers are often invoked
@@ -28,9 +30,7 @@ _STMT_START='(^|[;&|]|\$\()[[:space:]]*(sudo[[:space:]]+)?'
 # Block system package managers.
 if echo "$COMMAND" | grep -qE \
   "${_STMT_START}(apt|apt-get|yum|dnf|pacman|brew|apk)[[:space:]]+(install|add)"; then
-  echo "Blocked: system package installation is not permitted." >&2
-  echo "Use Docker instead, or ask the user for explicit permission first." >&2
-  exit 2
+  _grok_block "Blocked: system package installation is not permitted. Use Docker instead, or ask the user for explicit permission first."
 fi
 
 # Block global JS package installs.
@@ -40,30 +40,22 @@ fi
 # --global anywhere would risk false positives on package names containing "global".
 if echo "$COMMAND" | grep -qE \
   "${_STMT_START}npm[[:space:]]+(install|i)[[:space:]]+(-g|--global)"; then
-  echo "Blocked: global npm/yarn/pnpm installs are not permitted." >&2
-  echo "Use a local install inside Docker or the project instead." >&2
-  exit 2
+  _grok_block "Blocked: global npm/yarn/pnpm installs are not permitted. Use a local install inside Docker or the project instead."
 fi
 if echo "$COMMAND" | grep -qE \
   "${_STMT_START}yarn[[:space:]]+global[[:space:]]+add"; then
-  echo "Blocked: global npm/yarn/pnpm installs are not permitted." >&2
-  echo "Use a local install inside Docker or the project instead." >&2
-  exit 2
+  _grok_block "Blocked: global npm/yarn/pnpm installs are not permitted. Use a local install inside Docker or the project instead."
 fi
 if echo "$COMMAND" | grep -qE \
   "${_STMT_START}pnpm[[:space:]]+(add|install)[[:space:]]+(-g|--global)"; then
-  echo "Blocked: global npm/yarn/pnpm installs are not permitted." >&2
-  echo "Use a local install inside Docker or the project instead." >&2
-  exit 2
+  _grok_block "Blocked: global npm/yarn/pnpm installs are not permitted. Use a local install inside Docker or the project instead."
 fi
 
 # Block sudo pip installs.
 # sudo is already part of _STMT_START so we match: (boundary) sudo pip install
 if echo "$COMMAND" | grep -qE \
   "(^|[;&|]|\$\()[[:space:]]*sudo[[:space:]]+pip3?[[:space:]]+install"; then
-  echo "Blocked: sudo pip install is not permitted." >&2
-  echo "Use Docker or a virtualenv instead." >&2
-  exit 2
+  _grok_block "Blocked: sudo pip install is not permitted. Use Docker or a virtualenv instead."
 fi
 
 # Block plain pip install outside an active virtualenv.
@@ -81,9 +73,7 @@ fi
 if echo "$COMMAND" | grep -qE \
   "(^|[;&|]|\$\()[[:space:]]*pip3?[[:space:]]+install"; then
   if [[ -z "${VIRTUAL_ENV:-}" ]]; then
-    echo "Blocked: pip install outside a virtualenv is not permitted." >&2
-    echo "Activate a virtualenv first, or use Docker." >&2
-    exit 2
+    _grok_block "Blocked: pip install outside a virtualenv is not permitted. Activate a virtualenv first, or use Docker."
   fi
 fi
 

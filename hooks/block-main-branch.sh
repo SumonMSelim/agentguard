@@ -30,7 +30,9 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_check-disabled.sh"
 
 INPUT=$(cat)
-COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // ""') || exit 0
+COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // .toolInput.command // ""') || exit 0
+# Grok: emit JSON decision on stdout for blocks (in addition to exit 2 + stderr)
+_grok_block() { echo "$1" >&2; if echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
 
 # Statement-boundary prefix: start-of-string or a shell separator, followed by
 # optional whitespace.  Covers:  git …  /  foo && git …  /  foo; git …  /
@@ -93,12 +95,8 @@ BRANCH=$(git branch --show-current 2>/dev/null)
 
 if echo "$BRANCH" | grep -qE "^(${PROTECTED_RE})$"; then
   _block_msg() {
-    echo "Blocked: currently on '$BRANCH'. Never commit or push directly to '$BRANCH'." >&2
-    echo "Steps to follow:" >&2
-    echo "  1. git pull origin $BRANCH" >&2
-    echo "  2. git checkout -b <type>/<short-description>" >&2
-    echo "  3. Make changes and commit on that branch" >&2
-    echo "  4. When ready, open a PR to merge back into $BRANCH" >&2
+    local m="Blocked: currently on '$BRANCH'. Never commit or push directly to '$BRANCH'. Steps: 1. git pull origin $BRANCH; 2. git checkout -b <type>/<short-description>; 3. Make changes and commit on that branch; 4. When ready, open a PR to merge back into $BRANCH"
+    _grok_block "$m"
   }
 
   # Always block commits on protected branches
@@ -123,9 +121,7 @@ fi
 # inside bracket expressions by BSD/GNU grep -E, so a space literal is required.
 # Uses ([[:space:]]|$) after the branch name so trailing flags like --tags don't bypass.
 if echo "$COMMAND" | grep -qE "${_GIT_STMT}push[[:space:]]+.*[: ](refs/heads/)?(${PROTECTED_RE})([[:space:]]|\$)"; then
-  echo "Blocked: pushing directly to a protected branch (${_raw}) is not permitted." >&2
-  echo "Open a PR instead." >&2
-  exit 2
+  _grok_block "Blocked: pushing directly to a protected branch (${_raw}) is not permitted. Open a PR instead."
 fi
 
 exit 0

@@ -24,14 +24,19 @@ INPUT=$(cat)
 LOG="$(cd "$(dirname "$0")/.." && pwd)/audit.log"
 
 ENTRY=$(echo "$INPUT" | jq -r '
-  (.tool_name // .tool // "unknown") as $tool |
+  (.tool_name // .tool // .toolName // "unknown") as $tool |
   (
     .command //
     .file_path //
     .tool_input.command //
     .tool_input.file_path //
     .tool_input.path //
+    .toolInput.command //
+    .toolInput.file_path //
+    .toolInput.path //
+    .toolInput.target_file //
     (.tool_input.operations // [] | first | .path // "") //
+    (.toolInput.operations // [] | first | .path // "") //
     .tool_input.description //
     ""
   ) as $detail |

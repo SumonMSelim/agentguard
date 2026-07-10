@@ -181,7 +181,7 @@ run_install_check() {
   local AGENT_JSON="$HOME/.kiro/agents/agentguard.json"
 
   if [[ ! -f "$AGENT_JSON" ]]; then
-    printf "  SKIP  ~/.kiro/agents/agentguard.json not found — run ./install.sh kiro first\n"
+    printf "  SKIP  ~/.kiro/agents/agentguard.json not found — run 'agentguard kiro' (or ./install.sh kiro) first\n"
     return
   fi
 
