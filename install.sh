@@ -795,6 +795,67 @@ untrack_installed_agent() {
 do_upgrade() {
   section "agentguard upgrade"
 
+  # Detect Homebrew-managed install and delegate to brew. The formula's
+  # post_install hook reinstalls tracked agents automatically, so just
+  # trigger the upgrade — no separate reinstall loop needed here.
+  if [[ "$SCRIPT_DIR" == */Cellar/agentguard/* ]] || [[ "$SCRIPT_DIR" == */homebrew/*/agentguard/* ]]; then
+    log "Homebrew install detected. Upgrading via brew..."
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would run: brew upgrade agentguard"
+    else
+      brew upgrade agentguard || fail "brew upgrade failed."
+      ok "Homebrew package upgraded (tracked agents reinstalled automatically)"
+    fi
+    return
+  fi
+
+  # Detect .deb install (Debian/Ubuntu) and self-update via GitHub releases.
+  if [[ "$SCRIPT_DIR" == "/usr/lib/agentguard" ]]; then
+    command -v dpkg >/dev/null 2>&1 || fail "Cannot upgrade: dpkg not found."
+    log "Debian package install detected. Fetching latest release..."
+    local deb_url deb_tmp
+    deb_url=$(curl -fsSL "https://api.github.com/repos/SumonMSelim/agentguard/releases/latest" \
+              | grep -Eo '"browser_download_url": *"[^"]+\.deb"' \
+              | sed -E 's/.*"(https[^"]+)"/\1/') || fail "Could not resolve latest .deb release URL."
+    [[ -n "$deb_url" ]] || fail "No .deb asset found in latest release."
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would download and install: $deb_url"
+    else
+      deb_tmp="$(mktemp /tmp/agentguard-XXXXXX.deb)"
+      curl -fsSL "$deb_url" -o "$deb_tmp" || fail "Download failed: $deb_url"
+      sudo dpkg -i "$deb_tmp" || fail "dpkg -i failed."
+      rm -f "$deb_tmp"
+      ok "Debian package upgraded"
+    fi
+
+    local new_version tracked=""
+    new_version=$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "unknown")
+    if [[ -f "$AGENTGUARD_CONFIG_FILE" ]]; then
+      tracked=$(grep -E '^AGENTGUARD_INSTALLED_AGENTS=' "$AGENTGUARD_CONFIG_FILE" \
+                | tail -n1 \
+                | sed -E 's/^AGENTGUARD_INSTALLED_AGENTS=//; s/^"//; s/"$//') || true
+    fi
+    if [[ -z "$tracked" ]]; then
+      warn "No tracked agent installations found in $AGENTGUARD_CONFIG_FILE."
+      exit 0
+    fi
+    echo ""
+    log "Reinstalling tracked agents: $tracked"
+    for agent in $tracked; do
+      section "── $agent ──"
+      if [[ "$DRY_RUN" -eq 1 ]]; then
+        dry "Would uninstall $agent then reinstall $agent"
+      else
+        agentguard uninstall "$agent"
+        echo ""
+        agentguard "$agent"
+      fi
+    done
+    echo ""
+    ok "Upgrade complete → agentguard v$new_version"
+    return
+  fi
+
   # Verify this script lives inside a git repo (it should — it's the clone).
   if ! git -C "$SCRIPT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
     fail "Cannot upgrade: $SCRIPT_DIR is not a git repository. Clone agentguard to upgrade."
