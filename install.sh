@@ -795,17 +795,47 @@ untrack_installed_agent() {
 do_upgrade() {
   section "agentguard upgrade"
 
-  # Detect Homebrew-managed install and delegate to brew. The formula's
-  # post_install hook reinstalls tracked agents automatically, so just
-  # trigger the upgrade — no separate reinstall loop needed here.
+  # Detect Homebrew-managed install: upgrade the package, then reinstall
+  # tracked agents ourselves. Homebrew's post_install runs sandboxed on
+  # macOS and cannot reliably write to $HOME, so we can't delegate this
+  # to the formula — it must happen here, after the brew upgrade lands.
   if [[ "$SCRIPT_DIR" == */Cellar/agentguard/* ]] || [[ "$SCRIPT_DIR" == */homebrew/*/agentguard/* ]]; then
     log "Homebrew install detected. Upgrading via brew..."
     if [[ "$DRY_RUN" -eq 1 ]]; then
       dry "Would run: brew upgrade agentguard"
     else
       brew upgrade agentguard || fail "brew upgrade failed."
-      ok "Homebrew package upgraded (tracked agents reinstalled automatically)"
+      ok "Homebrew package upgraded"
     fi
+
+    local brew_prefix new_script_dir new_version tracked=""
+    brew_prefix=$(brew --prefix agentguard 2>/dev/null) || fail "Could not resolve brew --prefix agentguard."
+    new_script_dir="$brew_prefix/libexec"
+    new_version=$(cat "$new_script_dir/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "unknown")
+
+    if [[ -f "$AGENTGUARD_CONFIG_FILE" ]]; then
+      tracked=$(grep -E '^AGENTGUARD_INSTALLED_AGENTS=' "$AGENTGUARD_CONFIG_FILE" \
+                | tail -n1 \
+                | sed -E 's/^AGENTGUARD_INSTALLED_AGENTS=//; s/^"//; s/"$//') || true
+    fi
+    if [[ -z "$tracked" ]]; then
+      warn "No tracked agent installations found in $AGENTGUARD_CONFIG_FILE."
+      exit 0
+    fi
+    echo ""
+    log "Reinstalling tracked agents: $tracked"
+    for agent in $tracked; do
+      section "── $agent ──"
+      if [[ "$DRY_RUN" -eq 1 ]]; then
+        dry "Would uninstall $agent then reinstall $agent"
+      else
+        bash "$new_script_dir/install.sh" uninstall "$agent"
+        echo ""
+        bash "$new_script_dir/install.sh" "$agent"
+      fi
+    done
+    echo ""
+    ok "Upgrade complete → agentguard v$new_version"
     return
   fi
 
