@@ -63,7 +63,8 @@ check_in() {
 # must supply their own controlled git environment.
 MAIN_REPO=$(mktemp -d)
 DEVELOP_REPO=""   # populated later in run_hook_tests; declared here so the trap covers it
-trap 'rm -rf "$MAIN_REPO" "${DEVELOP_REPO:-}"' EXIT
+FEAT_REPO=""      # populated later in run_hook_tests; declared here so the trap covers it
+trap 'rm -rf "$MAIN_REPO" "${DEVELOP_REPO:-}" "${FEAT_REPO:-}"' EXIT
 git -C "$MAIN_REPO" init -q
 git -C "$MAIN_REPO" symbolic-ref HEAD refs/heads/main
 git -C "$MAIN_REPO" -c user.email=t@t.com -c user.name=t commit --allow-empty -q -m init
@@ -137,6 +138,31 @@ run_hook_tests() {
   AGENTGUARD_PROTECTED_BRANCHES="main,master,develop" \
     check "blocks push to custom branch (develop)" \
     block '{"tool_input":{"command":"git push origin develop"}}' block-main-branch.sh
+
+  # Leading `cd <dir> &&`/`cd <dir>;` should be honored as the git target dir,
+  # not the hook's own process cwd — covers the case where the agent's shell
+  # cwd differs from the repo it's about to commit/push in.
+  FEAT_REPO=$(mktemp -d)
+  git -C "$FEAT_REPO" init -q
+  git -C "$FEAT_REPO" symbolic-ref HEAD refs/heads/main
+  git -C "$FEAT_REPO" -c user.email=t@t.com -c user.name=t commit --allow-empty -q -m init
+  git -C "$FEAT_REPO" checkout -q -b feat/thing
+
+  CD_FEAT_COMMIT="cd $FEAT_REPO && git commit -m test"
+  check "allows commit via cd into feature-branch repo" \
+    allow "$(jq -n --arg cmd "$CD_FEAT_COMMIT" '{tool_input:{command:$cmd}}')" block-main-branch.sh
+
+  CD_MAIN_COMMIT="cd $MAIN_REPO && git commit -m test"
+  check "blocks commit via cd into main-branch repo" \
+    block "$(jq -n --arg cmd "$CD_MAIN_COMMIT" '{tool_input:{command:$cmd}}')" block-main-branch.sh
+
+  CD_MAIN_SEMI="cd $MAIN_REPO; git commit -m test"
+  check "blocks commit via cd; (semicolon separator) into main-branch repo" \
+    block "$(jq -n --arg cmd "$CD_MAIN_SEMI" '{tool_input:{command:$cmd}}')" block-main-branch.sh
+
+  CD_MAIN_QUOTED="cd \"$MAIN_REPO\" && git commit -m test"
+  check "blocks commit via cd \"quoted dir\" into main-branch repo" \
+    block "$(jq -n --arg cmd "$CD_MAIN_QUOTED" '{tool_input:{command:$cmd}}')" block-main-branch.sh
 
   # Config file source: ~/.agentguard/config via AGENTGUARD_CONFIG_FILE override
   CFG_TMP=$(mktemp)
