@@ -87,11 +87,29 @@ PROTECTED_RE=$(echo "$_raw" | tr ',' '\n' \
   | sed 's/[.^$*+?()[\]\\|{}]/\\&/g' \
   | awk '{printf "%s%s", sep, $0; sep="|"} END{print ""}')
 
+# Resolve the directory the git command actually runs in. A command can lead
+# with `cd <dir> &&` / `cd <dir>;` to target a different repo than this hook's
+# own process cwd — check that dir instead so branch detection matches reality.
+# Only the FIRST leading cd is honored (anchored to start-of-string); a cd
+# appearing after the first statement separator is not a reliable target
+# (could be inside a subshell, conditional, etc.) and is intentionally ignored.
+GIT_DIR_ARG=()
+if [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+([^\;\&\|]+)[[:space:]]*(\&\&|\;) ]]; then
+  _cd_target="${BASH_REMATCH[1]}"
+  _cd_target="${_cd_target%"${_cd_target##*[![:space:]]}"}"
+  _cd_target="${_cd_target%\"}"; _cd_target="${_cd_target#\"}"
+  _cd_target="${_cd_target%\'}"; _cd_target="${_cd_target#\'}"
+  if [[ -d "$_cd_target" ]]; then
+    GIT_DIR_ARG=(-C "$_cd_target")
+  fi
+  unset _cd_target
+fi
+
 # Detect current branch.
 # Note: in detached HEAD state --show-current returns an empty string, so the
 # branch checks below are skipped. Committing in detached HEAD creates an
 # anonymous commit on no branch; this is intentionally not blocked.
-BRANCH=$(git branch --show-current 2>/dev/null)
+BRANCH=$(git "${GIT_DIR_ARG[@]}" branch --show-current 2>/dev/null)
 
 if echo "$BRANCH" | grep -qE "^(${PROTECTED_RE})$"; then
   _block_msg() {
