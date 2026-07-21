@@ -64,7 +64,6 @@
       "Bash(./install.sh disable)",
       "Bash(./install.sh disable *)",
       "Read(~/.agentguard/**)",
-      "Write(~/.agentguard/**)",
       "Edit(~/.agentguard/**)"
     ]
   },

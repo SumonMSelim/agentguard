@@ -429,6 +429,38 @@ run_install_check() {
   fi
 }
 
+# ── settings.json merge tests ─────────────────────────────────────────────────
+
+run_merge_tests() {
+  echo "merge_settings"
+
+  local tmp existing merged
+  tmp=$(mktemp -d)
+  existing="$tmp/settings.json"
+  merged="$tmp/merged.json"
+
+  # Simulate a prior install that shipped the broken Write() deny rule.
+  jq -n '{
+    permissions: {
+      deny: ["Read(~/.agentguard/**)", "Write(~/.agentguard/**)", "Edit(~/.agentguard/**)", "/tmp/keep-me"]
+    }
+  }' > "$existing"
+
+  # install.sh runs immediately when executed/sourced (no `[[ sourced ]]` guard),
+  # so pull just the helpers + merge_settings() out rather than sourcing the file.
+  local fn_file="$tmp/merge_fn.sh"
+  sed -n '96,118p;246,317p' "$SCRIPT_DIR/install.sh" > "$fn_file"
+  # shellcheck disable=SC1090
+  source "$fn_file"
+  DRY_RUN=0 merge_settings "$existing" "$SCRIPT_DIR/agents/claude/settings.json" "$merged" >/dev/null 2>&1
+
+  jq_check "stale Write() rule pruned"   '.permissions.deny | index("Write(~/.agentguard/**)") == null' "$merged"
+  jq_check "Edit() rule still present"   '.permissions.deny | index("Edit(~/.agentguard/**)") != null'  "$merged"
+  jq_check "unrelated user deny kept"    '.permissions.deny | index("/tmp/keep-me") != null'             "$merged"
+
+  rm -rf "$tmp"
+}
+
 # ── entry point ───────────────────────────────────────────────────────────────
 
 case "$MODE" in
@@ -440,6 +472,8 @@ case "$MODE" in
     ;;
   all)
     run_hook_tests
+    echo ""
+    run_merge_tests
     echo ""
     run_install_check
     ;;
