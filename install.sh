@@ -270,6 +270,12 @@ merge_settings() {
     '
     def union_arr(a; b): ((a // []) + (b // [])) | unique;
 
+    # Known-stale entries removed from guardrails over time. Pruned from the
+    # user deny array before unioning so upgrades self-heal instead of
+    # carrying dead/broken rules forward forever.
+    def stale_deny: ["Write(~/.agentguard/**)"];
+    def prune_stale(a): (a // []) - stale_deny;
+
     # Merge PreToolUse hook arrays.
     # For each guardrail matcher block:
     #   - if the user has the same matcher, append our hooks (dedup by command)
@@ -292,7 +298,7 @@ merge_settings() {
     $user
     | .permissions.allow       = union_arr($user.permissions.allow;       $guard.permissions.allow)
     | .permissions.ask         = union_arr($user.permissions.ask;         $guard.permissions.ask)
-    | .permissions.deny        = union_arr($user.permissions.deny;        $guard.permissions.deny)
+    | .permissions.deny        = union_arr(prune_stale($user.permissions.deny); $guard.permissions.deny)
     | .permissions.defaultMode = ($user.permissions.defaultMode // $guard.permissions.defaultMode // "acceptEdits")
     | .hooks.PreToolUse        = merge_hooks(
                                    ($user.hooks.PreToolUse  // []);
