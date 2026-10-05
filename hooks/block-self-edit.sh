@@ -29,6 +29,17 @@ COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // .toolInput.c
 # Grok: emit JSON decision on stdout for blocks (in addition to exit 2 + stderr)
 _grok_block() { echo "$1" >&2; if echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
 
+# `agentguard disable` (or install.sh disable) turns every guardrail off for a
+# directory. Block it at any statement position, including behind sudo, env
+# (with -u / VAR=val) or inline VAR=val prefixes that strip the Claude session
+# variables. Checked before the git allowlist so `git status && agentguard
+# disable` is still caught.
+_STMT_START='(^|[;&|`]|\$\()[[:space:]]*(sudo[[:space:]]+)?(env([[:space:]]+(-u[[:space:]]*[^[:space:]]+|-[a-zA-Z]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*))*[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
+_DISABLE_CMD='(([^[:space:];&|]*/)?agentguard|((bash|sh|zsh)[[:space:]]+([^[:space:]]+[[:space:]]+)*)?[^[:space:];&|]*install\.sh)[[:space:]]+disable([[:space:]]|$)'
+if echo "$COMMAND" | grep -qE "${_STMT_START}${_DISABLE_CMD}"; then
+  _grok_block "Blocked: agents may not run 'agentguard disable'. Disabling guardrails requires the user to confirm in their own terminal."
+fi
+
 # Allowlist: git invocations don't modify ~/.claude/ etc directly. Commit
 # messages and diff hunks routinely contain text that would otherwise trip
 # the two-pass detector (e.g. quoted "> ~/.claude/settings.json" in a commit

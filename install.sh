@@ -58,15 +58,12 @@ elif [[ "$AGENT" == "upgrade" ]]; then
   shift || true
 elif [[ "$AGENT" == "disable" ]]; then
   DISABLE_CMD=1
-  TARGET_DIR="${2:-}"
   shift || true
 elif [[ "$AGENT" == "enable" ]]; then
   ENABLE_CMD=1
-  TARGET_DIR="${2:-}"
   shift || true
 elif [[ "$AGENT" == "status" ]]; then
   STATUS_CMD=1
-  TARGET_DIR="${2:-}"
   shift || true
 fi
 
@@ -81,6 +78,10 @@ for i in "${!args[@]}"; do
   fi
   if [[ "${args[$i]}" == "--project" ]]; then
     PROJECT=1
+  fi
+  # disable/enable/status take an optional path: the first non-flag argument.
+  if [[ $((DISABLE_CMD + ENABLE_CMD + STATUS_CMD)) -gt 0 && -z "$TARGET_DIR" && "${args[$i]}" != --* ]]; then
+    TARGET_DIR="${args[$i]}"
   fi
 done
 
@@ -1531,8 +1532,10 @@ install_project_grok() {
 # matches an entry — making agentguard a no-op for that subtree.
 #
 # Disabling is gated to the user: the command refuses when CLAUDECODE=1 is set,
-# and settings.json deny rules block Claude from invoking it via Bash. Enabling
-# is open — restoring guardrails is never a risk.
+# requires a controlling terminal, and reads a typed confirmation from /dev/tty
+# (not stdin), which no agent can supply. settings.json deny rules and
+# block-self-edit.sh also block agents from invoking it via Bash. Enabling is
+# open — restoring guardrails is never a risk.
 
 AGENTGUARD_DISABLED_DIRS_FILE="${AGENTGUARD_DISABLED_DIRS_FILE:-$AGENTGUARD_CONFIG_DIR/disabled-dirs}"
 
@@ -1566,6 +1569,17 @@ cmd_disable() {
     dry "Would disable agentguard in: $target"
     dry "Would write → $AGENTGUARD_DISABLED_DIRS_FILE"
     return
+  fi
+
+  # Confirmation is read from /dev/tty, never stdin, so `yes |` cannot answer it.
+  if ! { : < /dev/tty > /dev/tty; } 2>/dev/null; then
+    fail "'agentguard disable' needs an interactive terminal to confirm. Run it directly in your shell."
+  fi
+  local answer=""
+  printf "  This turns OFF all agentguard guardrails in: %s\n  Type 'yes' to confirm: " "$target" > /dev/tty
+  IFS= read -r answer < /dev/tty || true
+  if [[ "$answer" != "yes" ]]; then
+    fail "Aborted. agentguard stays enabled in: $target"
   fi
 
   mkdir -p "$AGENTGUARD_CONFIG_DIR"
