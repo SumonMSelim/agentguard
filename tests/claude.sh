@@ -80,6 +80,17 @@ jq_check() {
   fi
 }
 
+check_true() {
+  local label="$1"; shift
+  if "$@" >/dev/null 2>&1; then
+    printf "  PASS  %s\n" "$label"
+    ((pass++))
+  else
+    printf "  FAIL  %s\n" "$label"
+    ((fail++))
+  fi
+}
+
 # ── hook logic tests ──────────────────────────────────────────────────────────
 
 run_hook_tests() {
@@ -475,7 +486,7 @@ run_merge_tests() {
   # install.sh runs immediately when executed/sourced (no `[[ sourced ]]` guard),
   # so pull just the helpers + merge_settings() out rather than sourcing the file.
   local fn_file="$tmp/merge_fn.sh"
-  sed -n '96,118p;246,317p' "$SCRIPT_DIR/install.sh" > "$fn_file"
+  sed -n '96,118p;246,329p' "$SCRIPT_DIR/install.sh" > "$fn_file"
   # shellcheck disable=SC1090
   source "$fn_file"
   DRY_RUN=0 merge_settings "$existing" "$SCRIPT_DIR/agents/claude/settings.json" "$merged" >/dev/null 2>&1
@@ -483,6 +494,48 @@ run_merge_tests() {
   jq_check "stale Write() rule pruned"   '.permissions.deny | index("Write(~/.agentguard/**)") == null' "$merged"
   jq_check "Edit() rule still present"   '.permissions.deny | index("Edit(~/.agentguard/**)") != null'  "$merged"
   jq_check "unrelated user deny kept"    '.permissions.deny | index("/tmp/keep-me") != null'             "$merged"
+
+  # #58: a matcher-less PreToolUse block (valid in Claude Code) must survive an
+  # in-place install unchanged instead of crashing jq and truncating the file.
+  local fake_home="$tmp/home" rc
+  mkdir -p "$fake_home/.claude"
+  local S="$fake_home/.claude/settings.json"
+  jq -n '{hooks: {PreToolUse: [{hooks: [{type: "command", command: "echo no-matcher"}]}]}}' > "$S"
+  (cd "$tmp" && HOME="$fake_home" bash "$SCRIPT_DIR/install.sh" claude) >/dev/null 2>&1
+  rc=$?
+  check_true "matcher-less block: install exits 0"      test "$rc" -eq 0
+  check_true "matcher-less block: settings.json non-empty" test -s "$S"
+  jq_check "matcher-less block: kept first, unchanged" \
+    '.hooks.PreToolUse[0] == {hooks: [{type: "command", command: "echo no-matcher"}]}' "$S"
+  jq_check "matcher-less block: guardrail hooks added" \
+    '[.hooks.PreToolUse[].hooks[].command | test("block-env.sh")] | any' "$S"
+
+  # #58: invalid JSON in the user file aborts the install and leaves it intact.
+  printf '{"model": "x",}\n' > "$S"
+  cp "$S" "$tmp/before.json"
+  (cd "$tmp" && HOME="$fake_home" bash "$SCRIPT_DIR/install.sh" claude) >/dev/null 2>&1
+  rc=$?
+  check_true "invalid JSON: install exits non-zero"  test "$rc" -ne 0
+  check_true "invalid JSON: file byte-identical"     cmp -s "$S" "$tmp/before.json"
+
+  # #77: user hooks keep their order and come before ours.
+  jq -n '{hooks: {PreToolUse: [{matcher: "Bash", hooks: [
+    {type: "command", command: "z-first.sh"},
+    {type: "command", command: "a-second.sh"}]}]}}' > "$existing"
+  (DRY_RUN=0 merge_settings "$existing" "$SCRIPT_DIR/agents/claude/settings.json" "$merged") >/dev/null 2>&1
+  jq_check "user hook order preserved, before ours" \
+    '[.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[].command][0:3]
+     == ["z-first.sh", "a-second.sh", "bash ~/.claude/hooks/block-env.sh"]' "$merged"
+
+  # #77: user hooks are kept verbatim, even when they share a command string
+  # with each other or with ours; our copy of that command is not appended.
+  jq -n '{hooks: {PreToolUse: [{matcher: "Bash", hooks: [
+    {type: "command", command: "bash ~/.claude/hooks/block-env.sh", timeout: 5},
+    {type: "command", command: "bash ~/.claude/hooks/block-env.sh", timeout: 9}]}]}}' > "$existing"
+  (DRY_RUN=0 merge_settings "$existing" "$SCRIPT_DIR/agents/claude/settings.json" "$merged") >/dev/null 2>&1
+  jq_check "same-command user hooks both kept, ours not added" \
+    '[.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[]
+      | select(.command == "bash ~/.claude/hooks/block-env.sh") | .timeout] == [5, 9]' "$merged"
 
   rm -rf "$tmp"
 }
