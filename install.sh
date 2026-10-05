@@ -259,6 +259,11 @@ merge_settings() {
     return
   fi
 
+  # Refuse to merge into a file jq cannot parse — leave it untouched.
+  if [[ -f "$existing" ]] && ! jq empty "$existing"; then
+    fail "$existing is not valid JSON — fix it and re-run. File left unchanged."
+  fi
+
   local user_json='{}'
   [[ -f "$existing" ]] && user_json=$(cat "$existing")
   local guard_json
@@ -280,17 +285,20 @@ merge_settings() {
     # For each guardrail matcher block:
     #   - if the user has the same matcher, append our hooks (dedup by command)
     #   - if not, add the entire block
+    # A missing matcher is treated as "". User hooks are kept verbatim and in
+    # order; ours are appended only when no hook with that command exists yet.
     def merge_hooks(uarr; garr):
-      (garr | map({(.matcher): .hooks}) | add // {}) as $gi |
+      (garr | map({(.matcher // ""): .hooks}) | add // {}) as $gi |
       (uarr | map(
-        .matcher as $m |
+        (.matcher // "") as $m |
         if ($gi | has($m)) then
-          .hooks = ((.hooks // []) + $gi[$m] | unique_by(.command))
+          .hooks = reduce $gi[$m][] as $h ((.hooks // []);
+            if any(.[]; .command == $h.command) then . else . + [$h] end)
         else . end
       )) +
       (garr | map(select(
-        .matcher as $gm |
-        (uarr | map(.matcher) | index($gm)) == null
+        (.matcher // "") as $gm |
+        (uarr | map(.matcher // "") | index($gm)) == null
       )));
 
     # Start from the user object so all personal keys are preserved,
@@ -311,7 +319,11 @@ merge_settings() {
     | .includeCoAuthoredBy     = $guard.includeCoAuthoredBy
     | .gitAttribution          = $guard.gitAttribution
     | .disableGitWorkflow      = $guard.disableGitWorkflow
-    ' > "$output"
+    ' > "${output}.tmp.$$" || {
+      rm -f "${output}.tmp.$$"
+      fail "settings.json merge failed — $output left unchanged."
+    }
+  mv "${output}.tmp.$$" "$output"
 
   ok "settings.json merged → $output"
 }
