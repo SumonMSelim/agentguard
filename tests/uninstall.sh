@@ -243,6 +243,40 @@ else
   ((fail++))
 fi
 
+# ── user-owned instruction files ──────────────────────────────────────────────
+
+echo ""
+echo "uninstall claude — keeps user-authored CLAUDE.md, strips only skill sections"
+run_uninstall claude
+printf 'MY OWN RULES\n' > "$FAKE_HOME/.claude/CLAUDE.md"
+run_install claude
+check_true  "skills appended to user CLAUDE.md"   grep -qF '<!-- agentguard:skill:' "$FAKE_HOME/.claude/CLAUDE.md"
+run_uninstall claude
+check_true  "user CLAUDE.md kept"                 test -f "$FAKE_HOME/.claude/CLAUDE.md"
+check_true  "custom line present"                 grep -qxF 'MY OWN RULES' "$FAKE_HOME/.claude/CLAUDE.md"
+check_false "agentguard skill sections gone"      grep -qF 'agentguard:' "$FAKE_HOME/.claude/CLAUDE.md"
+check_true  "CLAUDE.md restored to user content"  diff <(printf 'MY OWN RULES\n') "$FAKE_HOME/.claude/CLAUDE.md"
+
+echo ""
+echo "uninstall codex — keeps user-authored AGENTS.md, strips only skill sections"
+printf 'MY AGENTS\n' > "$FAKE_HOME/AGENTS.md"
+run_install codex
+check_true  "skills appended to user AGENTS.md"   grep -qF '<!-- agentguard:skill:' "$FAKE_HOME/AGENTS.md"
+run_uninstall codex
+check_true  "user AGENTS.md kept"                 test -f "$FAKE_HOME/AGENTS.md"
+check_true  "custom line present"                 grep -qxF 'MY AGENTS' "$FAKE_HOME/AGENTS.md"
+check_false "agentguard skill sections gone"      grep -qF 'agentguard:' "$FAKE_HOME/AGENTS.md"
+
+echo ""
+echo "uninstall codex — keeps ~/AGENTS.md while grok still uses it"
+rm -f "$FAKE_HOME/AGENTS.md"
+run_install grok
+run_install codex
+run_uninstall codex
+check_true  "AGENTS.md kept while grok installed" test -f "$FAKE_HOME/AGENTS.md"
+run_uninstall grok
+check_false "AGENTS.md removed after grok uninstalled too" test -f "$FAKE_HOME/AGENTS.md"
+
 # ── results ───────────────────────────────────────────────────────────────────
 
 echo ""

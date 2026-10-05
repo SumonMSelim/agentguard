@@ -371,6 +371,10 @@ skill_has_tag() {
     | grep -qE "\b$2\b"
 }
 
+# Appended to an instruction file only when agentguard created it, so uninstall
+# can tell our files apart from user-authored ones it merely appended skills to.
+AGENTGUARD_CREATED_MARKER='<!-- agentguard:created -->'
+
 # skill_already_present <dest_file> <name> — returns 0 if the skill sentinel exists in the file
 skill_already_present() {
   local dest_file="$1" name="$2"
@@ -411,8 +415,11 @@ append_skills() {
         dry "Would append skill '$name' → $(basename "$dest_file")"
         appended=$((appended + 1))
       else
-        printf '\n\n---\n\n<!-- agentguard:skill:%s -->\n' "$name" >> "$dest_file"
-        strip_frontmatter "$skill_dir/SKILL.md" >> "$dest_file"
+        {
+          printf '\n\n---\n\n<!-- agentguard:skill:%s -->\n' "$name"
+          strip_frontmatter "$skill_dir/SKILL.md"
+          printf '<!-- agentguard:end-skill:%s -->\n' "$name"
+        } >> "$dest_file"
         ok "Skill '$name' appended → $(basename "$dest_file")"
         appended=$((appended + 1))
       fi
@@ -439,6 +446,7 @@ install_claude() {
     else
       mkdir -p "$dest"
       cp "$SCRIPT_DIR/agents/claude/CLAUDE.md" "$dest/CLAUDE.md"
+      echo "$AGENTGUARD_CREATED_MARKER" >> "$dest/CLAUDE.md"
       ok "CLAUDE.md installed"
     fi
     append_skills "$dest/CLAUDE.md"
@@ -496,6 +504,7 @@ install_kiro() {
     else
       mkdir -p "$dest"
       cp "$SCRIPT_DIR/agents/kiro/KIRO.md" "$dest/KIRO.md"
+      echo "$AGENTGUARD_CREATED_MARKER" >> "$dest/KIRO.md"
       ok "KIRO.md installed"
     fi
     append_skills "$dest/KIRO.md"
@@ -534,6 +543,7 @@ install_codex() {
       dry "Would copy AGENTS.md → $dest/AGENTS.md"
     else
       cp "$SCRIPT_DIR/agents/codex/AGENTS.md" "$dest/AGENTS.md"
+      echo "$AGENTGUARD_CREATED_MARKER" >> "$dest/AGENTS.md"
       ok "AGENTS.md installed"
     fi
     append_skills "$dest/AGENTS.md"
@@ -635,6 +645,7 @@ install_grok() {
       dry "Would copy AGENTS.md → $HOME/AGENTS.md"
     else
       cp "$SCRIPT_DIR/agents/codex/AGENTS.md" "$HOME/AGENTS.md"
+      echo "$AGENTGUARD_CREATED_MARKER" >> "$HOME/AGENTS.md"
       ok "AGENTS.md installed → $HOME/AGENTS.md"
     fi
     append_skills "$HOME/AGENTS.md"
@@ -654,7 +665,8 @@ install_grok() {
 #
 # Uninstall removes only the files agentguard owns:
 #   - Hook scripts in the agent's hooks/ directory (matched by name)
-#   - The instruction file (CLAUDE.md / KIRO.md / AGENTS.md)
+#   - The instruction file (CLAUDE.md / KIRO.md / AGENTS.md) if agentguard
+#     created it; otherwise only the agentguard skill sections inside it
 #   - The Kiro agent config (agentguard.json)
 #   - For Claude: our entries are stripped from settings.json (not deleted wholesale)
 #
@@ -710,6 +722,71 @@ remove_file() {
   else
     log "$(basename "$f") not found (already removed?)"
   fi
+}
+
+# remove_instruction_file <path> <canonical_src> — removes the instruction file
+# only if agentguard created it (created marker, or legacy: starts with our
+# canonical content). Otherwise strips only the agentguard skill sections and
+# leaves the user's own content in place.
+remove_instruction_file() {
+  local f="$1" src="$2"
+  if [[ ! -f "$f" ]]; then
+    log "$(basename "$f") not found (already removed?)"
+    return
+  fi
+
+  if grep -qxF "$AGENTGUARD_CREATED_MARKER" "$f" || \
+     { [[ -f "$src" ]] && diff -q <(head -n "$(wc -l < "$src")" "$f") "$src" >/dev/null 2>&1; }; then
+    remove_file "$f"
+    return
+  fi
+
+  if ! grep -q '^<!-- agentguard:skill:' "$f"; then
+    log "$(basename "$f") present but not owned by agentguard — leaving in place"
+    return
+  fi
+
+  backup_if_exists "$f"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would strip agentguard skill sections from $f"
+    return
+  fi
+  # Drop each skill section plus the blank/--- separator written before it.
+  # Sections without an end sentinel (older installs) run to the next section or EOF.
+  awk '
+    /^<!-- agentguard:skill:[^ ]+ -->$/ { pending = ""; skip = 1; next }
+    skip && /^<!-- agentguard:end-skill:[^ ]+ -->$/ { skip = 0; next }
+    skip { next }
+    /^(---)?$/ { pending = pending $0 "\n"; next }
+    { printf "%s", pending; pending = ""; print }
+    END { printf "%s", pending }
+  ' "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
+  ok "agentguard skill sections stripped from $f (user content kept)"
+}
+
+# is_agent_tracked <agent> — returns 0 if the agent is in AGENTGUARD_INSTALLED_AGENTS.
+is_agent_tracked() {
+  [[ -f "$AGENTGUARD_CONFIG_FILE" ]] || return 1
+  grep -E '^AGENTGUARD_INSTALLED_AGENTS=' "$AGENTGUARD_CONFIG_FILE" \
+    | tail -n1 \
+    | sed -E 's/^AGENTGUARD_INSTALLED_AGENTS=//; s/^"//; s/"$//' \
+    | tr ' ' '\n' | grep -qx "$1"
+}
+
+# installed_skills <agent> — prints the comma-separated skill names found in the
+# agent's instruction file, so upgrade can re-apply them.
+installed_skills() {
+  local f
+  case "$1" in
+    claude)     f="$HOME/.claude/CLAUDE.md" ;;
+    kiro)       f="$HOME/.kiro/KIRO.md" ;;
+    codex|grok) f="$HOME/AGENTS.md" ;;
+    *)          return 0 ;;
+  esac
+  [[ -f "$f" ]] || return 0
+  { grep -oE '^<!-- agentguard:skill:[^ ]+ -->$' "$f" || true; } \
+    | sed -E 's/^<!-- agentguard:skill:([^ ]+) -->$/\1/' \
+    | tr '\n' ',' | sed 's/,$//'
 }
 
 # remove_agentguard_config — removes ~/.agentguard/config written by install.sh.
@@ -864,9 +941,11 @@ do_upgrade() {
       if [[ "$DRY_RUN" -eq 1 ]]; then
         dry "Would uninstall $agent then reinstall $agent"
       else
+        local skills
+        skills=$(installed_skills "$agent")
         bash "$new_script_dir/install.sh" uninstall "$agent"
         echo ""
-        AGENTGUARD_UPGRADE=1 bash "$new_script_dir/install.sh" "$agent"
+        AGENTGUARD_UPGRADE=1 bash "$new_script_dir/install.sh" "$agent" ${skills:+--skills "$skills"}
       fi
     done
     echo ""
@@ -911,9 +990,11 @@ do_upgrade() {
       if [[ "$DRY_RUN" -eq 1 ]]; then
         dry "Would uninstall $agent then reinstall $agent"
       else
+        local skills
+        skills=$(installed_skills "$agent")
         agentguard uninstall "$agent"
         echo ""
-        AGENTGUARD_UPGRADE=1 agentguard "$agent"
+        AGENTGUARD_UPGRADE=1 agentguard "$agent" ${skills:+--skills "$skills"}
       fi
     done
     echo ""
@@ -959,9 +1040,11 @@ do_upgrade() {
     if [[ "$DRY_RUN" -eq 1 ]]; then
       dry "Would uninstall $agent then reinstall $agent"
     else
+      local skills
+      skills=$(installed_skills "$agent")
       bash "$SCRIPT_DIR/install.sh" uninstall "$agent"
       echo ""
-      AGENTGUARD_UPGRADE=1 bash "$SCRIPT_DIR/install.sh" "$agent"
+      AGENTGUARD_UPGRADE=1 bash "$SCRIPT_DIR/install.sh" "$agent" ${skills:+--skills "$skills"}
     fi
   done
 
@@ -1068,7 +1151,7 @@ uninstall_claude() {
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be changed)"
 
   remove_hooks "$dest/hooks"
-  remove_file  "$dest/CLAUDE.md"
+  remove_instruction_file "$dest/CLAUDE.md" "$SCRIPT_DIR/agents/claude/CLAUDE.md"
   unmerge_settings "$dest/settings.json" "$SCRIPT_DIR/agents/claude/settings.json"
   remove_file  "$HOME/.local/bin/agentguard"
   untrack_installed_agent "claude"
@@ -1081,7 +1164,7 @@ uninstall_kiro() {
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be changed)"
 
   remove_hooks "$dest/hooks"
-  remove_file  "$dest/KIRO.md"
+  remove_instruction_file "$dest/KIRO.md" "$SCRIPT_DIR/agents/kiro/KIRO.md"
   remove_file  "$dest/agents/agentguard.json"
   untrack_installed_agent "kiro"
 }
@@ -1092,7 +1175,12 @@ uninstall_codex() {
   section "Uninstalling Codex guardrails from $dest/AGENTS.md"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be changed)"
 
-  remove_file "$dest/AGENTS.md"
+  # ~/AGENTS.md is shared with grok — leave it while grok still uses it.
+  if is_agent_tracked "grok"; then
+    log "AGENTS.md still used by grok — leaving in place"
+  else
+    remove_instruction_file "$dest/AGENTS.md" "$SCRIPT_DIR/agents/codex/AGENTS.md"
+  fi
   log "Note: no hooks to remove — Codex is instruction-file only."
   untrack_installed_agent "codex"
 }
@@ -1177,16 +1265,11 @@ uninstall_grok() {
   # Remove our hook scripts (shared names) and our registration json.
   remove_hooks "$dest/hooks"
   remove_file "$dest/hooks/agentguard.json"
-  # Only remove AGENTS.md at ~ if agentguard owns the content (shared with codex).
-  local src_agents="$SCRIPT_DIR/agents/codex/AGENTS.md"
-  if [[ -f "$HOME/AGENTS.md" && -f "$src_agents" ]]; then
-    local src_lines
-    src_lines=$(wc -l < "$src_agents")
-    if diff -q <(head -n "$src_lines" "$HOME/AGENTS.md") "$src_agents" >/dev/null 2>&1; then
-      remove_file "$HOME/AGENTS.md"
-    else
-      log "AGENTS.md present but not owned by agentguard — leaving in place"
-    fi
+  # ~/AGENTS.md is shared with codex — leave it while codex still uses it.
+  if is_agent_tracked "codex"; then
+    log "AGENTS.md still used by codex — leaving in place"
+  else
+    remove_instruction_file "$HOME/AGENTS.md" "$SCRIPT_DIR/agents/codex/AGENTS.md"
   fi
 
   # Clean empty hooks dir if possible (non-fatal).

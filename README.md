@@ -131,7 +131,7 @@ Disabling adds the absolute path to `~/.agentguard/disabled-dirs`. Every hook re
 agentguard upgrade
 ```
 
-Pulls the latest agentguard, then uninstalls and reinstalls every agent you previously set up — in one step. Your personal settings and skills are preserved.
+Pulls the latest agentguard, then uninstalls and reinstalls every agent you previously set up — in one step. Your personal settings, your own instruction-file content and your selected skills are preserved. An instruction file that agentguard created is replaced with the new version (a `.bak` copy is kept).
 
 To check if an update is available without upgrading:
 
