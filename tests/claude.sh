@@ -499,7 +499,7 @@ run_merge_tests() {
   # install.sh runs immediately when executed/sourced (no `[[ sourced ]]` guard),
   # so pull just the helpers + merge_settings() out rather than sourcing the file.
   local fn_file="$tmp/merge_fn.sh"
-  sed -n '96,118p;246,329p' "$SCRIPT_DIR/install.sh" > "$fn_file"
+  sed -n '96,118p;263,346p' "$SCRIPT_DIR/install.sh" > "$fn_file"
   # shellcheck disable=SC1090
   source "$fn_file"
   DRY_RUN=0 merge_settings "$existing" "$SCRIPT_DIR/agents/claude/settings.json" "$merged" >/dev/null 2>&1

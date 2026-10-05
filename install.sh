@@ -143,6 +143,9 @@ backup_if_exists() {
 # default so the user can keep it with one Enter.
 #
 # Non-TTY (CI, piped stdin): silently uses the default. Dry-run: no write.
+# Upgrade (AGENTGUARD_UPGRADE=1) with a saved value: no prompt, no write.
+# Only the AGENTGUARD_PROTECTED_BRANCHES line is replaced; other config
+# lines (e.g. AGENTGUARD_INSTALLED_AGENTS) are preserved.
 
 AGENTGUARD_CONFIG_DIR="$HOME/.agentguard"
 AGENTGUARD_CONFIG_FILE="$AGENTGUARD_CONFIG_DIR/config"
@@ -152,12 +155,18 @@ prompt_protected_branches() {
   local default="$DEFAULT_PROTECTED_BRANCHES"
 
   # If a previous install wrote a value, use it as the new default.
+  local prev=""
   if [[ -f "$AGENTGUARD_CONFIG_FILE" ]]; then
-    local prev
     prev=$(grep -E '^AGENTGUARD_PROTECTED_BRANCHES=' "$AGENTGUARD_CONFIG_FILE" \
            | tail -n1 \
            | sed -E 's/^AGENTGUARD_PROTECTED_BRANCHES=//; s/^"//; s/"$//') || true
     [[ -n "$prev" ]] && default="$prev"
+  fi
+
+  # Upgrade reinstalls reuse the saved value — no prompt, no rewrite.
+  if [[ "${AGENTGUARD_UPGRADE:-0}" == "1" && -n "$prev" ]]; then
+    log "Upgrade — keeping protected branches: $prev"
+    return
   fi
 
   if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -190,12 +199,20 @@ prompt_protected_branches() {
   fi
 
   mkdir -p "$AGENTGUARD_CONFIG_DIR"
-  cat > "$AGENTGUARD_CONFIG_FILE" <<EOF
+  # Replace only our own line; keep every other line of an existing config.
+  local tmp
+  tmp=$(mktemp)
+  if [[ -f "$AGENTGUARD_CONFIG_FILE" ]]; then
+    grep -v '^AGENTGUARD_PROTECTED_BRANCHES=' "$AGENTGUARD_CONFIG_FILE" > "$tmp" || true
+  else
+    cat > "$tmp" <<'EOF'
 # agentguard config — written by install.sh
 # Parsed (not sourced) by hooks/block-main-branch.sh when
 # AGENTGUARD_PROTECTED_BRANCHES is not already set in the environment.
-AGENTGUARD_PROTECTED_BRANCHES="$value"
 EOF
+  fi
+  echo "AGENTGUARD_PROTECTED_BRANCHES=\"$value\"" >> "$tmp"
+  mv "$tmp" "$AGENTGUARD_CONFIG_FILE"
   chmod 644 "$AGENTGUARD_CONFIG_FILE"
   ok "Protected branches saved → $AGENTGUARD_CONFIG_FILE"
   log "  branches: $value"
@@ -849,7 +866,7 @@ do_upgrade() {
       else
         bash "$new_script_dir/install.sh" uninstall "$agent"
         echo ""
-        bash "$new_script_dir/install.sh" "$agent"
+        AGENTGUARD_UPGRADE=1 bash "$new_script_dir/install.sh" "$agent"
       fi
     done
     echo ""
@@ -896,7 +913,7 @@ do_upgrade() {
       else
         agentguard uninstall "$agent"
         echo ""
-        agentguard "$agent"
+        AGENTGUARD_UPGRADE=1 agentguard "$agent"
       fi
     done
     echo ""
@@ -944,7 +961,7 @@ do_upgrade() {
     else
       bash "$SCRIPT_DIR/install.sh" uninstall "$agent"
       echo ""
-      bash "$SCRIPT_DIR/install.sh" "$agent"
+      AGENTGUARD_UPGRADE=1 bash "$SCRIPT_DIR/install.sh" "$agent"
     fi
   done
 
@@ -1619,7 +1636,8 @@ case "$AGENT" in
 esac
 
 # codex is instruction-only (no hooks), so protected-branch config is irrelevant.
-# upgrade reuses existing config — skip prompt to avoid interrupting the reinstall loop.
+# do_upgrade re-execs child installs with AGENTGUARD_UPGRADE=1, which makes
+# prompt_protected_branches keep the saved value instead of prompting.
 [[ "$AGENT" != "codex" && "$UPGRADE" -eq 0 ]] && prompt_protected_branches
 
 case "$AGENT" in

@@ -6,6 +6,8 @@
 #   - track_installed_agent writes to config on install
 #   - untrack_installed_agent removes agent from config on uninstall
 #   - agentguard upgrade --dry-run reports what it would do
+#   - sequential installs keep every tracked agent (issue #59)
+#   - upgrade keeps tracked agents and protected branches (issue #59)
 #   - check_for_update is silent when offline (no crash)
 #
 # Usage: bash tests/upgrade.sh
@@ -161,6 +163,78 @@ check_output_contains \
   "upgrade dry-run reports would reinstall" \
   "Would uninstall" \
   bash -c "cd \"$FAKE_PROJECT\" && HOME=\"$FAKE_HOME\" bash \"$SCRIPT_DIR/install.sh\" upgrade --dry-run"
+
+# ── sequential installs keep tracked agents (issue #59) ──────────────────────
+
+tracked_agents() {
+  grep -E '^AGENTGUARD_INSTALLED_AGENTS=' "$1" | tail -n1 \
+    | sed -E 's/^AGENTGUARD_INSTALLED_AGENTS=//; s/^"//; s/"$//'
+}
+protected_branches() {
+  grep -E '^AGENTGUARD_PROTECTED_BRANCHES=' "$1" | tail -n1 \
+    | sed -E 's/^AGENTGUARD_PROTECTED_BRANCHES=//; s/^"//; s/"$//'
+}
+
+echo ""
+echo "agent tracking — sequential installs keep every agent"
+SEQ_HOME=$(mktemp -d)
+(cd "$FAKE_PROJECT" && HOME="$SEQ_HOME" bash "$SCRIPT_DIR/install.sh" claude </dev/null) >/dev/null 2>&1
+(cd "$FAKE_PROJECT" && HOME="$SEQ_HOME" bash "$SCRIPT_DIR/install.sh" kiro   </dev/null) >/dev/null 2>&1
+seq_tracked=$(tracked_agents "$SEQ_HOME/.agentguard/config")
+if [[ "$seq_tracked" == "claude kiro" ]]; then
+  printf "  PASS  claude then kiro install tracks both agents\n"
+  ((pass++))
+else
+  printf "  FAIL  expected 'claude kiro' tracked, got '%s'\n" "$seq_tracked"
+  ((fail++))
+fi
+rm -rf "$SEQ_HOME"
+
+# ── upgrade keeps tracked agents and protected branches (issue #59) ───────────
+# Upgrade runs git pull in its own dir, so run it from a throwaway clone.
+
+echo ""
+echo "upgrade — keeps tracked agents and protected branches"
+UP_HOME=$(mktemp -d)
+UP_ORIGIN=$(mktemp -d)
+UP_CLONE="$(mktemp -d)/clone"
+(cd "$SCRIPT_DIR" && tar --exclude=.git -cf - .) | (cd "$UP_ORIGIN" && tar -xf -)
+git -C "$UP_ORIGIN" init -q
+git -C "$UP_ORIGIN" add -A -f   # -f: agents/*/AGENTS.md matches .gitignore
+git -C "$UP_ORIGIN" -c user.name=test -c user.email=test@example.com commit -qm init
+git clone -q "$UP_ORIGIN" "$UP_CLONE"
+for agent in claude codex kiro grok; do
+  (cd "$FAKE_PROJECT" && HOME="$UP_HOME" bash "$UP_CLONE/install.sh" "$agent" </dev/null) >/dev/null 2>&1
+done
+# A previous install saved a custom value; non-TTY installs reuse it as default.
+sed -i.bak 's/^AGENTGUARD_PROTECTED_BRANCHES=.*/AGENTGUARD_PROTECTED_BRANCHES="main,master,release"/' \
+  "$UP_HOME/.agentguard/config" && rm -f "$UP_HOME/.agentguard/config.bak"
+before_tracked=$(tracked_agents "$UP_HOME/.agentguard/config")
+up_out=$(cd "$FAKE_PROJECT" && HOME="$UP_HOME" bash "$UP_CLONE/install.sh" upgrade </dev/null 2>&1) || true
+after_tracked=$(tracked_agents "$UP_HOME/.agentguard/config")
+after_branches=$(protected_branches "$UP_HOME/.agentguard/config")
+if [[ "$before_tracked" == "claude codex kiro grok" && "$after_tracked" == "$before_tracked" ]]; then
+  printf "  PASS  upgrade keeps all tracked agents\n"
+  ((pass++))
+else
+  printf "  FAIL  tracked agents before '%s', after upgrade '%s'\n" "$before_tracked" "$after_tracked"
+  ((fail++))
+fi
+if [[ "$after_branches" == "main,master,release" ]]; then
+  printf "  PASS  upgrade keeps custom protected branches\n"
+  ((pass++))
+else
+  printf "  FAIL  protected branches after upgrade: '%s'\n" "$after_branches"
+  ((fail++))
+fi
+if ! echo "$up_out" | grep -qF "using default protected branches"; then
+  printf "  PASS  upgrade child installs skip the protected-branches prompt\n"
+  ((pass++))
+else
+  printf "  FAIL  upgrade child installs ran the protected-branches prompt\n"
+  ((fail++))
+fi
+rm -rf "$UP_HOME" "$UP_ORIGIN" "$(dirname "$UP_CLONE")"
 
 # ── check_for_update silent when no network ───────────────────────────────────
 
