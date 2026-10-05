@@ -30,12 +30,18 @@ _STMT_START='(^|[;&|]|\$\()[[:space:]]*(sudo[[:space:]]+)?'
 # Block rm on filesystem root or bare home directory.
 # rm must be at a statement boundary; the catastrophic path follows as an argument.
 # Matches: rm /   rm /*   rm -rf /   rm -rf ~   rm -rf ~/   rm -rf ~/*
-#          rm $HOME   rm $HOME/   rm $HOME/*
+#          rm $HOME   rm $HOME/   rm $HOME/*   rm ${HOME}
+#          and the same targets in single or double quotes: rm "/"   rm "$HOME"
 # The path separator [[:space:]] before the target handles both "rm /" (no flags)
 # and "rm -rf /" (flags present). ([[:space:]]|$) after ensures we match the full
-# argument and don't fire on /var/log etc.
+# argument and don't fire on /var/log or $HOME/projects etc.
+# Pattern pieces are single-quoted so grep sees \$ (literal $) and $ (end anchor)
+# exactly as written.
+_QUOTE="[\"']?"
+# shellcheck disable=SC2016
+_RM_TARGET='(/\*?|~/?\*?|\$(HOME|\{HOME\})/?\*?)'
 if echo "$COMMAND" | grep -qE \
-  "${_STMT_START}rm[[:space:]]([^[:space:]]+[[:space:]]+)*(/\*?|~/?\*?|\$HOME/?\*?)([[:space:]]|\$)"; then
+  "${_STMT_START}"'rm[[:space:]]([^[:space:]]+[[:space:]]+)*'"${_QUOTE}${_RM_TARGET}${_QUOTE}"'([[:space:]]|$)'; then
   _grok_block "Blocked: rm on root or home directory is not permitted. If you need to remove specific files, use an explicit path."
 fi
 
