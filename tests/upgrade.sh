@@ -236,6 +236,28 @@ else
 fi
 rm -rf "$UP_HOME" "$UP_ORIGIN" "$(dirname "$UP_CLONE")"
 
+# ── upgrade keeps user content and selected skills ────────────────────────────
+# upgrade runs `git pull`, so run it from a throwaway clone of the working tree.
+
+echo ""
+echo "upgrade — keeps user CLAUDE.md content and re-applies selected skills"
+UP_HOME=$(mktemp -d); UP_SRC=$(mktemp -d); UP_CLONE=$(mktemp -d)
+trap 'rm -rf "$FAKE_HOME" "$FAKE_PROJECT" "$UP_HOME" "$UP_SRC" "$UP_CLONE"' EXIT
+cp -R "$SCRIPT_DIR/." "$UP_SRC"
+rm -rf "$UP_SRC/.git"
+git -C "$UP_SRC" init -q
+git -C "$UP_SRC" add -A -f   # -f: agents/*/AGENTS.md matches .gitignore
+git -C "$UP_SRC" -c user.name=test -c user.email=test@example.com commit -qm init
+git clone -q "$UP_SRC" "$UP_CLONE/agentguard"
+
+mkdir -p "$UP_HOME/.claude"
+printf 'MY OWN RULES\n' > "$UP_HOME/.claude/CLAUDE.md"
+(cd "$FAKE_PROJECT" && HOME="$UP_HOME" bash "$UP_CLONE/agentguard/install.sh" claude --skills go) >/dev/null 2>&1
+(cd "$FAKE_PROJECT" && HOME="$UP_HOME" bash "$UP_CLONE/agentguard/install.sh" upgrade) >/dev/null 2>&1
+
+check_true "custom line present after upgrade"  grep -qxF 'MY OWN RULES' "$UP_HOME/.claude/CLAUDE.md"
+check_true "go skill present after upgrade"     grep -qF '<!-- agentguard:skill:go -->' "$UP_HOME/.claude/CLAUDE.md"
+
 # ── check_for_update silent when no network ───────────────────────────────────
 
 echo ""
