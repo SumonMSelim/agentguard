@@ -31,8 +31,11 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_check-disabled.sh"
 
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // .toolInput.command // ""') || exit 0
+# Cursor: flat .command/.file_path payload must get permission JSON on stdout (see _check-disabled.sh)
+_is_cursor() { echo "$INPUT" | jq -e '(has("command") or has("file_path")) and ((has("tool_input") or has("toolInput")) | not)' >/dev/null 2>&1; }
+_allow() { if _is_cursor; then echo '{"permission":"allow"}'; fi; exit 0; }
 # Grok: emit JSON decision on stdout for blocks (in addition to exit 2 + stderr)
-_grok_block() { echo "$1" >&2; if echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
+_grok_block() { echo "$1" >&2; if _is_cursor; then jq -cn --arg m "$1" '{permission:"deny",user_message:$m,agent_message:$m}'; elif echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
 
 # Statement-boundary prefix: start-of-string or a shell separator, followed by
 # optional whitespace.  Covers:  git …  /  foo && git …  /  foo; git …  /
@@ -41,7 +44,7 @@ _GIT_STMT='(^|[;&|]|\$\()[[:space:]]*(sudo[[:space:]]+)?git[[:space:]]+'
 
 # Only act on commands that contain an actual git commit or git push invocation.
 if ! echo "$COMMAND" | grep -qE "${_GIT_STMT}(commit|push)"; then
-  exit 0
+  _allow
 fi
 
 # Block any force-push flag, regardless of its position in the command.
@@ -49,9 +52,7 @@ fi
 # A single pattern covers all forms: -f, --force, --force-with-lease[=...] appearing
 # anywhere after "git push".
 if echo "$COMMAND" | grep -qE "${_GIT_STMT}push.*[[:space:]](-f|--force|--force-with-lease(=[^[:space:]]*)?)([[:space:]]|\$)"; then
-  echo "Blocked: force push is not permitted in any form." >&2
-  echo "Rewrite history locally if needed, then open a PR instead of force-pushing." >&2
-  exit 2
+  _grok_block "Blocked: force push is not permitted in any form. Rewrite history locally if needed, then open a PR instead of force-pushing."
 fi
 
 # Load config file when env var unset. Env var still wins so users can
@@ -142,4 +143,4 @@ if echo "$COMMAND" | grep -qE "${_GIT_STMT}push[[:space:]]+.*[: ](refs/heads/)?(
   _grok_block "Blocked: pushing directly to a protected branch (${_raw}) is not permitted. Open a PR instead."
 fi
 
-exit 0
+_allow
