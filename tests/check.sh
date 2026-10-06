@@ -94,6 +94,26 @@ check_false "codex check fails with missing hooks.json" run_check codex
 mv "$FAKE_HOME/.codex/hooks.json.keep" "$FAKE_HOME/.codex/hooks.json"
 check_true  "codex check passes once restored" run_check codex
 
+echo ""
+echo "check — cursor hooks → exits 1 when broken"
+mv "$FAKE_PROJECT/.cursor/hooks/block-self-edit.sh" "$FAKE_PROJECT/block-self-edit.sh.keep"
+check_false "cursor check fails with missing block-self-edit.sh" run_check cursor
+mv "$FAKE_PROJECT/block-self-edit.sh.keep" "$FAKE_PROJECT/.cursor/hooks/block-self-edit.sh"
+chmod -x "$FAKE_PROJECT/.cursor/hooks/_check-disabled.sh"
+check_false "cursor check fails with non-executable _check-disabled.sh" run_check cursor
+chmod +x "$FAKE_PROJECT/.cursor/hooks/_check-disabled.sh"
+cp "$FAKE_PROJECT/.cursor/hooks.json" "$FAKE_PROJECT/hooks.json.keep"
+jq 'del(.hooks.preToolUse)' "$FAKE_PROJECT/hooks.json.keep" > "$FAKE_PROJECT/.cursor/hooks.json"
+check_false "cursor check fails with unregistered preToolUse" run_check cursor
+mv "$FAKE_PROJECT/hooks.json.keep" "$FAKE_PROJECT/.cursor/hooks.json"
+check_true  "cursor check passes once restored" run_check cursor
+
+echo ""
+echo "check — cursor --user"
+check_false "cursor --user check fails when not installed" run_check cursor --user
+run_install cursor --user
+check_true  "cursor --user check passes after install" run_check cursor --user
+
 # ── results ───────────────────────────────────────────────────────────────────
 
 echo ""

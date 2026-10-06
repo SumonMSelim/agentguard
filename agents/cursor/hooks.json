@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      { "command": ".cursor/hooks/block-destructive-ops.sh" },
+      { "command": ".cursor/hooks/block-system-installs.sh" },
+      { "command": ".cursor/hooks/block-env.sh" },
+      { "command": ".cursor/hooks/block-main-branch.sh" },
+      { "command": ".cursor/hooks/block-self-edit.sh" }
+    ],
+    "beforeReadFile": [
+      { "command": ".cursor/hooks/block-env-read.sh", "failClosed": true }
+    ],
+    "preToolUse": [
+      { "command": ".cursor/hooks/block-env-read.sh", "matcher": "Write|Delete", "failClosed": true }
+    ],
+    "beforeMCPExecution": [
+      { "command": ".cursor/hooks/block-env-read.sh", "failClosed": true }
+    ],
+    "postToolUse": [
+      { "command": ".cursor/hooks/audit-log.sh" }
+    ]
+  }
+}

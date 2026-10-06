@@ -19,6 +19,7 @@
 #   --dry-run              — show what would be changed without writing anything
 #   --project              — append skills to the project-level instruction file in CWD
 #                            Claude: .claude/CLAUDE.md  Codex: AGENTS.md  Kiro: not supported
+#   --user                 — Cursor only: install hooks to ~/.cursor/ (all projects) instead of CWD
 #
 # Re-running install is safe. Existing files are backed up before any writes.
 # settings.json is merged (not overwritten) — personal settings are preserved.
@@ -40,6 +41,7 @@ DISABLE_CMD=0
 ENABLE_CMD=0
 STATUS_CMD=0
 TARGET_DIR=""
+CURSOR_USER=0
 
 # Detect subcommands (can be invoked as `agentguard` or directly as ./install.sh for bootstrap)
 if [[ "$AGENT" == "version" || "$AGENT" == "--version" || "$AGENT" == "-v" ]]; then
@@ -79,6 +81,9 @@ for i in "${!args[@]}"; do
   if [[ "${args[$i]}" == "--project" ]]; then
     PROJECT=1
   fi
+  if [[ "${args[$i]}" == "--user" ]]; then
+    CURSOR_USER=1
+  fi
   # disable/enable/status take an optional path: the first non-flag argument.
   if [[ $((DISABLE_CMD + ENABLE_CMD + STATUS_CMD)) -gt 0 && -z "$TARGET_DIR" && "${args[$i]}" != --* ]]; then
     TARGET_DIR="${args[$i]}"
@@ -88,6 +93,12 @@ done
 # If the first positional arg is a flag (e.g. agentguard --dry-run or direct ./install.sh), default agent to claude
 if [[ "$AGENT" == --* ]]; then
   AGENT="claude"
+fi
+
+# A user-level Cursor install is tracked as "cursor-user" so upgrade can re-run it by name.
+if [[ "$AGENT" == "cursor-user" ]]; then
+  AGENT="cursor"
+  CURSOR_USER=1
 fi
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -740,24 +751,100 @@ install_codex() {
   track_installed_agent "codex"
 }
 
+# cursor_root — the directory holding .cursor/: the CWD (project install) or
+# $HOME (--user install, ~/.cursor/hooks.json applies to every project).
+cursor_root() {
+  if [[ "$CURSOR_USER" -eq 1 ]]; then echo "$HOME"; else pwd; fi
+}
+
+# cursor_hooks_json — our hooks.json entries. Project hooks run from the
+# project root (.cursor/hooks/x.sh); user hooks run from ~/.cursor, so they get
+# absolute paths (audit-log.sh derives its log path from $0).
+cursor_hooks_json() {
+  local src="$SCRIPT_DIR/agents/cursor/hooks.json"
+  if [[ "$CURSOR_USER" -eq 1 ]]; then
+    jq --arg p "$HOME/.cursor/hooks/" '.hooks[][].command |= sub("^\\.cursor/hooks/"; $p)' "$src"
+  else
+    jq . "$src"
+  fi
+}
+
+# merge_cursor_hooks <dest> — writes our entries into <dest>, keeping user
+# entries. Our old entries are dropped first (matched by command), so re-runs
+# add no duplicates and pick up changed entries (new events, matchers, flags).
+merge_cursor_hooks() {
+  local dest="$1" ours
+  require jq
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would merge hooks → $dest"
+    return
+  fi
+  ours=$(cursor_hooks_json)
+  if [[ ! -f "$dest" ]]; then
+    echo "$ours" > "$dest"
+    ok "hooks.json installed → $dest"
+    return
+  fi
+  jq empty "$dest" || fail "$dest is not valid JSON — fix it and re-run. File left unchanged."
+  backup_if_exists "$dest"
+  jq --argjson g "$ours" '
+    [$g.hooks[][].command] as $ours
+    | .version //= $g.version
+    | .hooks = (reduce ($g.hooks | to_entries[]) as $e (
+        ((.hooks // {}) | map_values(map(select(.command as $c | $ours | index($c) | not))));
+        .[$e.key] = ((.[$e.key] // []) + $e.value))
+      | with_entries(select(.value | length > 0)))
+  ' "$dest" > "${dest}.tmp.$$" || { rm -f "${dest}.tmp.$$"; fail "hooks.json merge failed — $dest left unchanged."; }
+  mv "${dest}.tmp.$$" "$dest"
+  ok "hooks.json merged → $dest (user hooks kept)"
+}
+
+# unmerge_cursor_hooks <file> — strips our entries; removes the file if only
+# ours were in it.
+unmerge_cursor_hooks() {
+  local f="$1"
+  if [[ ! -f "$f" ]]; then
+    log "$(basename "$f") not found (already removed?)"
+    return
+  fi
+  local stripped
+  stripped=$(jq --argjson g "$(cursor_hooks_json)" '
+    [$g.hooks[][].command] as $ours
+    | .hooks |= ((. // {})
+        | map_values(map(select(.command as $c | $ours | index($c) | not)))
+        | with_entries(select(.value | length > 0)))
+    | if .hooks == {} then del(.hooks) else . end
+  ' "$f") || { warn "$f is not valid JSON — leaving in place"; return; }
+  if [[ "$(jq -c 'del(.version)' <<< "$stripped")" == "{}" ]]; then
+    remove_file "$f"
+    return
+  fi
+  backup_if_exists "$f"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would strip agentguard hooks from $f"
+  else
+    echo "$stripped" > "${f}.tmp.$$" && mv "${f}.tmp.$$" "$f"
+    ok "agentguard hooks stripped from $f (user hooks kept)"
+  fi
+}
+
 install_cursor() {
-  # Cursor reads config from the current project directory (.cursor/).
+  # Cursor reads config from the current project directory (.cursor/), or
+  # from ~/.cursor/ for user-level hooks (--user).
   local dest
-  dest="$(pwd)/.cursor"
+  dest="$(cursor_root)/.cursor"
   local project_root
   project_root="$(pwd)"
   local src_base
   src_base="$SCRIPT_DIR/agents/cursor"
-  local src_cursor
-  src_cursor="$src_base/.cursor"
   local src_agents
   src_agents="$src_base/AGENTS.md"
 
   section "Installing Cursor guardrails → $dest"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
 
-  if [[ ! -d "$src_cursor" ]]; then
-    fail "Cursor config not found at $src_cursor"
+  if [[ ! -f "$src_base/hooks.json" ]]; then
+    fail "Cursor hooks.json not found at $src_base/hooks.json"
   fi
   if [[ ! -f "$src_agents" ]]; then
     fail "Cursor AGENTS.md not found at $src_agents"
@@ -765,38 +852,41 @@ install_cursor() {
 
   if [[ "$DRY_RUN" -eq 1 ]]; then
     dry "Would install Cursor config → $dest"
-    dry "  copy AGENTS.md → $project_root/AGENTS.md (if missing)"
-    dry "  copy hooks.json → $dest/hooks.json (if missing)"
+    if [[ "$CURSOR_USER" -eq 0 ]]; then
+      dry "  copy AGENTS.md → $project_root/AGENTS.md (if missing)"
+      dry "  append skills → $project_root/AGENTS.md"
+    fi
+    dry "  merge hooks.json → $dest/hooks.json (user hooks kept)"
     dry "  copy hook scripts from $SCRIPT_DIR/hooks/"
-    dry "  append skills → $project_root/AGENTS.md"
     return
   fi
 
   mkdir -p "$dest/hooks"
 
-  # Cursor instruction file (project-local). Only install if missing.
-  if [[ ! -f "$project_root/AGENTS.md" ]]; then
-    cp "$src_agents" "$project_root/AGENTS.md"
-    ok "AGENTS.md installed → $project_root/AGENTS.md"
+  # Cursor has no user-level instruction file, so --user installs hooks only.
+  if [[ "$CURSOR_USER" -eq 1 ]]; then
+    log "User-level install: hooks only. Run 'agentguard cursor' in a project for AGENTS.md and skills."
   else
-    log "AGENTS.md already present — skipping"
-  fi
+    # Cursor instruction file (project-local). Only install if missing.
+    if [[ ! -f "$project_root/AGENTS.md" ]]; then
+      cp "$src_agents" "$project_root/AGENTS.md"
+      ok "AGENTS.md installed → $project_root/AGENTS.md"
+    else
+      log "AGENTS.md already present — skipping"
+    fi
 
-  append_skills "$project_root/AGENTS.md"
-
-  # hooks.json — only install if missing (preserve user edits on re-run)
-  if [[ ! -f "$dest/hooks.json" ]]; then
-    cp "$src_cursor/hooks.json" "$dest/hooks.json"
-    ok "hooks.json installed → $dest/hooks.json"
-  else
-    log "hooks.json already present — skipping"
+    append_skills "$project_root/AGENTS.md"
   fi
 
   # Hook scripts are shared with Claude/Kiro; always refresh to pick up updates.
   install_hooks "$dest/hooks"
+  merge_cursor_hooks "$dest/hooks.json"
 
   ok "Cursor config installed → $dest"
-  # Cursor is project-local — not tracked for upgrade (no single home dir to reinstall to).
+  # Project installs are not tracked for upgrade (no single dir to reinstall to);
+  # re-run 'agentguard cursor' in the project to refresh them.
+  [[ "$CURSOR_USER" -eq 1 ]] && track_installed_agent "cursor-user"
+  return 0
 }
 
 install_grok() {
@@ -1487,8 +1577,8 @@ uninstall_codex() {
   untrack_installed_agent "codex"
 }
 
+# Relative to cursor_root. hooks.json is unmerged separately (it may hold user hooks).
 CURSOR_AGENTGUARD_FILES=(
-  ".cursor/hooks.json"
   ".cursor/hooks/_check-disabled.sh"
   ".cursor/hooks/audit-log.sh"
   ".cursor/hooks/block-destructive-ops.sh"
@@ -1497,13 +1587,11 @@ CURSOR_AGENTGUARD_FILES=(
   ".cursor/hooks/block-main-branch.sh"
   ".cursor/hooks/block-self-edit.sh"
   ".cursor/hooks/block-system-installs.sh"
-  ".cursor/rules/karpathy-guidelines.mdc"
-  ".cursor/skills/karpathy-guidelines/SKILL.md"
 )
 
 uninstall_cursor() {
   local dest
-  dest="$(pwd)"
+  dest="$(cursor_root)"
   local src_agents
   src_agents="$SCRIPT_DIR/agents/cursor/AGENTS.md"
 
@@ -1512,7 +1600,8 @@ uninstall_cursor() {
 
   # Remove AGENTS.md only if agentguard owns it: the file must start with our
   # canonical header (skills may have been appended after, so exact match fails).
-  if [[ -f "$dest/AGENTS.md" && -f "$src_agents" ]]; then
+  # A --user install never writes AGENTS.md (and ~/AGENTS.md belongs to Grok).
+  if [[ "$CURSOR_USER" -eq 0 && -f "$dest/AGENTS.md" && -f "$src_agents" ]]; then
     local src_lines
     src_lines=$(wc -l < "$src_agents")
     if diff -q <(head -n "$src_lines" "$dest/AGENTS.md") "$src_agents" >/dev/null 2>&1; then
@@ -1543,11 +1632,10 @@ uninstall_cursor() {
     fi
   done
 
+  unmerge_cursor_hooks "$dest/.cursor/hooks.json"
+
   if [[ "$DRY_RUN" -eq 0 ]]; then
     rmdir "$dest/.cursor/hooks" 2>/dev/null || true
-    rmdir "$dest/.cursor/rules" 2>/dev/null || true
-    rmdir "$dest/.cursor/skills/karpathy-guidelines" 2>/dev/null || true
-    rmdir "$dest/.cursor/skills" 2>/dev/null || true
     rmdir "$dest/.cursor" 2>/dev/null || true
   fi
 
@@ -1556,6 +1644,8 @@ uninstall_cursor() {
   elif [[ "$DRY_RUN" -eq 0 ]]; then
     ok "Cursor guardrail files removed"
   fi
+  [[ "$CURSOR_USER" -eq 1 ]] && untrack_installed_agent "cursor-user"
+  return 0
 }
 
 uninstall_grok() {
@@ -1738,16 +1828,28 @@ check_exec() {
 
 check_cursor() {
   local dest
-  dest="$(pwd)/.cursor"
+  dest="$(cursor_root)/.cursor"
   section "Checking Cursor installation → $dest"
-  check_file "$(pwd)/AGENTS.md" "AGENTS.md"
+  [[ "$CURSOR_USER" -eq 0 ]] && check_file "$(pwd)/AGENTS.md" "AGENTS.md"
+  for hook in "${AGENTGUARD_HOOKS[@]}"; do
+    check_exec "$dest/hooks/$hook" "$hook"
+  done
   check_file "$dest/hooks.json" "hooks.json"
-  check_exec "$dest/hooks/audit-log.sh" "audit-log.sh"
-  check_exec "$dest/hooks/block-destructive-ops.sh" "block-destructive-ops.sh"
-  check_exec "$dest/hooks/block-system-installs.sh" "block-system-installs.sh"
-  check_exec "$dest/hooks/block-env.sh" "block-env.sh"
-  check_exec "$dest/hooks/block-main-branch.sh" "block-main-branch.sh"
-  check_exec "$dest/hooks/block-env-read.sh" "block-env-read.sh"
+  if [[ -f "$dest/hooks.json" ]]; then
+    local missing
+    # Per event, so an older hooks.json without the newer events is reported.
+    missing=$(jq -r --argjson g "$(cursor_hooks_json)" '
+      def pairs: to_entries[] | .key as $k | .value[]? | "\($k): \(.command)";
+      [.hooks // {} | pairs] as $have
+      | [$g.hooks | pairs] - $have | unique | .[]
+    ' "$dest/hooks.json" 2>/dev/null) || missing="(hooks.json is not valid JSON)"
+    if [[ -z "$missing" ]]; then
+      _check_ok "hooks.json: all hook commands registered"
+    else
+      _check_fail "hooks.json: hook command(s) missing"
+      printf '      missing: %s\n' "$missing"
+    fi
+  fi
   echo ""
 }
 
@@ -2019,7 +2121,11 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     kiro)   uninstall_kiro   ;;
     cursor) uninstall_cursor ;;
     grok)   uninstall_grok   ;;
-    all)    uninstall_claude; echo; uninstall_codex; echo; uninstall_kiro; echo; uninstall_cursor; echo; uninstall_grok; echo; remove_agentguard_config; remove_file "$HOME/.local/bin/agentguard" ;;
+    all)    uninstall_claude; echo; uninstall_codex; echo; uninstall_kiro; echo
+            CURSOR_USER=0; uninstall_cursor; echo
+            # A tracked user-level Cursor install goes too, before the config holding the tracking is removed.
+            if is_agent_tracked "cursor-user"; then CURSOR_USER=1; uninstall_cursor; echo; fi
+            uninstall_grok; echo; remove_agentguard_config; remove_file "$HOME/.local/bin/agentguard" ;;
     *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | grok | all" ;;
   esac
   echo ""

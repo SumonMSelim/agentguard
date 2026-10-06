@@ -13,7 +13,7 @@ Security guardrails and workflow policies for AI coding agents. Blocks dangerous
 |---------------------------------------------------------------------|-----------------------------------------------------|
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code/hooks) | Shell hooks + settings.json + instruction file      |
 | [Kiro](https://kiro.dev/docs/cli/hooks/)                            | Shell hooks + agent config + instruction file       |
-| [Cursor](https://cursor.com)                                        | Project-level hooks + rules/skills (via `.cursor/`) |
+| [Cursor](https://cursor.com)                                        | Hooks via `.cursor/` (or `~/.cursor/` with `--user`) + AGENTS.md |
 | [Grok](https://x.ai)                                                | Shell hooks (via `~/.grok/hooks/`) + AGENTS.md      |
 | [OpenAI Codex](https://github.com/openai/codex)                     | Shell hooks (via `~/.codex/hooks.json`) + AGENTS.md |
 
@@ -211,7 +211,7 @@ Create `skills/<name>/SKILL.md` with YAML frontmatter (`name`, `tags`, `descript
 ## Notes
 
 - **Kiro** — guardrails only activate when using the `agentguard` agent. Switch to it in Kiro after install.
-- **Cursor** — guardrails are project-local. `agentguard cursor` installs `.cursor/` into the current directory.
+- **Cursor** — `agentguard cursor` installs `.cursor/` into the current directory. `agentguard cursor --user` installs hooks only to `~/.cursor/` so they apply to every project (Cursor has no user-level instruction file; it is tracked for `agentguard upgrade`). `hooks.json` is merged: your own hooks are kept, ours are refreshed on every re-run, and uninstall strips only ours. Registered events: `beforeShellExecution`, `beforeReadFile`, `preToolUse` (`Write|Delete`), `beforeMCPExecution`, `postToolUse`.
 - **Grok** — native hooks via `~/.grok/hooks/agentguard.json` + shared scripts; global rules via `~/AGENTS.md`. Grok also loads Claude/Cursor locations for compatibility.
 - **Codex** — hooks in `~/.codex/hooks.json` (merged with your own hooks) + shared scripts in `~/.codex/hooks/`; global rules via `~/.codex/AGENTS.md`. Codex runs new hooks only after you trust them: open Codex and run `/hooks`. File edits through `apply_patch` are checked by the self-edit hook only, since the payload holds patch text, not a file path. An agentguard-created `~/AGENTS.md` from older releases is moved to `~/.codex/AGENTS.md` (left in place while Grok is installed).
 - **`block-env.sh`** — best-effort on the bash surface. `block-env-read.sh` is the primary layer (intercepts Read/Write/Edit tools directly).

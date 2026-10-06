@@ -25,7 +25,10 @@
 #     workspace_roots, ... at top level. beforeShellExecution adds flat
 #     "command"/"cwd"; beforeReadFile adds flat "file_path"/"content". So a
 #     Cursor permission payload = top-level command or file_path, and no
-#     tool_input (Claude/Kiro) or toolInput (Grok).
+#     tool_input (Claude/Kiro) or toolInput (Grok). preToolUse and
+#     beforeMCPExecution carry tool_name/tool_input like Claude, so they are
+#     told apart by hook_event_name (Claude and Codex send "PreToolUse").
+#     beforeMCPExecution tool_input is the MCP params as a JSON string.
 #   - Output: {"permission":"allow"|"deny","user_message":..,"agent_message":..}
 #     (beforeReadFile: permission + user_message only). Snake_case.
 #   - "Exit code 0 - Hook succeeded, use the JSON output. Exit code 2 - Block
@@ -107,6 +110,13 @@ if ! command -v jq >/dev/null 2>&1; then
   fi
 fi
 
+# User-level Cursor hooks (~/.cursor/hooks.json) "Run from ~/.cursor/", not the
+# project. Cursor sets CURSOR_PROJECT_DIR ("Workspace root directory"); move
+# there so the disabled list and git branch checks see the project.
+if [[ -n "${CURSOR_PROJECT_DIR:-}" && "$(pwd -P)" == "$(cd "$HOME/.cursor" 2>/dev/null && pwd -P)" ]]; then
+  cd "$CURSOR_PROJECT_DIR" 2>/dev/null || true
+fi
+
 _agentguard_disabled_file="${AGENTGUARD_DISABLED_DIRS_FILE:-$HOME/.agentguard/disabled-dirs}"
 if [[ -f "$_agentguard_disabled_file" ]]; then
   _agentguard_cur=$(jq -r '.cwd // .tool_input.cwd // empty' <<<"${INPUT:-}" 2>/dev/null)
@@ -130,7 +140,7 @@ if [[ -f "$_agentguard_disabled_file" ]]; then
   if [[ -n "${_agentguard_skip:-}" ]]; then
     # Cursor permission hooks need {"permission":"allow"} on stdout even when
     # skipped; postToolUse (audit-log.sh) needs no output.
-    if [[ "${0##*/}" != audit-log.sh ]] && jq -e '(has("command") or has("file_path")) and ((has("tool_input") or has("toolInput")) | not)' <<<"${INPUT:-}" >/dev/null 2>&1; then
+    if [[ "${0##*/}" != audit-log.sh ]] && jq -e '.hook_event_name == "preToolUse" or .hook_event_name == "beforeMCPExecution" or ((has("command") or has("file_path")) and ((has("tool_input") or has("toolInput")) | not))' <<<"${INPUT:-}" >/dev/null 2>&1; then
       echo '{"permission":"allow"}'
     fi
     exit 0

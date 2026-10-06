@@ -79,6 +79,7 @@ CURSOR_FILES=(
   ".cursor/hooks/block-env-read.sh"
   ".cursor/hooks/block-env.sh"
   ".cursor/hooks/block-main-branch.sh"
+  ".cursor/hooks/block-self-edit.sh"
   ".cursor/hooks/block-system-installs.sh"
 )
 
@@ -303,14 +304,61 @@ check_false "wrapper has no Cellar path"   grep -qF "/Cellar/" "$WRAPPER"
 (cd "$FAKE_PROJECT" && HOME="$FAKE_HOME" bash "$CELLAR/install.sh" uninstall claude) >/dev/null 2>&1
 rm -rf "$BREW_PREFIX"
 
+echo ""
+echo "cursor hooks.json — merge keeps user hooks, refreshes ours, no dupes"
+CUR_JSON="$FAKE_PROJECT/.cursor/hooks.json"
+mkdir -p "$FAKE_PROJECT/.cursor"
+# A user hook plus an older agentguard hooks.json (no preToolUse / beforeMCPExecution,
+# beforeReadFile without failClosed).
+cat > "$CUR_JSON" <<'JSON'
+{"version":1,"hooks":{
+  "beforeShellExecution":[{"command":"./mine.sh"},{"command":".cursor/hooks/block-env.sh"}],
+  "beforeReadFile":[{"command":".cursor/hooks/block-env-read.sh"}],
+  "afterFileEdit":[{"command":"./fmt.sh"}]}}
+JSON
+run_install cursor
+run_install cursor
+jq_true  "user beforeShellExecution hook kept"   '[.hooks.beforeShellExecution[].command] | index("./mine.sh") != null' "$CUR_JSON"
+jq_true  "user afterFileEdit hook kept"          '.hooks.afterFileEdit == [{"command":"./fmt.sh"}]' "$CUR_JSON"
+jq_true  "no duplicate commands per event"       '[.hooks[] | [.[].command] | length == (unique | length)] | all' "$CUR_JSON"
+jq_true  "old entry refreshed (failClosed)"      '.hooks.beforeReadFile == [{"command":".cursor/hooks/block-env-read.sh","failClosed":true}]' "$CUR_JSON"
+jq_true  "preToolUse Write|Delete registered"    '.hooks.preToolUse[] | select(.matcher == "Write|Delete" and .command == ".cursor/hooks/block-env-read.sh")' "$CUR_JSON"
+jq_true  "beforeMCPExecution registered"         '.hooks.beforeMCPExecution[0].command == ".cursor/hooks/block-env-read.sh"' "$CUR_JSON"
+jq_true  "block-self-edit registered"            '[.hooks.beforeShellExecution[].command] | index(".cursor/hooks/block-self-edit.sh") != null' "$CUR_JSON"
+run_uninstall cursor
+jq_true  "uninstall keeps only user hooks"       '.hooks == {"beforeShellExecution":[{"command":"./mine.sh"}],"afterFileEdit":[{"command":"./fmt.sh"}]}' "$CUR_JSON"
+rm -rf "$FAKE_PROJECT/.cursor"
+
+echo ""
+echo "cursor --user — installs to ~/.cursor, tracked, uninstall removes only ours"
+mkdir -p "$FAKE_HOME/.cursor"
+echo '{"version":1,"hooks":{"stop":[{"command":"./hooks/mine.sh"}]}}' > "$FAKE_HOME/.cursor/hooks.json"
+run_install cursor --user
+USER_JSON="$FAKE_HOME/.cursor/hooks.json"
+check_true  "user hook scripts installed"        test -x "$FAKE_HOME/.cursor/hooks/block-self-edit.sh"
+check_false "no project .cursor written"         test -d "$FAKE_PROJECT/.cursor"
+check_false "no project AGENTS.md written"       test -f "$FAKE_PROJECT/AGENTS.md"
+jq_true  "user hooks.json commands are absolute" "[.hooks[][].command | select(. != \"./hooks/mine.sh\") | startswith(\"$FAKE_HOME/.cursor/hooks/\")] | all" "$USER_JSON"
+jq_true  "user hooks.json keeps user stop hook"  '.hooks.stop == [{"command":"./hooks/mine.sh"}]' "$USER_JSON"
+check_true  "cursor-user tracked for upgrade"    grep -q 'cursor-user' "$FAKE_HOME/.agentguard/config"
+run_uninstall cursor --user
+check_false "user hook scripts removed"          test -f "$FAKE_HOME/.cursor/hooks/block-self-edit.sh"
+jq_true  "user hooks.json back to user entries"  '. == {"version":1,"hooks":{"stop":[{"command":"./hooks/mine.sh"}]}}' "$USER_JSON"
+check_false "cursor-user untracked"              grep -q 'cursor-user' "$FAKE_HOME/.agentguard/config"
+rm -rf "$FAKE_HOME/.cursor"
+
 # ── all ───────────────────────────────────────────────────────────────────────
 
 echo ""
 echo "uninstall all — removes everything"
 run_install all
+run_install cursor --user
 run_uninstall all
 
 check_false "CLI wrapper removed (all)"           test -f "$WRAPPER"
+check_false "cursor --user hook scripts removed (all)" test -f "$FAKE_HOME/.cursor/hooks/block-env-read.sh"
+check_false "cursor --user hooks.json removed (all)"   test -f "$FAKE_HOME/.cursor/hooks.json"
+
 check_false "CLAUDE.md removed (all)"             test -f "$FAKE_HOME/.claude/CLAUDE.md"
 check_false "KIRO.md removed (all)"               test -f "$FAKE_HOME/.kiro/KIRO.md"
 check_false "agentguard.json removed (all)"       test -f "$FAKE_HOME/.kiro/agents/agentguard.json"
