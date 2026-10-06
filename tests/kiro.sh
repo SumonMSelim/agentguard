@@ -221,6 +221,8 @@ run_hook_tests() {
   local v2="$SCRIPT_DIR/agents/kiro/agent.json" v3="$SCRIPT_DIR/agents/kiro/hooks.json"
   jq_check "hooks.json is v1 schema" '.version == "v1"' "$v3"
   jq_check "triggers are PascalCase PreToolUse/PostToolUse" '[.hooks[].trigger] - ["PreToolUse","PostToolUse"] | length == 0' "$v3"
+  # Kiro may report the shell tool as `shell` or `execute_bash`: register both.
+  jq_check "shell hooks on both shell and execute_bash" '([.hooks[] | select(.matcher == "shell") | .action.command] | sort) == ([.hooks[] | select(.matcher == "execute_bash") | .action.command] | sort) and ([.hooks[] | select(.matcher == "shell")] | length == 5)' "$v3"
   if [[ "$(jq -r '[.hooks[][].command] | unique | .[]' "$v2")" == "$(jq -r '[.hooks[].action.command] | unique | .[]' "$v3")" ]]; then
     printf "  PASS  same hook commands in both formats\n"; ((pass++))
   else

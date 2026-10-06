@@ -65,7 +65,7 @@ All command-reading hooks use `.command // .tool_input.command` for both. User-l
 ### Agents (`agents/`)
 Per-agent config installed to agent's home dir:
 - `agents/claude/` → `~/.claude/` (CLAUDE.md + settings.json)
-- `agents/kiro/` → `~/.kiro/` (KIRO.md + agent.json for `agentguard` agent, used by Kiro CLI 2.x + hooks.json → `~/.kiro/hooks/agentguard.json`, the v1 standalone hook format used by Kiro CLI 3.x with `shell`/`read`/`write` matchers)
+- `agents/kiro/` → `~/.kiro/` (KIRO.md + agent.json for `agentguard` agent, used by Kiro CLI 2.x + hooks.json → `~/.kiro/hooks/agentguard.json`, the v1 standalone hook format used by Kiro CLI 3.x with `shell`/`read`/`write` matchers; shell hooks are also registered under `execute_bash` because Kiro may report either name)
 - `agents/codex/` → `~/.codex/` (AGENTS.md + hooks.json merged with any user hooks; hooks/ copied from `hooks/`). A legacy agentguard-created `~/AGENTS.md` is migrated unless grok is installed
 - `agents/cursor/` → `<CWD>/.cursor/`, or `~/.cursor/` with `--user` (hooks.json merged with any user hooks, ours refreshed on re-run; hooks/ copied from `hooks/`). `--user` writes no AGENTS.md and is tracked as `cursor-user` for upgrade
 
