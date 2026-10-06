@@ -33,7 +33,7 @@ brew install agentguard
 Download the latest `.deb` from [GitHub Releases](https://github.com/SumonMSelim/agentguard/releases/latest) and install:
 
 ```bash
-VERSION=1.3.0
+VERSION=x.y.z   # latest release number, without the leading "v"
 curl -LO https://github.com/SumonMSelim/agentguard/releases/download/v${VERSION}/agentguard_${VERSION}_all.deb
 sudo dpkg -i agentguard_${VERSION}_all.deb
 ```
@@ -95,7 +95,7 @@ agentguard uninstall all
 agentguard uninstall claude --dry-run   # preview first
 ```
 
-Removes only what agentguard owns: hooks, instruction file, Kiro agent config. The `~/.local/bin/agentguard` CLI wrapper is removed only by `agentguard uninstall all`, so the command keeps working for the agents you still have. Claude `settings.json` is surgically unmerged — your own keys untouched, file not deleted.
+Removes only what agentguard owns: hooks, the instruction file if agentguard created it (otherwise only its skill sections), Kiro agent config. The `~/.local/bin/agentguard` CLI wrapper is removed only by `agentguard uninstall all`, so the command keeps working for the agents you still have. Claude `settings.json` is surgically unmerged — your own keys untouched, file not deleted.
 
 ## Check installation status
 
@@ -131,7 +131,7 @@ Disabling adds the absolute path to `~/.agentguard/disabled-dirs`. Every hook re
 agentguard upgrade
 ```
 
-Pulls the latest agentguard, then uninstalls and reinstalls every agent you previously set up — in one step. Your personal settings, your own instruction-file content and your selected skills are preserved. An instruction file that agentguard created is replaced with the new version (a `.bak` copy is kept).
+Pulls the latest agentguard, then uninstalls and reinstalls every agent you previously set up — in one step. Your own `settings.json` keys, your protected-branch choice, your own instruction-file content and your selected skills are preserved: skill sections are stripped and re-applied from the new release. An instruction file that agentguard created is replaced with the new version, so edits you made inside it survive only in the timestamped `.bak` copy. Cursor installs are project-local and not tracked; re-run `agentguard cursor` in each project.
 
 On a `.deb` install, the upgrade downloads `SHA256SUMS` from the same release and aborts if the package checksum does not match.
 
@@ -144,7 +144,7 @@ agentguard check claude
 
 ## Skills
 
-Skills are behavioural packs appended to the agent's instruction file at install time. `core` skills are included automatically; all others are opt-in via `--skills`.
+Skills are behavioural packs appended to the agent's instruction file at install time. `core` skills are included when `--skills` is omitted; all others are opt-in via `--skills`. An explicit `--skills` list installs only the skills it names.
 
 | Skill                                                        | Tags   | What it does                                                                   |
 |--------------------------------------------------------------|--------|--------------------------------------------------------------------------------|

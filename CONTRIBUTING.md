@@ -80,7 +80,7 @@ All suites must pass before opening a PR. CI runs `tests/run_all.sh` on every pu
 
 - [ ] `bash tests/run_all.sh` passes locally
 - [ ] New behaviour has test coverage
-- [ ] `CLAUDE.md`, `KIRO.md`, `agents/cursor/AGENTS.md` are in sync if you changed the instruction file (run `tests/check-sync.sh`)
+- [ ] `CLAUDE.md`, `KIRO.md`, `agents/codex/AGENTS.md`, `agents/cursor/AGENTS.md` are in sync if you changed the instruction file (run `tests/check-sync.sh`)
 - [ ] `AGENTGUARD_HOOKS` array updated in `install.sh` if you added a hook
 - [ ] No secrets, credentials, or `.env` files committed
 - [ ] Commit messages follow [Conventional Commits](https://www.conventionalcommits.org)

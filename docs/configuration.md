@@ -12,6 +12,8 @@
 | `pip install` outside a virtualenv blocked                   | `block-system-installs.sh` (checks `VIRTUAL_ENV`)                                  |
 | `rm /`, `rm ~`, `rm $HOME` blocked                           | `block-destructive-ops.sh`                                                         |
 | Pipe-to-shell blocked (`curl \| bash`, `wget \| sh`)         | `block-destructive-ops.sh`                                                         |
+| Recursive `rm` of `.`/`..`/`.git`/system dirs, `mkfs`, raw disk writes, fork bomb | `block-destructive-ops.sh`                                    |
+| Agents can't edit agentguard's own config or run `agentguard disable` via Bash | `block-self-edit.sh`                                             |
 | `gh auth token` blocked                                      | `block-env.sh`                                                                     |
 | No AI attribution in commits                                 | `attribution` setting (`commit` and `pr` set to `""`)                              |
 | Conventional Commits, no over-engineering                    | Instruction file                                                                   |
@@ -48,7 +50,7 @@ To review every file change instead:
 
 ```json
 // ~/.claude/settings.json
-{ "permissions": { "defaultMode": "ask" } }
+{ "permissions": { "defaultMode": "default" } }
 ```
 
 This value is preserved on re-runs.
@@ -59,7 +61,7 @@ Skills are behavioural packs appended to the instruction file at install time.
 
 ```bash
 agentguard claude                              # append all core-tagged skills (default)
-agentguard claude --skills go,aws,kubernetes  # append specific skills
+agentguard claude --skills go,aws,kubernetes  # append only these skills (core not added)
 agentguard claude --skills none               # skip all skills
 ```
 
