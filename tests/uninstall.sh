@@ -389,10 +389,12 @@ run_install claude  # second install
 run_install claude  # third install
 
 # Count how many core skills exist (the expected number of sentinels)
+# Read the front-matter into a variable first: `awk | grep -q` under pipefail
+# fails at random when grep exits early and awk dies of SIGPIPE.
 core_count=0
 for skill_dir in "$SCRIPT_DIR/skills"/*/; do
-  awk '/^---/{if(NR==1){in_fm=1;next}else{exit}} in_fm{print}' "$skill_dir/SKILL.md" \
-    2>/dev/null | grep -qE '\bcore\b' && core_count=$((core_count + 1)) || true
+  fm=$(awk '/^---/{if(NR==1){in_fm=1;next}else{exit}} in_fm{print}' "$skill_dir/SKILL.md" 2>/dev/null)
+  grep -qE '(^|[^A-Za-z0-9_])core([^A-Za-z0-9_]|$)' <<<"$fm" && core_count=$((core_count + 1)) || true
 done
 
 count=$(grep -c 'agentguard:skill:' "$FAKE_HOME/.claude/CLAUDE.md" 2>/dev/null || echo 0)

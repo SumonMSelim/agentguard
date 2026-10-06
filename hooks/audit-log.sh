@@ -15,6 +15,7 @@
 # Logging failures are silenced — they must never block tool execution.
 # Exit 0 always.
 
+# shellcheck disable=SC2034  # read by the sourced _check-disabled.sh
 INPUT=$(cat)
 
 # Skip logging if the current directory is in the agentguard disabled list.

@@ -1056,11 +1056,14 @@ EOF
     check "block-env: blocks normally when dir not in list" \
     block '{"tool_input":{"command":"cat .env"}}' block-env.sh
 
-  # Ancestor entry covers descendants.
-  ANCESTOR=$(dirname "$(pwd -P)")
+  # Ancestor entry covers descendants. Use a temp child dir: the parent of the
+  # cwd is "/" when the repo sits at depth 1 (e.g. /src in Docker).
+  ANC_CHILD="$(cd "$(mktemp -d)" && pwd -P)/child"
+  mkdir -p "$ANC_CHILD"
+  ANCESTOR=$(dirname "$ANC_CHILD")
   echo "$ANCESTOR" > "$DISABLED_TMP"
   AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
-    check "block-env: ancestor entry disables descendant" \
+    check_in "$ANC_CHILD" "block-env: ancestor entry disables descendant" \
     allow '{"tool_input":{"command":"cat .env"}}' block-env.sh
 
   # Trailing slash on an entry still matches; "/" disables everything (#78).
@@ -1070,8 +1073,9 @@ EOF
     allow '{"tool_input":{"command":"cat .env"}}' block-env.sh
   echo "$ANCESTOR//" > "$DISABLED_TMP"
   AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
-    check "block-env: ancestor entry with trailing slashes matches" \
+    check_in "$ANC_CHILD" "block-env: ancestor entry with trailing slashes matches" \
     allow '{"tool_input":{"command":"cat .env"}}' block-env.sh
+  rm -rf "$ANCESTOR"
   echo "/" > "$DISABLED_TMP"
   AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
     check "block-env: / entry disables every dir" \
