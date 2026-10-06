@@ -44,7 +44,7 @@ Requirements: `bash`, `jq`.
 ## Architecture
 
 ### Hooks (`hooks/`)
-Six shell scripts enforcing rules at tool-call level. Each reads JSON from stdin, exits `2` to block or `0` to allow. Exit codes: `0` = allow, `2` = block (agent sees stderr as feedback), `1` = hook error (also blocks).
+Six shell scripts enforcing rules at tool-call level. Each reads JSON from stdin, exits `2` to block or `0` to allow. Exit codes: `0` = allow, `2` = block (agent sees stderr as feedback), `1` = hook error, which Claude Code treats as non-blocking (stderr shown, action proceeds); hooks therefore exit `2` on internal errors such as missing `jq` or an unparseable payload.
 
 | Hook | What it blocks |
 |------|---------------|

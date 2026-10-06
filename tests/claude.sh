@@ -735,6 +735,36 @@ EOF
   fi
 
   echo ""
+  echo "fail closed (missing jq, invalid payload)"
+  check "invalid JSON payload → block" block 'not json {' block-destructive-ops.sh
+  check "invalid JSON payload → block (Read surface)" block 'not json {' block-env-read.sh
+  # PATH holds only what a hook needs to reach the jq resolver, never jq.
+  # If a fallback jq exists on this host the resolver finds it, so skip.
+  if [[ -x /opt/homebrew/bin/jq || -x /usr/local/bin/jq || -x /usr/bin/jq || -x /snap/bin/jq ]]; then
+    printf "  SKIP  jq present in a fallback dir — missing-jq tests\n"
+  else
+    NOJQ_BIN=$(mktemp -d)
+    ln -s "$(command -v dirname)" "$NOJQ_BIN/dirname"
+    ln -s "$(command -v cat)" "$NOJQ_BIN/cat"
+    BASH_BIN=$(command -v bash)
+    err=$(echo '{"tool_input":{"command":"rm -rf /"}}' | PATH="$NOJQ_BIN" "$BASH_BIN" "$HOOKS_DIR/block-destructive-ops.sh" 2>&1 >/dev/null)
+    code=$?
+    if [[ "$code" -eq 2 && "$err" == *"jq not found"* ]]; then
+      printf "  PASS  no jq → block-destructive-ops.sh exits 2\n"; ((pass++))
+    else
+      printf "  FAIL  no jq → block-destructive-ops.sh (exit %d, stderr: %s)\n" "$code" "$err"; ((fail++))
+    fi
+    echo '{"tool_name":"Bash","tool_input":{"command":"ls"}}' | PATH="$NOJQ_BIN" "$BASH_BIN" "$HOOKS_DIR/audit-log.sh" >/dev/null 2>&1
+    code=$?
+    if [[ "$code" -eq 0 ]]; then
+      printf "  PASS  no jq → audit-log.sh exits 0\n"; ((pass++))
+    else
+      printf "  FAIL  no jq → audit-log.sh (exit %d, expected 0)\n" "$code"; ((fail++))
+    fi
+    rm -rf "$NOJQ_BIN"
+  fi
+
+  echo ""
   echo "block-self-edit.sh"
   ECHO_SETTINGS='echo hi > ~/.claude/settings.json'
   check "blocks echo > ~/.claude/settings.json" \
