@@ -200,6 +200,59 @@ run_hook_tests() {
   check "blocks commit via cd \"quoted dir\" into main-branch repo" \
     block "$(jq -n --arg cmd "$CD_MAIN_QUOTED" '{tool_input:{command:$cmd}}')" block-main-branch.sh
 
+  # Bypasses (#70) and false positives (#75). bmb_in <dir> <label> <expect> <cmd>
+  bmb_in() { check_in "$1" "$2" "$3" "$(jq -n --arg cmd "$4" '{tool_input:{command:$cmd}}')" block-main-branch.sh; }
+  git -C "$MAIN_REPO" branch feat
+  bmb_in "$MAIN_REPO" "blocks git -C . commit"           block 'git -C . commit -m x'
+  bmb_in "$MAIN_REPO" "blocks git -c k=v commit"         block 'git -c user.name=x commit -m x'
+  bmb_in "$MAIN_REPO" "blocks git --no-pager commit"     block 'git --no-pager commit -m x'
+  bmb_in "$MAIN_REPO" "blocks git --git-dir commit"      block 'git --git-dir=.git --work-tree=. commit -m x'
+  bmb_in "$FEAT_REPO" "blocks git -C <main repo> commit" block "git -C $MAIN_REPO commit -m x"
+  bmb_in "$MAIN_REPO" "allows git -C <feat repo> commit" allow "git -C $FEAT_REPO commit -m x"
+  bmb_in "$MAIN_REPO" "blocks merge on main"             block 'git merge feat'
+  bmb_in "$MAIN_REPO" "blocks cherry-pick on main"       block 'git cherry-pick abc123'
+  bmb_in "$MAIN_REPO" "blocks rebase on main"            block 'git rebase -i HEAD~2'
+  bmb_in "$MAIN_REPO" "blocks revert on main"            block 'git revert HEAD'
+  bmb_in "$MAIN_REPO" "blocks am on main"                block 'git am x.patch'
+  bmb_in "$MAIN_REPO" "allows rebase --abort on main"    allow 'git rebase --abort'
+  bmb_in "$FEAT_REPO" "allows merge on feature branch"   allow 'git merge main'
+  bmb_in / "blocks cd a && cd b && commit (main)"        block "cd $(dirname "$MAIN_REPO") && cd $(basename "$MAIN_REPO") && git commit -m x"
+  bmb_in / "allows cd a && cd b && commit (feat)"        allow "cd $(dirname "$FEAT_REPO") && cd $(basename "$FEAT_REPO") && git commit -m x"
+  HOME="$MAIN_REPO" bmb_in / "blocks cd ~ && commit (main)"     block 'cd ~ && git commit -m x'
+  HOME="$MAIN_REPO" bmb_in / "blocks cd \$HOME && commit (main)" block 'cd $HOME && git commit -m x'
+  HOME="$FEAT_REPO" bmb_in / "allows cd ~ && commit (feat)"     allow 'cd ~ && git commit -m x'
+  bmb_in "$MAIN_REPO" "blocks push origin HEAD on main"  block 'git push origin HEAD'
+  bmb_in "$MAIN_REPO" "blocks push -u origin on main"    block 'git push -u origin'
+  bmb_in "$MAIN_REPO" "blocks push --set-upstream origin" block 'git push --set-upstream origin'
+  bmb_in "$FEAT_REPO" "allows push origin HEAD on feat"  allow 'git push origin HEAD'
+  bmb_in "$FEAT_REPO" "allows push -u origin on feat"    allow 'git push -u origin'
+  bmb_in "$MAIN_REPO" "allows push origin --tags on main" allow 'git push origin --tags'
+  bmb_in / "blocks push origin 'main'"                   block "git push origin 'main'"
+  bmb_in / "blocks push origin \"main\""                 block 'git push origin "main"'
+  bmb_in / "blocks push origin +feat (force refspec)"    block 'git push origin +feat'
+  bmb_in / "blocks push -fu"                             block 'git push -fu origin feat'
+  bmb_in / "blocks push -uf"                             block 'git push -uf origin feat'
+  bmb_in / "blocks push --mirror"                        block 'git push --mirror'
+  bmb_in / "blocks push --all"                           block 'git push --all origin'
+  bmb_in / "allows push feat && rm -f (flag scoped)"     allow 'git push origin feat && rm -f x'
+  bmb_in "$MAIN_REPO" "allows checkout -b && commit"     allow 'git checkout -b feat/x && git commit -m x'
+  bmb_in "$MAIN_REPO" "allows switch -c && commit"       allow 'git switch -c feat/x && git commit -m x'
+  bmb_in "$MAIN_REPO" "allows checkout feat && commit"   allow 'git checkout feat && git commit -m x'
+  bmb_in "$MAIN_REPO" "allows switch feat && commit"     allow 'git switch feat && git commit -m x'
+  bmb_in "$MAIN_REPO" "blocks checkout <file> && commit" block 'git checkout README.md && git commit -am x'
+  bmb_in "$FEAT_REPO" "blocks checkout main && commit"   block 'git checkout main && git commit -m x'
+  bmb_in "$MAIN_REPO" "allows commit --dry-run"          allow 'git commit --dry-run'
+  bmb_in "$MAIN_REPO" "allows heredoc body with git"     allow $'cat <<\'EOF\' > notes.md\ngit commit -m x\ngit push origin main\nEOF'
+  bmb_in "$MAIN_REPO" "blocks commit after heredoc"      block $'cat <<EOF > notes.md\nhi\nEOF\ngit commit -m x'
+  bmb_in "$MAIN_REPO" "blocks commit on 2nd line"        block $'ls\ngit commit -m x'
+  bmb_in "$MAIN_REPO" "blocks \$(git commit)"            block 'x=$(git commit -m x)'
+  bmb_in "$MAIN_REPO" "allows echo \"a && git commit\""  allow 'echo "a && git commit"'
+  bmb_in "$FEAT_REPO" "allows push && gh pr --base main" allow 'git push -u origin feat/thing && gh pr create --base main'
+  bmb_in "$MAIN_REPO" "allows git log main"              allow 'git log --oneline main'
+  bmb_in "$MAIN_REPO" "allows git diff main"             allow 'git diff main'
+  bmb_in "$MAIN_REPO" "allows git fetch origin main"     allow 'git fetch origin main'
+  bmb_in "$MAIN_REPO" "allows git pull origin main"      allow 'git pull origin main'
+
   # Config file source: ~/.agentguard/config via AGENTGUARD_CONFIG_FILE override
   CFG_TMP=$(mktemp)
   echo 'AGENTGUARD_PROTECTED_BRANCHES="trunk,release"' > "$CFG_TMP"
@@ -296,6 +349,7 @@ EOF
   check_stdout "claude block-env-read allow prints nothing" allow '{"tool_input":{"file_path":"/w/README.md"}}' block-env-read.sh empty
   check_stdout "claude block-env block prints nothing"      block '{"tool_input":{"command":"cat .env"}}'      block-env.sh empty
   check_stdout "grok block-env block prints decision JSON"  block '{"toolName":"run_terminal_command","toolInput":{"command":"cat .env"}}' block-env.sh '.decision == "deny"'
+  check_stdout "grok force push prints decision JSON"       block '{"toolName":"run_terminal_command","toolInput":{"command":"git push -f origin feat"}}' block-main-branch.sh '.decision == "deny"'
   check "blocks pip install outside venv" block '{"tool_input":{"command":"pip install requests"}}'          block-system-installs.sh
   VIRTUAL_ENV=/tmp/fakevenv check "allows pip install inside venv" allow '{"tool_input":{"command":"pip install requests"}}' block-system-installs.sh
   check "allows local npm install"    allow '{"tool_input":{"command":"npm install lodash"}}'                block-system-installs.sh
