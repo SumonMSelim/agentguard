@@ -66,11 +66,12 @@ _statements() {
 }
 
 # Words that may precede the real command: VAR=x, sudo/env/command/nohup/
-# time/... and their options (-E, -u root, -n 10).
-_PFX='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|sudo|doas|env|command|nohup|time|exec|nice|xargs|then|do|else|!|-[ugCnp][[:space:]]+[^[:space:]]+|-[^[:space:]]+)[[:space:]]+'
-# Statement start: line start (optionally inside ( or {), a separator left
+# time/... and their options (-E, -u root, -n 10). Wrappers may carry a path
+# (/usr/bin/sudo, /usr/bin/env).
+_PFX='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|([^[:space:]]*/)?(sudo|doas|env|nohup|nice|xargs)|command|time|exec|then|do|else|!|-[ugCnp][[:space:]]+[^[:space:]]+|-[^[:space:]]+)[[:space:]]+'
+# Statement start: line start (optionally inside ( or {), a separator or ( left
 # inside quotes, $( or backtick, or the opening quote of sh -c "...".
-_STMT_START="(^[[:space:]]*[({]*|[;&|\`]|\\\$\\(|(sh|bash|zsh|dash)[[:space:]]+-[a-z]*c[[:space:]]+[\"'])[[:space:]]*(${_PFX})*"
+_STMT_START="(^[[:space:]]*[({]*|[;&|(\`]|\\\$\\(|(sh|bash|zsh|dash)[[:space:]]+-[a-z]*c[[:space:]]+[\"'])[[:space:]]*(${_PFX})*"
 # Options between the manager and its verb: -y, --no-cache, -o k=v.
 _OPTS='([[:space:]]+(-[^[:space:]]+|[^[:space:]]+=[^[:space:]]*))*'
 _END='([^A-Za-z0-9_-]|$)'
@@ -121,7 +122,7 @@ _PIP_LINES=$(echo "$STATEMENTS" | grep -E \
 
 if [[ -n "$_PIP_LINES" ]]; then
   # Block sudo pip installs regardless of virtualenv.
-  if echo "$_PIP_LINES" | grep -qE "(^|[[:space:];&|(])(sudo|doas)[[:space:]]"; then
+  if echo "$_PIP_LINES" | grep -qE "(^|[[:space:];&|(/])(sudo|doas)[[:space:]]"; then
     _grok_block "Blocked: sudo pip install is not permitted. Use Docker or a virtualenv instead."
   fi
   # Block pip install outside an active virtualenv. VIRTUAL_ENV is set by
