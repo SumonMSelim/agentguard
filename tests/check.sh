@@ -59,6 +59,9 @@ run_install all
 
 check_true "claude check passes after install" run_check claude
 check_true "kiro check passes after install"   run_check kiro
+mv "$FAKE_HOME/.kiro/hooks/agentguard.json" "$FAKE_HOME/.kiro/hooks/agentguard.json.bak"
+check_false "kiro check fails without 3.x hooks json" run_check kiro
+mv "$FAKE_HOME/.kiro/hooks/agentguard.json.bak" "$FAKE_HOME/.kiro/hooks/agentguard.json"
 check_true "codex check passes after install"  run_check codex
 check_true "cursor check passes after install" run_check cursor
 check_true "grok check passes after install"   run_check grok

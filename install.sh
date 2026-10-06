@@ -635,6 +635,16 @@ install_kiro() {
     cp "$SCRIPT_DIR/agents/kiro/agent.json" "$agent_dest/agentguard.json"
     ok "agentguard agent config installed → $agent_dest/agentguard.json"
   fi
+
+  # Kiro CLI 3.x reads hooks from standalone ~/.kiro/hooks/*.json instead of
+  # the agent config. Ship both so 2.x and 3.x are covered.
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would copy hooks.json → $dest/hooks/agentguard.json"
+  else
+    mkdir -p "$dest/hooks"
+    cp "$SCRIPT_DIR/agents/kiro/hooks.json" "$dest/hooks/agentguard.json"
+    ok "Kiro 3.x hooks registered → $dest/hooks/agentguard.json"
+  fi
   track_installed_agent "kiro"
 }
 
@@ -938,7 +948,7 @@ install_grok() {
 #   - Hook scripts in the agent's hooks/ directory (matched by name)
 #   - The instruction file (CLAUDE.md / KIRO.md / AGENTS.md) if agentguard
 #     created it; otherwise only the agentguard skill sections inside it
-#   - The Kiro agent config (agentguard.json)
+#   - The Kiro agent config and 3.x hooks file (agentguard.json)
 #   - For Claude: our entries are stripped from settings.json (not deleted wholesale)
 #
 # Every destructive write is preceded by a backup, same as install.
@@ -1515,6 +1525,7 @@ uninstall_kiro() {
   remove_hooks "$dest/hooks"
   remove_instruction_file "$dest/KIRO.md" "$SCRIPT_DIR/agents/kiro/KIRO.md"
   remove_file  "$dest/agents/agentguard.json"
+  remove_file  "$dest/hooks/agentguard.json"
   untrack_installed_agent "kiro"
 }
 
@@ -1788,6 +1799,7 @@ check_kiro() {
   check_hooks  "$dest/hooks"
   check_file   "$dest/KIRO.md" "KIRO.md"
   check_file   "$dest/agents/agentguard.json" "agentguard.json"
+  check_file   "$dest/hooks/agentguard.json" "agentguard.json (Kiro 3.x hooks)"
   echo ""
 }
 

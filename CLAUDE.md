@@ -65,7 +65,7 @@ All command-reading hooks use `.command // .tool_input.command` for both. User-l
 ### Agents (`agents/`)
 Per-agent config installed to agent's home dir:
 - `agents/claude/` → `~/.claude/` (CLAUDE.md + settings.json)
-- `agents/kiro/` → `~/.kiro/` (KIRO.md + agent.json for `agentguard` agent)
+- `agents/kiro/` → `~/.kiro/` (KIRO.md + agent.json for `agentguard` agent, used by Kiro CLI 2.x + hooks.json → `~/.kiro/hooks/agentguard.json`, the v1 standalone hook format used by Kiro CLI 3.x with `shell`/`read`/`write` matchers)
 - `agents/codex/` → `~/.codex/` (AGENTS.md + hooks.json merged with any user hooks; hooks/ copied from `hooks/`). A legacy agentguard-created `~/AGENTS.md` is migrated unless grok is installed
 - `agents/cursor/` → `<CWD>/.cursor/`, or `~/.cursor/` with `--user` (hooks.json merged with any user hooks, ours refreshed on re-run; hooks/ copied from `hooks/`). `--user` writes no AGENTS.md and is tracked as `cursor-user` for upgrade
 
@@ -96,7 +96,7 @@ Duplication prevented by sentinel comment: `<!-- agentguard:skill:<name> -->`.
 ## Key constraints
 
 - `block-env-read.sh` is primary `.env` guard (intercepts Read/Write/Edit tools). `block-env.sh` is best-effort on bash surface only.
-- Kiro guardrails only activate under `agentguard` agent — user must switch after install.
+- Kiro CLI 2.x guardrails only activate under `agentguard` agent — user must switch after install. Kiro CLI 3.x global hooks (`~/.kiro/hooks/agentguard.json`) apply to all agents. Keep `agents/kiro/agent.json` and `agents/kiro/hooks.json` wiring the same hook commands (`tests/kiro.sh` checks this).
 - Codex hooks run only after the user trusts them with `/hooks` in Codex. Codex `apply_patch` payloads carry patch text in `tool_input.command`, not a file path, so `block-env-read.sh` is not registered for it; only `block-self-edit.sh` is.
 - Cursor (and Grok project) installs are project-local (CWD) unless `agentguard cursor --user`. Run `agentguard cursor` from the target project root (after the CLI wrapper is installed). For the initial bootstrap you may run the `install.sh` script directly.
 - Upgrade path: use `agentguard upgrade` (or uninstall then reinstall). Re-running skips existing files.
