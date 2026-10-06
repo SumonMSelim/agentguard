@@ -234,6 +234,13 @@ else
   printf "  FAIL  upgrade child installs ran the protected-branches prompt\n"
   ((fail++))
 fi
+if [[ -f "$UP_HOME/.codex/AGENTS.md" && -f "$UP_HOME/.codex/hooks.json" ]]; then
+  printf "  PASS  upgrade reinstalls codex under ~/.codex\n"
+  ((pass++))
+else
+  printf "  FAIL  codex AGENTS.md or hooks.json missing under ~/.codex after upgrade\n"
+  ((fail++))
+fi
 rm -rf "$UP_HOME" "$UP_ORIGIN" "$(dirname "$UP_CLONE")"
 
 # ── upgrade keeps user content and selected skills ────────────────────────────

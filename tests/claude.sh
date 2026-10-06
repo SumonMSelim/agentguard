@@ -503,6 +503,12 @@ EOF
   check "grok blocks search .env"      block '{"toolName":"search_replace","toolInput":{"file_path":".env","new_string":"x"}}' block-env-read.sh
   check "grok allows normal cmd"       allow '{"toolName":"run_terminal_command","toolInput":{"command":"ls -l"}}' block-env.sh
 
+  # Codex payload shape (Claude-shaped plus hook_event_name/cwd), per learn.chatgpt.com/docs/hooks
+  echo ""
+  echo "codex-shaped payloads (hook_event_name/tool_name/tool_input)"
+  check "codex blocks rm -rf /"        block '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"rm -rf /"},"cwd":"/tmp"}' block-destructive-ops.sh
+  check "codex allows normal cmd"      allow '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls -l"},"cwd":"/tmp"}' block-destructive-ops.sh
+
   # Cursor payload shape (flat command/file_path): stdout must be permission JSON,
   # since Cursor blocks on empty or invalid stdout.
   echo ""

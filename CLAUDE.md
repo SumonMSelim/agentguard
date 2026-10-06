@@ -4,7 +4,7 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 ## What this repo is
 
-agentguard installs security guardrails for AI coding agents (Claude Code, Kiro, Cursor, Codex, Grok). Enforces rules at shell hook level — not just instructions. Install target: user home (`~/.claude/`, `~/.kiro/`, `~/.grok/`) or project dir (`.cursor/`), not this repo.
+agentguard installs security guardrails for AI coding agents (Claude Code, Kiro, Cursor, Codex, Grok). Enforces rules at shell hook level — not just instructions. Install target: user home (`~/.claude/`, `~/.kiro/`, `~/.codex/`, `~/.grok/`) or project dir (`.cursor/`), not this repo.
 
 ## Commands
 
@@ -65,10 +65,10 @@ All command-reading hooks use `.command // .tool_input.command` for both.
 Per-agent config installed to agent's home dir:
 - `agents/claude/` → `~/.claude/` (CLAUDE.md + settings.json)
 - `agents/kiro/` → `~/.kiro/` (KIRO.md + agent.json for `agentguard` agent)
-- `agents/codex/` → `~/AGENTS.md` (instruction-only, no hook support)
+- `agents/codex/` → `~/.codex/` (AGENTS.md + hooks.json merged with any user hooks; hooks/ copied from `hooks/`). A legacy agentguard-created `~/AGENTS.md` is migrated unless grok is installed
 - `agents/cursor/` → `<CWD>/.cursor/` (hooks.json + hooks/ copied from `hooks/`)
 
-**Instruction file sync rule**: `agents/claude/CLAUDE.md` is canonical source. `agents/kiro/KIRO.md` and `agents/cursor/AGENTS.md` must be byte-for-byte identical. `agents/codex/AGENTS.md` must match modulo 3-line Codex header (lines 3-5). `tests/check-sync.sh` enforces all four.
+**Instruction file sync rule**: `agents/claude/CLAUDE.md` is canonical source. `agents/kiro/KIRO.md`, `agents/codex/AGENTS.md` and `agents/cursor/AGENTS.md` must be byte-for-byte identical. `tests/check-sync.sh` enforces all four.
 
 ### Settings merge (`install.sh`: merge_settings)
 When `~/.claude/settings.json` exists, installer merges rather than overwrites:
@@ -96,6 +96,7 @@ Duplication prevented by sentinel comment: `<!-- agentguard:skill:<name> -->`.
 
 - `block-env-read.sh` is primary `.env` guard (intercepts Read/Write/Edit tools). `block-env.sh` is best-effort on bash surface only.
 - Kiro guardrails only activate under `agentguard` agent — user must switch after install.
+- Codex hooks run only after the user trusts them with `/hooks` in Codex. Codex `apply_patch` payloads carry patch text in `tool_input.command`, not a file path, so `block-env-read.sh` is not registered for it; only `block-self-edit.sh` is.
 - Cursor (and Grok project) installs are project-local (CWD). Run `agentguard cursor` from the target project root (after the CLI wrapper is installed). For the initial bootstrap you may run the `install.sh` script directly.
 - Upgrade path: use `agentguard upgrade` (or uninstall then reinstall). Re-running skips existing files.
 - Adding new hook: add to `AGENTGUARD_HOOKS` array in `install.sh` and `CURSOR_AGENTGUARD_FILES` for Cursor uninstall tracking.

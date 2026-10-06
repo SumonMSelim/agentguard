@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "bash ~/.codex/hooks/block-env.sh" },
+          { "type": "command", "command": "bash ~/.codex/hooks/block-main-branch.sh" },
+          { "type": "command", "command": "bash ~/.codex/hooks/block-system-installs.sh" },
+          { "type": "command", "command": "bash ~/.codex/hooks/block-destructive-ops.sh" },
+          { "type": "command", "command": "bash ~/.codex/hooks/block-self-edit.sh" }
+        ]
+      },
+      {
+        "matcher": "apply_patch",
+        "hooks": [
+          { "type": "command", "command": "bash ~/.codex/hooks/block-self-edit.sh" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "bash ~/.codex/hooks/audit-log.sh" }
+        ]
+      }
+    ]
+  }
+}

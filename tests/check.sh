@@ -81,6 +81,19 @@ echo "check — missing settings.json → exits 1"
 rm "$FAKE_HOME/.claude/settings.json"
 check_false "claude check fails with missing settings.json" run_check claude
 
+echo ""
+echo "check — codex hooks → exits 1 when broken"
+chmod -x "$FAKE_HOME/.codex/hooks/block-env.sh"
+check_false "codex check fails with non-executable hook" run_check codex
+chmod +x "$FAKE_HOME/.codex/hooks/block-env.sh"
+cp "$FAKE_HOME/.codex/hooks.json" "$FAKE_HOME/.codex/hooks.json.keep"
+jq '.hooks.PreToolUse[0].hooks |= .[1:]' "$FAKE_HOME/.codex/hooks.json.keep" > "$FAKE_HOME/.codex/hooks.json"
+check_false "codex check fails with unregistered hook" run_check codex
+rm "$FAKE_HOME/.codex/hooks.json"
+check_false "codex check fails with missing hooks.json" run_check codex
+mv "$FAKE_HOME/.codex/hooks.json.keep" "$FAKE_HOME/.codex/hooks.json"
+check_true  "codex check passes once restored" run_check codex
+
 # ── results ───────────────────────────────────────────────────────────────────
 
 echo ""
