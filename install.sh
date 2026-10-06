@@ -150,6 +150,8 @@ backup_if_exists() {
 
 AGENTGUARD_CONFIG_DIR="$HOME/.agentguard"
 AGENTGUARD_CONFIG_FILE="$AGENTGUARD_CONFIG_DIR/config"
+# What install_claude added to ~/.claude/settings.json; read by unmerge_settings.
+AGENTGUARD_CLAUDE_RECORD="$AGENTGUARD_CONFIG_DIR/claude-added.json"
 DEFAULT_PROTECTED_BRANCHES="main,master"
 
 prompt_protected_branches() {
@@ -296,7 +298,9 @@ merge_settings() {
     --argjson user  "$user_json" \
     --argjson guard "$guard_json" \
     '
-    def union_arr(a; b): ((a // []) + (b // [])) | unique;
+    # User entries first, in their order; ours appended if not present.
+    def union_arr(a; b):
+      reduce ((a // []) + (b // []))[] as $x ([]; if index($x) == null then . + [$x] else . end);
 
     # Known-stale entries removed from guardrails over time. Pruned from the
     # user deny array before unioning so upgrades self-heal instead of
@@ -369,6 +373,66 @@ merge_settings() {
   mv "${output}.tmp.$$" "$output"
 
   ok "settings.json merged → $output"
+}
+
+# record_claude_added <existing_settings> <guardrails>
+#
+# Writes $AGENTGUARD_CLAUDE_RECORD before merge_settings runs, so uninstall can
+# undo exactly what this install changes:
+#   {"allow":[...],"ask":[...],"deny":[...],   entries we add (ours minus user's)
+#    "defaultMode":true|false,                 true if we set permissions.defaultMode
+#    "scalars":{"attribution":<prev|null>,"includeGitInstructions":<prev|null>},
+#    "hadHooks":true|false}                    whether the user had a hooks key
+# On a re-install the previous record is kept and extended. A settings file
+# that already holds our hooks but has no record (installed by an older
+# version) gets no record; unmerge_settings then falls back to stripping.
+record_claude_added() {
+  local existing="$1"
+  local guardrails="$2"
+
+  [[ "$DRY_RUN" -eq 1 ]] && return 0
+  # Invalid JSON: merge_settings refuses it and fails; nothing to record.
+  if [[ -f "$existing" ]] && ! jq empty "$existing" 2>/dev/null; then
+    return 0
+  fi
+
+  local user_json='{}' old_json='null'
+  [[ -f "$existing" ]] && user_json=$(cat "$existing")
+  if [[ -f "$AGENTGUARD_CLAUDE_RECORD" ]] && jq empty "$AGENTGUARD_CLAUDE_RECORD" 2>/dev/null; then
+    old_json=$(cat "$AGENTGUARD_CLAUDE_RECORD")
+  fi
+
+  local cmds='[.hooks.PreToolUse, .hooks.PostToolUse | .[]? | .hooks[]?.command]'
+  if [[ "$old_json" == "null" ]] \
+     && jq -e --argjson g "$(jq "$cmds" "$guardrails")" \
+          "$cmds | any(. as \$c | \$g | index(\$c) != null)" <<<"$user_json" >/dev/null; then
+    log "settings.json has agentguard hooks but no install record — uninstall will strip by match"
+    return 0
+  fi
+
+  mkdir -p "$AGENTGUARD_CONFIG_DIR"
+  jq -n \
+    --argjson user  "$user_json" \
+    --argjson guard "$(cat "$guardrails")" \
+    --argjson old   "$old_json" \
+    '
+    def added(k): (($old[k] // []) + (($guard.permissions[k] // []) - ($user.permissions[k] // []))) | unique;
+    {
+      allow: added("allow"),
+      ask:   added("ask"),
+      deny:  added("deny"),
+      defaultMode: (($old.defaultMode // false) or ($user.permissions.defaultMode == null)),
+      scalars: ($old.scalars // {
+        attribution:            $user.attribution,
+        includeGitInstructions: $user.includeGitInstructions
+      }),
+      hadHooks: (if $old == null then ($user | has("hooks")) else $old.hadHooks end)
+    }
+    ' > "${AGENTGUARD_CLAUDE_RECORD}.tmp.$$" || {
+      rm -f "${AGENTGUARD_CLAUDE_RECORD}.tmp.$$"
+      fail "Could not write $AGENTGUARD_CLAUDE_RECORD"
+    }
+  mv "${AGENTGUARD_CLAUDE_RECORD}.tmp.$$" "$AGENTGUARD_CLAUDE_RECORD"
 }
 
 # ── agent installers ──────────────────────────────────────────────────────────
@@ -486,6 +550,7 @@ install_claude() {
   fi
 
   backup_if_exists "$dest/settings.json"
+  record_claude_added "$dest/settings.json" "$SCRIPT_DIR/agents/claude/settings.json"
   merge_settings "$dest/settings.json" \
                  "$SCRIPT_DIR/agents/claude/settings.json" \
                  "$dest/settings.json"
@@ -815,11 +880,20 @@ installed_skills() {
     | tr '\n' ',' | sed 's/,$//'
 }
 
-# remove_agentguard_config — removes ~/.agentguard/config written by install.sh.
+# remove_agentguard_config — removes ~/.agentguard/config and the Claude
+# install record written by install.sh.
 # Removes the directory too if it is empty afterwards.
 remove_agentguard_config() {
   local cfg_file="$HOME/.agentguard/config"
   local cfg_dir="$HOME/.agentguard"
+  if [[ -f "$AGENTGUARD_CLAUDE_RECORD" ]]; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would remove $AGENTGUARD_CLAUDE_RECORD"
+    else
+      rm "$AGENTGUARD_CLAUDE_RECORD"
+      ok "Removed $AGENTGUARD_CLAUDE_RECORD"
+    fi
+  fi
   if [[ -f "$cfg_file" ]]; then
     if [[ "$DRY_RUN" -eq 1 ]]; then
       dry "Would remove $cfg_file"
@@ -1083,14 +1157,22 @@ do_upgrade() {
 # Strips agentguard entries from an existing settings.json:
 #   - Removes our hook commands from PreToolUse / PostToolUse.
 #     Matcher blocks that become empty after removal are dropped entirely.
-#   - Removes our permission entries from allow / ask / deny arrays.
-#   - Removes the security-critical keys we set (attribution,
-#     includeGitInstructions) and the legacy keys older versions set
+#   - With an install record ($AGENTGUARD_CLAUDE_RECORD, see
+#     record_claude_added): removes only the permission entries we added,
+#     restores the previous attribution / includeGitInstructions values (or
+#     deletes the key if there was none), and unsets defaultMode only if we
+#     set it. The record is deleted afterwards.
+#   - Without a record (installed by an older version): removes every entry
+#     that matches our allow / ask / deny lists, deletes attribution,
+#     includeGitInstructions and the legacy keys older versions set
 #     (includeCoAuthoredBy, gitAttribution, disableGitWorkflow).
 #   - Old per-tool block-env-read.sh matcher blocks are covered by the
 #     command-string strip above.
+#   - Empty allow / ask / deny arrays, an empty permissions object, empty
+#     PreToolUse / PostToolUse arrays and an empty hooks object (unless the
+#     user had one) are dropped.
 #
-# All other user keys are preserved untouched.
+# All other user keys are preserved untouched. Invalid JSON fails, unchanged.
 unmerge_settings() {
   local settings="$1"
   local guardrails="$2"
@@ -1099,6 +1181,7 @@ unmerge_settings() {
 
   if [[ ! -f "$settings" ]]; then
     log "settings.json not found — nothing to unmerge"
+    [[ "$DRY_RUN" -eq 1 ]] || rm -f "$AGENTGUARD_CLAUDE_RECORD"
     return
   fi
 
@@ -1107,14 +1190,22 @@ unmerge_settings() {
     return
   fi
 
-  local guard_json
+  if ! jq empty "$settings"; then
+    fail "$settings is not valid JSON — fix it and re-run. File left unchanged."
+  fi
+
+  local guard_json rec_json='null'
   guard_json=$(cat "$guardrails")
+  if [[ -f "$AGENTGUARD_CLAUDE_RECORD" ]] && jq empty "$AGENTGUARD_CLAUDE_RECORD" 2>/dev/null; then
+    rec_json=$(cat "$AGENTGUARD_CLAUDE_RECORD")
+  fi
 
   backup_if_exists "$settings"
 
   jq -n \
     --argjson current "$(cat "$settings")" \
     --argjson guard   "$guard_json" \
+    --argjson rec     "$rec_json" \
     '
     # Collect the set of hook command strings we own (from the guardrails config).
     # Both PreToolUse and PostToolUse use the same shape.
@@ -1137,40 +1228,58 @@ unmerge_settings() {
         )
       | map(select(.hooks | length > 0));
 
-    # Collect the permission entries we own from the guardrails config.
-    def guard_perms(key): $guard.permissions[key] // [];
+    # The permission entries we own: the recorded additions when a record
+    # exists, else everything in the guardrails config.
+    def owned_perms(key):
+      if $rec == null then $guard.permissions[key] // [] else $rec[key] // [] end;
 
     # Remove our entries from a permissions array.
-    def strip_perms(arr; key):
-      arr | map(select(. as $e | guard_perms(key) | index($e) == null));
+    def strip_perms(key):
+      if .permissions | has(key) then
+        .permissions[key] |= map(select(. as $e | owned_perms(key) | index($e) == null))
+      else . end;
 
-    # Strip our entries, then remove the permissions object entirely if all three
-    # arrays are now empty and no other meaningful keys remain — avoids polluting
-    # a settings.json that had no permissions key before install.
-    # defaultMode is included in the "ours" set: it was written by merge_settings
-    # and should not be left behind as an orphan when nothing else remains.
-    def clean_permissions:
-      .permissions.allow = strip_perms((.permissions.allow // []); "allow")
-      | .permissions.ask   = strip_perms((.permissions.ask   // []); "ask")
-      | .permissions.deny  = strip_perms((.permissions.deny  // []); "deny")
-      | if (.permissions.allow == [] and .permissions.ask == [] and .permissions.deny == [])
-          and (.permissions | keys | map(select(
-                . != "allow" and . != "ask" and . != "deny" and . != "defaultMode"
-              )) | length == 0)
-        then del(.permissions)
-        else .
-        end;
+    def drop_if_empty(path): if (getpath(path) | length) == 0 then delpaths([path]) else . end;
+
+    # Restore a key we overwrote, unless the user changed it since install.
+    def restore(k):
+      if .[k] != $guard[k] then .
+      elif $rec.scalars[k] == null then del(.[k])
+      else .[k] = $rec.scalars[k] end;
 
     $current
-    | clean_permissions
-    | .hooks.PreToolUse  = strip_hooks(.hooks.PreToolUse  // [])
-    | .hooks.PostToolUse = strip_hooks(.hooks.PostToolUse // [])
-    | del(.attribution)
-    | del(.includeGitInstructions)
-    | del(.includeCoAuthoredBy)
-    | del(.gitAttribution)
-    | del(.disableGitWorkflow)
-    ' > "${settings}.tmp" && mv "${settings}.tmp" "$settings"
+    | if has("permissions") then
+        strip_perms("allow") | strip_perms("ask") | strip_perms("deny")
+      else . end
+    # Without a record we cannot tell whether the user chose defaultMode, so
+    # it is left alone.
+    | if $rec.defaultMode == true
+         and .permissions.defaultMode == ($guard.permissions.defaultMode // "acceptEdits")
+      then del(.permissions.defaultMode) else . end
+    | if has("permissions") then
+        reduce ("allow", "ask", "deny") as $k (.;
+          if .permissions | has($k) then drop_if_empty(["permissions", $k]) else . end)
+        | drop_if_empty(["permissions"])
+      else . end
+    | if has("hooks") then
+        .hooks.PreToolUse  = strip_hooks(.hooks.PreToolUse  // [])
+        | .hooks.PostToolUse = strip_hooks(.hooks.PostToolUse // [])
+        | drop_if_empty(["hooks", "PreToolUse"])
+        | drop_if_empty(["hooks", "PostToolUse"])
+        | if $rec.hadHooks == true then . else drop_if_empty(["hooks"]) end
+      else . end
+    | if $rec == null then
+        del(.attribution, .includeGitInstructions,
+            .includeCoAuthoredBy, .gitAttribution, .disableGitWorkflow)
+      else
+        restore("attribution") | restore("includeGitInstructions")
+      end
+    ' > "${settings}.tmp.$$" || {
+      rm -f "${settings}.tmp.$$"
+      fail "settings.json unmerge failed — $settings left unchanged."
+    }
+  mv "${settings}.tmp.$$" "$settings"
+  rm -f "$AGENTGUARD_CLAUDE_RECORD"
 
   ok "settings.json unmerged → $settings"
 }

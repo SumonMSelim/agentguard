@@ -38,6 +38,8 @@ When an existing `~/.claude/settings.json` is found, the installer merges rather
 | `attribution`, `includeGitInstructions`                       | agentguard always wins — security-critical               |
 | Everything else (`model`, `apiKey`, `env`, etc.)              | Your values preserved untouched                          |
 
+Install records what it added in `~/.agentguard/claude-added.json`. Uninstall removes only those entries and restores your previous `attribution`, `includeGitInstructions` and `defaultMode`.
+
 ## defaultMode
 
 Installed as `acceptEdits`, which auto-approves file reads/writes without prompting. Hooks and deny rules handle the security boundaries.
