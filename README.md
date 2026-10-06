@@ -95,7 +95,7 @@ agentguard uninstall all
 agentguard uninstall claude --dry-run   # preview first
 ```
 
-Removes only what agentguard owns: hooks, instruction file, Kiro agent config, CLI wrapper. Claude `settings.json` is surgically unmerged — your own keys untouched, file not deleted.
+Removes only what agentguard owns: hooks, instruction file, Kiro agent config. The `~/.local/bin/agentguard` CLI wrapper is removed only by `agentguard uninstall all`, so the command keeps working for the agents you still have. Claude `settings.json` is surgically unmerged — your own keys untouched, file not deleted.
 
 ## Check installation status
 
@@ -132,6 +132,8 @@ agentguard upgrade
 ```
 
 Pulls the latest agentguard, then uninstalls and reinstalls every agent you previously set up — in one step. Your personal settings, your own instruction-file content and your selected skills are preserved. An instruction file that agentguard created is replaced with the new version (a `.bak` copy is kept).
+
+On a `.deb` install, the upgrade downloads `SHA256SUMS` from the same release and aborts if the package checksum does not match.
 
 To check if an update is available without upgrading:
 

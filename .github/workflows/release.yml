@@ -6,10 +6,10 @@ name: release
 #   2. Run test suite — abort on failure
 #   3. Bump VERSION, commit, push to main
 #   4. Create annotated tag
-#   5. Build .deb, create GitHub Release, attach artifact
+#   5. Build .deb and SHA256SUMS, create GitHub Release, attach both
 #   6. Compute tarball SHA256, update Homebrew formula in this repo
 #   7. Push updated formula to homebrew-agentguard tap
-#   8. Run package tests on all supported OS targets (parallel)
+#   8. Run package tests on all supported OS targets (parallel matrix)
 #   9. Summarise results — marks the workflow run pass/fail
 
 on:
@@ -36,10 +36,14 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       # ── 1. validate input ─────────────────────────────────────────────────
+      # The input is passed via env, never interpolated into the script, so a
+      # crafted value cannot inject shell before the semver check runs.
       - name: Validate version input
         id: validate
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          VERSION="${{ inputs.version }}"
+          VERSION="$INPUT_VERSION"
           if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "ERROR: '$VERSION' is not valid semver (expected X.Y.Z)"
             exit 1
@@ -93,13 +97,19 @@ jobs:
       - name: Build .deb package
         run: bash packaging/deb/build.sh dist/
 
+      # `agentguard upgrade` on a .deb install verifies the download against this file.
+      - name: Generate SHA256SUMS
+        run: cd dist && sha256sum -- *.deb > SHA256SUMS && cat SHA256SUMS
+
       - name: Create GitHub Release and upload .deb
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ env.VERSION }}
           name: v${{ env.VERSION }}
           generate_release_notes: true
-          files: dist/*.deb
+          files: |
+            dist/*.deb
+            dist/SHA256SUMS
 
       # ── 6. compute tarball SHA256 and update Homebrew formula ─────────────
       - name: Compute tarball SHA256
@@ -153,9 +163,9 @@ jobs:
 
           rm -f ~/.ssh/tap_deploy_key
 
-  # ── 8a. Wait for GitHub CDN tarball to stabilise (Homebrew only) ────────────
-  # deb tests download from GitHub Releases (not the source tarball) so they
-  # don't need this gate. Homebrew verifies the SHA in the formula.
+  # ── 8a. Wait for GitHub CDN tarball to stabilise ────────────────────────────
+  # Homebrew verifies the tarball SHA in the formula, so its tests must wait.
+  # The deb legs share the matrix job below and wait too.
   wait-for-cdn:
     name: Wait for tarball SHA to stabilise
     runs-on: ubuntu-latest
@@ -165,8 +175,9 @@ jobs:
     steps:
       - name: Poll until tarball SHA is stable
         id: check
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
         run: |
-          VERSION="${{ needs.release.outputs.version }}"
           URL="https://github.com/${{ github.repository }}/archive/refs/tags/v${VERSION}.tar.gz"
           for i in $(seq 1 10); do
             SHA1=$(curl -sL "$URL" | sha256sum | awk '{print $1}')
@@ -182,200 +193,43 @@ jobs:
           echo "ERROR: SHA never stabilised"
           exit 1
 
-  # ── 8b. apt/deb — Ubuntu 24.04 ──────────────────────────────────────────────
-  deb-ubuntu-24:
-    name: apt/deb / Ubuntu 24.04
-    runs-on: ubuntu-24.04
-    needs: release
-    continue-on-error: true
-    outputs:
-      result: ${{ steps.outcome.outputs.result }}
+  # ── 8b. Package tests — apt/deb and Homebrew on every supported target ──────
+  # Each leg writes its own result row to the run summary. The hook list comes
+  # from the tagged source tree, so it cannot drift from hooks/.
+  package-test:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    needs: [release, wait-for-cdn]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: "apt/deb / Ubuntu 24.04",           os: ubuntu-24.04,  kind: deb }
+          - { target: "apt/deb / Ubuntu 22.04",           os: ubuntu-22.04,  kind: deb }
+          - { target: "Homebrew / macOS (macos-latest)",  os: macos-latest,  kind: brew }
+          - { target: "Homebrew / Linux (ubuntu-latest)", os: ubuntu-latest, kind: brew }
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+      HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
     steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.release.outputs.version }}
+          sparse-checkout: hooks
+
       - name: Download and install .deb
+        if: matrix.kind == 'deb'
         run: |
-          VERSION="${{ needs.release.outputs.version }}"
           DEB="agentguard_${VERSION}_all.deb"
           curl -fsSL -o "/tmp/${DEB}" \
-            "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${DEB}"
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${DEB}"
           sudo apt-get install -y jq
           sudo dpkg -i "/tmp/${DEB}"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "BIN_PATH=/usr/bin/agentguard" >> "$GITHUB_ENV"
+          echo "LIB_DIR=/usr/lib/agentguard"  >> "$GITHUB_ENV"
 
-      - name: Version matches release
-        run: |
-          out=$(agentguard version 2>&1)
-          echo "$out"
-          echo "$out" | grep -q "$VERSION" || { echo "FAIL: expected $VERSION"; exit 1; }
-
-      - name: Binary present and executable
-        run: test -x /usr/bin/agentguard
-
-      - name: Hooks present
-        run: |
-          for hook in _check-disabled.sh block-env.sh block-env-read.sh block-main-branch.sh \
-                      block-system-installs.sh block-destructive-ops.sh block-self-edit.sh audit-log.sh; do
-            test -f "/usr/lib/agentguard/hooks/$hook" || { echo "MISSING: $hook"; exit 1; }
-            echo "OK: $hook"
-          done
-
-      - name: Unknown agent returns error
-        run: agentguard __test__ 2>&1 | grep -q "Unknown agent"
-
-      - name: Install claude
-        run: |
-          out=$(agentguard claude 2>&1)
-          echo "$out"
-          echo "$out" | grep -qE "Done|SUCCESS|installed" || { echo "FAIL: install output unexpected"; exit 1; }
-
-      - name: Verify claude install artifacts
-        run: |
-          test -f "$HOME/.claude/CLAUDE.md"     && echo "OK: CLAUDE.md"     || { echo "MISSING: CLAUDE.md"; exit 1; }
-          test -f "$HOME/.claude/settings.json" && echo "OK: settings.json" || { echo "MISSING: settings.json"; exit 1; }
-          test -d "$HOME/.claude/hooks"         && echo "OK: hooks dir"     || { echo "MISSING: hooks dir"; exit 1; }
-
-      - name: Set outcome
-        id: outcome
-        if: always()
-        run: |
-          if [[ "${{ job.status }}" == "success" ]]; then
-            echo "result=passed" >> "$GITHUB_OUTPUT"
-          else
-            echo "result=failed" >> "$GITHUB_OUTPUT"
-          fi
-
-  # ── 8c. apt/deb — Ubuntu 22.04 ──────────────────────────────────────────────
-  deb-ubuntu-22:
-    name: apt/deb / Ubuntu 22.04
-    runs-on: ubuntu-22.04
-    needs: release
-    continue-on-error: true
-    outputs:
-      result: ${{ steps.outcome.outputs.result }}
-    steps:
-      - name: Download and install .deb
-        run: |
-          VERSION="${{ needs.release.outputs.version }}"
-          DEB="agentguard_${VERSION}_all.deb"
-          curl -fsSL -o "/tmp/${DEB}" \
-            "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${DEB}"
-          sudo apt-get install -y jq
-          sudo dpkg -i "/tmp/${DEB}"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-
-      - name: Version matches release
-        run: |
-          out=$(agentguard version 2>&1)
-          echo "$out"
-          echo "$out" | grep -q "$VERSION" || { echo "FAIL: expected $VERSION"; exit 1; }
-
-      - name: Binary present and executable
-        run: test -x /usr/bin/agentguard
-
-      - name: Hooks present
-        run: |
-          for hook in _check-disabled.sh block-env.sh block-env-read.sh block-main-branch.sh \
-                      block-system-installs.sh block-destructive-ops.sh block-self-edit.sh audit-log.sh; do
-            test -f "/usr/lib/agentguard/hooks/$hook" || { echo "MISSING: $hook"; exit 1; }
-            echo "OK: $hook"
-          done
-
-      - name: Install claude
-        run: |
-          out=$(agentguard claude 2>&1)
-          echo "$out"
-          echo "$out" | grep -qE "Done|SUCCESS|installed" || { echo "FAIL: install output unexpected"; exit 1; }
-
-      - name: Verify claude install artifacts
-        run: |
-          test -f "$HOME/.claude/CLAUDE.md"     && echo "OK: CLAUDE.md"     || { echo "MISSING: CLAUDE.md"; exit 1; }
-          test -f "$HOME/.claude/settings.json" && echo "OK: settings.json" || { echo "MISSING: settings.json"; exit 1; }
-          test -d "$HOME/.claude/hooks"         && echo "OK: hooks dir"     || { echo "MISSING: hooks dir"; exit 1; }
-
-      - name: Set outcome
-        id: outcome
-        if: always()
-        run: |
-          if [[ "${{ job.status }}" == "success" ]]; then
-            echo "result=passed" >> "$GITHUB_OUTPUT"
-          else
-            echo "result=failed" >> "$GITHUB_OUTPUT"
-          fi
-
-  # ── 8d. Homebrew — macOS ────────────────────────────────────────────────────
-  homebrew-macos:
-    name: Homebrew / macOS (macos-latest)
-    runs-on: macos-latest
-    needs: [release, wait-for-cdn]
-    continue-on-error: true
-    outputs:
-      result: ${{ steps.outcome.outputs.result }}
-    steps:
-      - name: Tap and install
-        env:
-          HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
-        run: |
-          brew tap SumonMSelim/agentguard
-          brew install agentguard
-
-      - name: Version matches release
-        run: |
-          VERSION="${{ needs.release.outputs.version }}"
-          out=$(agentguard version 2>&1)
-          echo "$out"
-          echo "$out" | grep -q "$VERSION" || { echo "FAIL: expected $VERSION"; exit 1; }
-
-      - name: Binary present and executable
-        run: test -x "$(brew --prefix)/bin/agentguard"
-
-      - name: Hooks present in libexec
-        run: |
-          LIBEXEC="$(brew --prefix)/opt/agentguard/libexec"
-          for hook in _check-disabled.sh block-env.sh block-env-read.sh block-main-branch.sh \
-                      block-system-installs.sh block-destructive-ops.sh block-self-edit.sh audit-log.sh; do
-            test -f "$LIBEXEC/hooks/$hook" || { echo "MISSING: $hook"; exit 1; }
-            echo "OK: $hook"
-          done
-
-      - name: Unknown agent returns error
-        run: agentguard __test__ 2>&1 | grep -q "Unknown agent"
-
-      - name: Install claude
-        run: |
-          out=$(agentguard claude 2>&1)
-          echo "$out"
-          echo "$out" | grep -qE "Done|SUCCESS|installed" || { echo "FAIL: install output unexpected"; exit 1; }
-
-      - name: Verify claude install artifacts
-        run: |
-          test -f "$HOME/.claude/CLAUDE.md"     && echo "OK: CLAUDE.md"     || { echo "MISSING: CLAUDE.md"; exit 1; }
-          test -f "$HOME/.claude/settings.json" && echo "OK: settings.json" || { echo "MISSING: settings.json"; exit 1; }
-          test -d "$HOME/.claude/hooks"         && echo "OK: hooks dir"     || { echo "MISSING: hooks dir"; exit 1; }
-
-      - name: brew test
-        env:
-          HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
-        run: brew test agentguard
-
-      - name: Set outcome
-        id: outcome
-        if: always()
-        run: |
-          if [[ "${{ job.status }}" == "success" ]]; then
-            echo "result=passed" >> "$GITHUB_OUTPUT"
-          else
-            echo "result=failed" >> "$GITHUB_OUTPUT"
-          fi
-
-  # ── 8e. Homebrew — Linux ────────────────────────────────────────────────────
-  homebrew-linux:
-    name: Homebrew / Linux (ubuntu-latest)
-    runs-on: ubuntu-latest
-    needs: [release, wait-for-cdn]
-    continue-on-error: true
-    outputs:
-      result: ${{ steps.outcome.outputs.result }}
-    steps:
       - name: Install Homebrew
+        if: matrix.kind == 'brew' && runner.os == 'Linux'
         run: |
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" </dev/null
           echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
@@ -383,28 +237,26 @@ jobs:
           /home/linuxbrew/.linuxbrew/bin/brew shellenv >> "$GITHUB_ENV"
 
       - name: Tap and install
-        env:
-          HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
+        if: matrix.kind == 'brew'
         run: |
           brew tap SumonMSelim/agentguard
           brew install agentguard
+          echo "BIN_PATH=$(brew --prefix)/bin/agentguard"              >> "$GITHUB_ENV"
+          echo "LIB_DIR=$(brew --prefix)/opt/agentguard/libexec"       >> "$GITHUB_ENV"
 
       - name: Version matches release
         run: |
-          VERSION="${{ needs.release.outputs.version }}"
           out=$(agentguard version 2>&1)
           echo "$out"
           echo "$out" | grep -q "$VERSION" || { echo "FAIL: expected $VERSION"; exit 1; }
 
       - name: Binary present and executable
-        run: test -x "$(brew --prefix)/bin/agentguard"
+        run: test -x "$BIN_PATH"
 
-      - name: Hooks present in libexec
+      - name: Hooks present
         run: |
-          LIBEXEC="$(brew --prefix)/opt/agentguard/libexec"
-          for hook in _check-disabled.sh block-env.sh block-env-read.sh block-main-branch.sh \
-                      block-system-installs.sh block-destructive-ops.sh block-self-edit.sh audit-log.sh; do
-            test -f "$LIBEXEC/hooks/$hook" || { echo "MISSING: $hook"; exit 1; }
+          for hook in hooks/*.sh; do
+            test -f "$LIB_DIR/$hook" || { echo "MISSING: $hook"; exit 1; }
             echo "OK: $hook"
           done
 
@@ -424,59 +276,35 @@ jobs:
           test -d "$HOME/.claude/hooks"         && echo "OK: hooks dir"     || { echo "MISSING: hooks dir"; exit 1; }
 
       - name: brew test
-        env:
-          HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
+        if: matrix.kind == 'brew'
         run: brew test agentguard
 
-      - name: Set outcome
-        id: outcome
+      - name: Write summary row
         if: always()
+        env:
+          TARGET: ${{ matrix.target }}
+          STATUS: ${{ job.status }}
         run: |
-          if [[ "${{ job.status }}" == "success" ]]; then
-            echo "result=passed" >> "$GITHUB_OUTPUT"
-          else
-            echo "result=failed" >> "$GITHUB_OUTPUT"
-          fi
+          if [[ "$STATUS" == "success" ]]; then result="✅ passed"; else result="❌ failed"; fi
+          printf '| Target | Result |\n|--------|--------|\n| %s | %s |\n' "$TARGET" "$result" >> "$GITHUB_STEP_SUMMARY"
 
   # ── 9. Release summary ──────────────────────────────────────────────────────
   release-summary:
     name: Release summary
     runs-on: ubuntu-latest
     if: always()
-    needs: [release, deb-ubuntu-24, deb-ubuntu-22, homebrew-macos, homebrew-linux]
+    needs: [release, package-test]
     steps:
       - name: Write summary and set exit code
         env:
-          VERSION:  ${{ needs.release.outputs.version }}
-          DEB24:    ${{ needs.deb-ubuntu-24.outputs.result }}
-          DEB22:    ${{ needs.deb-ubuntu-22.outputs.result }}
-          BREW_MAC: ${{ needs.homebrew-macos.outputs.result }}
-          BREW_LIN: ${{ needs.homebrew-linux.outputs.result }}
+          VERSION: ${{ needs.release.outputs.version }}
+          RESULT:  ${{ needs.package-test.result }}
         run: |
-          icon() { [[ "$1" == "passed" ]] && echo "✅" || echo "❌"; }
-          label() { echo "${1:-skipped}"; }
-
-          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          ## Release v${VERSION} — package test results
-
-          | Target | Result |
-          |--------|--------|
-          | apt/deb Ubuntu 24.04 | $(icon "$DEB24") $(label "$DEB24") |
-          | apt/deb Ubuntu 22.04 | $(icon "$DEB22") $(label "$DEB22") |
-          | Homebrew macOS       | $(icon "$BREW_MAC") $(label "$BREW_MAC") |
-          | Homebrew Linux       | $(icon "$BREW_LIN") $(label "$BREW_LIN") |
-          EOF
-
-          FAILED=0
-          for result in "$DEB24" "$DEB22" "$BREW_MAC" "$BREW_LIN"; do
-            [[ "$result" == "passed" ]] || FAILED=1
-          done
-
-          if [[ "$FAILED" == "1" ]]; then
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "**⚠️ One or more package targets failed. Release artifacts are published — investigate the failed jobs above.**" >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          else
-            echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Release v${VERSION} — package test results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$RESULT" == "success" ]]; then
             echo "**✅ All package targets passed. v${VERSION} is stable.**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "**⚠️ One or more package targets did not pass (${RESULT:-skipped}). Release artifacts are published — investigate the per-target jobs above.**" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi

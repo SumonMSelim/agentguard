@@ -566,10 +566,17 @@ install_cli_wrapper() {
     return
   fi
 
+  # A Homebrew install runs from a versioned Cellar path that `brew upgrade`
+  # deletes. Point the wrapper at the stable opt symlink instead.
+  local target_dir="$SCRIPT_DIR"
+  if [[ "$target_dir" == */Cellar/agentguard/*/libexec ]]; then
+    target_dir="${target_dir%%/Cellar/agentguard/*}/opt/agentguard/libexec"
+  fi
+
   mkdir -p "$bin_dir"
   cat > "$wrapper" <<WRAPPER
 #!/bin/bash
-exec "$SCRIPT_DIR/install.sh" "\$@"
+exec "$target_dir/install.sh" "\$@"
 WRAPPER
   chmod +x "$wrapper"
   ok "agentguard CLI installed → $wrapper"
@@ -1093,6 +1100,22 @@ untrack_installed_agent() {
   mv "$tmp" "$AGENTGUARD_CONFIG_FILE"
 }
 
+# verify_sha256 <file> <sums_file> <asset_name> — fails unless <file> matches
+# the checksum listed for <asset_name> in <sums_file> (sha256sum format).
+verify_sha256() {
+  local file="$1" sums="$2" name="$3" expected actual
+  [[ -s "$sums" ]] || fail "Checksum file missing or empty — refusing to install $name."
+  expected=$(awk -v n="$name" '$2 == n || $2 == "*" n { print $1; exit }' "$sums")
+  [[ -n "$expected" ]] || fail "No checksum for $name in SHA256SUMS — refusing to install."
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual=$(sha256sum "$file" | awk '{print $1}')
+  else
+    actual=$(shasum -a 256 "$file" | awk '{print $1}')
+  fi
+  [[ "$actual" == "$expected" ]] || fail "Checksum mismatch for $name — refusing to install."
+  ok "Checksum verified for $name"
+}
+
 # do_upgrade — pulls latest agentguard from git, then reinstalls all
 # previously tracked agents.
 do_upgrade() {
@@ -1102,7 +1125,9 @@ do_upgrade() {
   # tracked agents ourselves. Homebrew's post_install runs sandboxed on
   # macOS and cannot reliably write to $HOME, so we can't delegate this
   # to the formula — it must happen here, after the brew upgrade lands.
-  if [[ "$SCRIPT_DIR" == */Cellar/agentguard/* ]] || [[ "$SCRIPT_DIR" == */homebrew/*/agentguard/* ]]; then
+  # The ~/.local/bin wrapper runs from the opt symlink, so match that too.
+  if [[ "$SCRIPT_DIR" == */Cellar/agentguard/* ]] || [[ "$SCRIPT_DIR" == */homebrew/*/agentguard/* ]] \
+     || [[ "$SCRIPT_DIR" == */opt/agentguard/libexec ]]; then
     log "Homebrew install detected. Upgrading via brew..."
     if [[ "$DRY_RUN" -eq 1 ]]; then
       dry "Would run: brew upgrade agentguard"
@@ -1148,7 +1173,7 @@ do_upgrade() {
   if [[ "$SCRIPT_DIR" == "/usr/lib/agentguard" ]]; then
     command -v dpkg >/dev/null 2>&1 || fail "Cannot upgrade: dpkg not found."
     log "Debian package install detected. Fetching latest release..."
-    local deb_url deb_tmp
+    local deb_url deb_tmp sums_tmp
     deb_url=$(curl -fsSL "https://api.github.com/repos/SumonMSelim/agentguard/releases/latest" \
               | grep -Eo '"browser_download_url": *"[^"]+\.deb"' \
               | sed -E 's/.*"(https[^"]+)"/\1/') || fail "Could not resolve latest .deb release URL."
@@ -1157,9 +1182,13 @@ do_upgrade() {
       dry "Would download and install: $deb_url"
     else
       deb_tmp="$(mktemp /tmp/agentguard-XXXXXX.deb)"
+      sums_tmp="$(mktemp /tmp/agentguard-XXXXXX.sums)"
       curl -fsSL "$deb_url" -o "$deb_tmp" || fail "Download failed: $deb_url"
+      curl -fsSL "${deb_url%/*}/SHA256SUMS" -o "$sums_tmp" \
+        || fail "Download failed: ${deb_url%/*}/SHA256SUMS — refusing to install an unverified package."
+      verify_sha256 "$deb_tmp" "$sums_tmp" "${deb_url##*/}"
       sudo dpkg -i "$deb_tmp" || fail "dpkg -i failed."
-      rm -f "$deb_tmp"
+      rm -f "$deb_tmp" "$sums_tmp"
       ok "Debian package upgraded"
     fi
 
@@ -1384,7 +1413,6 @@ uninstall_claude() {
   remove_hooks "$dest/hooks"
   remove_instruction_file "$dest/CLAUDE.md" "$SCRIPT_DIR/agents/claude/CLAUDE.md"
   unmerge_settings "$dest/settings.json" "$SCRIPT_DIR/agents/claude/settings.json"
-  remove_file  "$HOME/.local/bin/agentguard"
   untrack_installed_agent "claude"
 }
 
@@ -1991,7 +2019,7 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     kiro)   uninstall_kiro   ;;
     cursor) uninstall_cursor ;;
     grok)   uninstall_grok   ;;
-    all)    uninstall_claude; echo; uninstall_codex; echo; uninstall_kiro; echo; uninstall_cursor; echo; uninstall_grok; echo; remove_agentguard_config ;;
+    all)    uninstall_claude; echo; uninstall_codex; echo; uninstall_kiro; echo; uninstall_cursor; echo; uninstall_grok; echo; remove_agentguard_config; remove_file "$HOME/.local/bin/agentguard" ;;
     *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | grok | all" ;;
   esac
   echo ""

@@ -265,6 +265,31 @@ printf 'MY OWN RULES\n' > "$UP_HOME/.claude/CLAUDE.md"
 check_true "custom line present after upgrade"  grep -qxF 'MY OWN RULES' "$UP_HOME/.claude/CLAUDE.md"
 check_true "go skill present after upgrade"     grep -qF '<!-- agentguard:skill:go -->' "$UP_HOME/.claude/CLAUDE.md"
 
+# ── .deb upgrade checksum verification (#87) ──────────────────────────────────
+# Load only verify_sha256 from install.sh, with fail/ok stubs.
+
+echo ""
+echo "verify_sha256 — .deb upgrade checksum check"
+SUM_DIR=$(mktemp -d)
+printf 'package bytes\n' > "$SUM_DIR/agentguard_9.9.9_all.deb"
+good=$(cd "$SUM_DIR" && { sha256sum agentguard_9.9.9_all.deb 2>/dev/null || shasum -a 256 agentguard_9.9.9_all.deb; })
+printf '%s\n' "$good" > "$SUM_DIR/good.sums"
+printf '%064d  agentguard_9.9.9_all.deb\n' 0 > "$SUM_DIR/bad.sums"
+printf '%064d  other.deb\n' 0 > "$SUM_DIR/other.sums"
+run_verify() {
+  bash -c '
+    fail() { echo "$*" >&2; exit 1; }
+    ok()   { :; }
+    eval "$(sed -n "/^verify_sha256() {/,/^}/p" "$1")"
+    verify_sha256 "$2" "$3" agentguard_9.9.9_all.deb
+  ' _ "$SCRIPT_DIR/install.sh" "$SUM_DIR/agentguard_9.9.9_all.deb" "$1"
+}
+check_true  "matching checksum passes"      run_verify "$SUM_DIR/good.sums"
+check_false "checksum mismatch aborts"      run_verify "$SUM_DIR/bad.sums"
+check_false "asset missing from sums aborts" run_verify "$SUM_DIR/other.sums"
+check_false "missing sums file aborts"      run_verify "$SUM_DIR/absent.sums"
+rm -rf "$SUM_DIR"
+
 # ── check_for_update silent when no network ───────────────────────────────────
 
 echo ""
