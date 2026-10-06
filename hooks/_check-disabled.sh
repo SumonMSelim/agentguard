@@ -46,6 +46,17 @@
 # .file_path for file tools), cwd, hook_event_name "BeforeTool"/"AfterTool".
 # "Exit code 2: System Block ... stderr is used as rejection reason"; on exit 0
 # empty stdout is fine. So it takes the Claude path: no JSON on stdout.
+#
+# GitHub Copilot CLI (docs.github.com/en/copilot/reference/hooks-configuration
+# and /tutorials/copilot-cli-hooks, checked 2026-10-07) camelCase preToolUse /
+# postToolUse send sessionId, timestamp, cwd, toolName and toolArgs. toolArgs
+# is "a JSON string containing that tool's arguments" in the tutorial, "parsed
+# from JSON string when possible" in the reference, so both forms are read
+# (apply_patch sends raw patch text). Below, a toolArgs payload is normalized
+# to tool_name/tool_input (raw text becomes tool_input.command, as for Codex
+# apply_patch) so every hook reads it like Claude. Deny: "exit code 2 is
+# treated as a deny", output {"permissionDecision":"deny",
+# "permissionDecisionReason":...}; "Empty output uses default behavior".
 
 # Audit log, shared by audit-log.sh (one line per tool call) and every block
 # path (_agentguard_log_block writes a BLOCKED line). The log sits next to the
@@ -110,9 +121,12 @@ _agentguard_invalid_payload() { echo "agentguard: invalid hook payload; blocking
 # must get permission JSON on stdout (see the contract above).
 _is_cursor() { echo "$INPUT" | jq -e '.hook_event_name == "preToolUse" or .hook_event_name == "beforeMCPExecution" or ((has("command") or has("file_path")) and ((has("tool_input") or has("toolInput")) | not))' >/dev/null 2>&1; }
 _allow() { if _is_cursor; then echo '{"permission":"allow"}'; fi; exit 0; }
+# Copilot CLI: toolArgs is Copilot's own field (Grok sends toolName too, but
+# with toolInput).
+_is_copilot() { echo "$INPUT" | jq -e 'has("toolArgs")' >/dev/null 2>&1; }
 # Block: stderr message, BLOCKED audit line, exit 2. Cursor also gets deny JSON
 # (block-env-read.sh serves beforeReadFile: permission + user_message only);
-# Grok gets a JSON decision on stdout.
+# Copilot gets a permissionDecision; Grok gets a JSON decision on stdout.
 _grok_block() {
   echo "$1" >&2
   _agentguard_log_block
@@ -122,6 +136,8 @@ _grok_block() {
     else
       jq -cn --arg m "$1" '{permission:"deny",user_message:$m,agent_message:$m}'
     fi
+  elif _is_copilot; then
+    jq -cn --arg m "$1" '{permissionDecision:"deny",permissionDecisionReason:$m}'
   elif echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then
     printf '{"decision":"deny","reason":"%s"}\n' "$1"
   fi
@@ -146,6 +162,19 @@ if ! command -v jq >/dev/null 2>&1; then
     _agentguard_log_block
     exit 2
   fi
+fi
+
+# Copilot CLI: map toolName/toolArgs to tool_name/tool_input (see the contract
+# above). toolArgs stays, so _is_copilot still holds. Invalid JSON is left
+# as is for the hook's own payload check.
+if [[ "${INPUT:-}" == *'"toolArgs"'* ]]; then
+  _agentguard_norm=$(jq -c 'if has("toolArgs") and (has("tool_input") | not) then
+      .tool_name = (.tool_name // .toolName)
+      | .tool_input = (.toolArgs
+          | if type == "string" then (fromjson? // {command: .}) else . end
+          | if type == "object" then . else {} end)
+    else . end' <<<"$INPUT" 2>/dev/null) && [[ -n "$_agentguard_norm" ]] && INPUT="$_agentguard_norm"
+  unset _agentguard_norm
 fi
 
 # User-level Cursor hooks (~/.cursor/hooks.json) "Run from ~/.cursor/", not the

@@ -549,6 +549,33 @@ EOF
   check "allows Read .gemini/commands"     allow '{"tool_input":{"file_path":"/p/.gemini/commands/x.toml"}}'         block-env-read.sh
   check "blocks cat gemini oauth creds"    block '{"tool_input":{"command":"cat ~/.gemini/oauth_creds.json"}}'       block-env.sh
 
+  # GitHub Copilot CLI payload shape (camelCase preToolUse; toolName/toolArgs/cwd),
+  # per docs.github.com/en/copilot/reference/hooks-configuration. toolArgs is a
+  # JSON string (tutorial) or an object; a block also prints permissionDecision
+  # JSON, an allow prints nothing.
+  echo ""
+  echo "copilot-shaped payloads (preToolUse, toolName/toolArgs)"
+  local CP='"sessionId":"s1","timestamp":1704614600000,"cwd":"/tmp"'
+  local DENY='.permissionDecision == "deny" and (.permissionDecisionReason | length > 0)'
+  check_stdout "copilot blocks cat .env (string args)"  block "{$CP,\"toolName\":\"bash\",\"toolArgs\":\"{\\\"command\\\":\\\"cat .env\\\"}\"}" block-env.sh "$DENY"
+  check_stdout "copilot blocks cat .env (object args)"  block "{$CP,\"toolName\":\"bash\",\"toolArgs\":{\"command\":\"cat .env\"}}" block-env.sh "$DENY"
+  check_stdout "copilot blocks rm -rf /"                block "{$CP,\"toolName\":\"bash\",\"toolArgs\":\"{\\\"command\\\":\\\"rm -rf /\\\",\\\"description\\\":\\\"x\\\"}\"}" block-destructive-ops.sh "$DENY"
+  check_stdout "copilot blocks brew install"            block "{$CP,\"toolName\":\"bash\",\"toolArgs\":{\"command\":\"brew install jq\"}}" block-system-installs.sh "$DENY"
+  check_stdout "copilot blocks hooks edit via bash"     block "{$CP,\"toolName\":\"bash\",\"toolArgs\":{\"command\":\"rm ~/.copilot/hooks/agentguard.json\"}}" block-self-edit.sh "$DENY"
+  check_stdout "copilot raw apply_patch text checked"   block "{$CP,\"toolName\":\"apply_patch\",\"toolArgs\":\"*** Begin Patch\\n*** Add File: x.sh\\n+rm -rf ~/.copilot/hooks\\n*** End Patch\"}" block-self-edit.sh "$DENY"
+  check_stdout "copilot blocks cat copilot config.json" block "{$CP,\"toolName\":\"bash\",\"toolArgs\":{\"command\":\"cat ~/.copilot/config.json\"}}" block-env.sh "$DENY"
+  check_stdout "copilot allows normal cmd"              allow "{$CP,\"toolName\":\"bash\",\"toolArgs\":\"{\\\"command\\\":\\\"git status\\\"}\"}" block-env.sh empty
+  check_stdout "copilot allows normal cmd (self-edit)"  allow "{$CP,\"toolName\":\"bash\",\"toolArgs\":{\"command\":\"ls -l\"}}" block-self-edit.sh empty
+  check_stdout "copilot blocks view .env"               block "{$CP,\"toolName\":\"view\",\"toolArgs\":{\"path\":\"/p/.env\"}}" block-env-read.sh "$DENY"
+  check_stdout "copilot blocks view .env (string args)" block "{$CP,\"toolName\":\"view\",\"toolArgs\":\"{\\\"path\\\":\\\"/p/.env\\\"}\"}" block-env-read.sh "$DENY"
+  check_stdout "copilot blocks create in hooks dir"     block "{$CP,\"toolName\":\"create\",\"toolArgs\":{\"path\":\"/h/u/.copilot/hooks/x.json\",\"file_text\":\"{}\"}}" block-env-read.sh "$DENY"
+  check_stdout "copilot blocks edit instructions"       block "{$CP,\"toolName\":\"edit\",\"toolArgs\":{\"path\":\"/h/u/.copilot/copilot-instructions.md\",\"old_str\":\"a\",\"new_str\":\"b\"}}" block-env-read.sh "$DENY"
+  check_stdout "copilot blocks repo settings write"     block "{$CP,\"toolName\":\"create\",\"toolArgs\":{\"path\":\"/p/.github/copilot/settings.local.json\",\"file_text\":\"{}\"}}" block-env-read.sh "$DENY"
+  check_stdout "copilot blocks glob .env*"              block "{$CP,\"toolName\":\"glob\",\"toolArgs\":{\"pattern\":\".env*\"}}" block-env-read.sh "$DENY"
+  check_stdout "copilot blocks view ~/.ssh"             block "{$CP,\"toolName\":\"view\",\"toolArgs\":{\"path\":\"/h/u/.ssh\"}}" block-env-read.sh "$DENY"
+  check_stdout "copilot allows view src"                allow "{$CP,\"toolName\":\"view\",\"toolArgs\":{\"path\":\"/p/src/main.go\"}}" block-env-read.sh empty
+  check_stdout "copilot invalid payload fails closed"   block '{"toolName":"bash","toolArgs":' block-env.sh empty
+
   # Cursor payload shape (flat command/file_path): stdout must be permission JSON,
   # since Cursor blocks on empty or invalid stdout.
   echo ""
@@ -1012,6 +1039,10 @@ EOF
   self_edit block 'cd ~/.gemini && echo {} > settings.json'
   self_edit block 'echo {"hooksConfig":{"enabled":false}} > .gemini/settings.json'
   self_edit allow 'cat ~/.gemini/settings.json'
+  self_edit block 'echo {"disableAllHooks":true} > .github/copilot/settings.json'
+  self_edit block 'cd ~/.copilot && rm -r hooks'
+  self_edit block 'sed -i /block/d ~/.copilot/hooks/agentguard.json'
+  self_edit allow 'cat .github/copilot/settings.json'
   self_edit block 'truncate -s0 ~/.cursor/hooks/audit-log.sh'
   self_edit block "echo '{\"disableAllHooks\":true}' > .claude/settings.local.json"
   self_edit block 'echo {} > .claude/settings.json'

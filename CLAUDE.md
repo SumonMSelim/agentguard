@@ -4,7 +4,7 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 ## What this repo is
 
-agentguard installs security guardrails for AI coding agents (Claude Code, Kiro, Cursor, Codex, Grok, Gemini CLI). Enforces rules at shell hook level — not just instructions. Install target: user home (`~/.claude/`, `~/.kiro/`, `~/.codex/`, `~/.grok/`, `~/.gemini/`) or project dir (`.cursor/`), not this repo.
+agentguard installs security guardrails for AI coding agents (Claude Code, Kiro, Cursor, Codex, Grok, Gemini CLI, GitHub Copilot CLI). Enforces rules at shell hook level — not just instructions. Install target: user home (`~/.claude/`, `~/.kiro/`, `~/.codex/`, `~/.grok/`, `~/.gemini/`, `~/.copilot/`) or project dir (`.cursor/`), not this repo.
 
 ## Commands
 
@@ -17,6 +17,7 @@ agentguard kiro                            # Kiro (global)
 agentguard codex                           # Codex (global, ~/.codex)
 agentguard grok                            # Grok
 agentguard gemini                          # Gemini CLI (global, ~/.gemini)
+agentguard copilot                         # GitHub Copilot CLI (global, ~/.copilot)
 agentguard cursor                          # Cursor (project-local, run from CWD)
 agentguard cursor --user                   # Cursor user-level hooks (~/.cursor, all projects)
 agentguard all                             # All agents
@@ -61,10 +62,11 @@ Seven shell scripts enforcing rules at tool-call level, plus `_check-disabled.sh
 | `block-self-edit.sh` | Bash writes to agentguard's own config (agent settings, hooks, instruction files, `~/.agentguard`, audit logs) and `agentguard disable` / `install.sh disable` |
 | `audit-log.sh` | Logs every tool call (PostToolUse) — writes to `dirname($0)/../audit.log`. Block paths in every hook add a `BLOCKED hook=<name>` line via `_agentguard_log_block` (`_check-disabled.sh`). Secrets redacted, mode 600, rotated to `audit.log.1` above 1 MB. `AGENTGUARD_AUDIT_LOG` overrides the path (tests) |
 
-Hooks handle three payload shapes:
+Hooks handle four payload shapes:
 - Claude/Kiro/Codex/Gemini: `{ "tool_input": { "command": "..." } }` (nested). Gemini CLI (`BeforeTool`/`AfterTool`) blocks on exit 2 with stderr as the reason and needs no stdout, so it takes the Claude path
 - Grok: `{ "toolInput": { "command": "..." } }` (nested, camelCase)
 - Cursor: `{ "command": "..." }` (flat, top-level) for `beforeShellExecution`/`beforeReadFile`; `preToolUse` and `beforeMCPExecution` carry `tool_name`/`tool_input` and are told apart by `hook_event_name` (`beforeMCPExecution` `tool_input` is a JSON string)
+- Copilot CLI: `{ "toolName": "bash", "toolArgs": "{\"command\":\"...\"}", "cwd": "..." }` (camelCase `preToolUse`/`postToolUse`; `toolArgs` a JSON string or object, raw text for `apply_patch`). `_check-disabled.sh` maps it to `tool_name`/`tool_input` on load (raw text → `tool_input.command`), so hooks read it like Claude; `_is_copilot` (`has("toolArgs")`) makes `_grok_block` print `{"permissionDecision":"deny","permissionDecisionReason":...}`. Allow prints nothing
 
 All command-reading hooks use `_agentguard_command` (`.command // .tool_input.command // .toolInput.command`). User-level Cursor hooks run from `~/.cursor`; `_check-disabled.sh` moves to `$CURSOR_PROJECT_DIR` so branch and disabled-dir checks see the project.
 
@@ -76,11 +78,12 @@ Per-agent config installed to agent's home dir:
 - `agents/cursor/` → `<CWD>/.cursor/`, or `~/.cursor/` with `--user` (hooks.json merged with any user hooks, ours refreshed on re-run; hooks/ copied from `hooks/`). `--user` writes no AGENTS.md and is tracked as `cursor-user` for upgrade
 - `agents/grok/` → `~/.grok/hooks/` (hooks.json installed as `agentguard.json` + hooks copied from `hooks/`); instructions go to `~/AGENTS.md`, copied from `agents/codex/AGENTS.md`
 - `agents/gemini/` → `~/.gemini/` (GEMINI.md + hooks.json, whose `hooks` key is merged into `~/.gemini/settings.json` by `merge_hooks_json`, the same helper Codex uses: user keys and hooks kept, dedup by command, invalid JSON refused; uninstall `unmerge_hooks_json` strips only our commands; hooks/ copied from `hooks/`). Only hook entries are added, no settings scalars, so there is no ownership record. `check gemini` also fails when `hooksConfig.enabled` is `false`
+- `agents/copilot/` → `~/.copilot/` (copilot-instructions.md + hooks.json installed as `~/.copilot/hooks/agentguard.json`, our own file since Copilot runs every `*.json` in that dir; hooks/ copied from `hooks/`, `.sh` files are not read as config). `check copilot` fails when `agentguard.json` differs from `agents/copilot/hooks.json`. Project: `.github/copilot-instructions.md`. `COPILOT_HOME` is not followed (install warns)
 
-**Instruction file sync rule**: `agents/claude/CLAUDE.md` is canonical source. `agents/kiro/KIRO.md`, `agents/codex/AGENTS.md`, `agents/cursor/AGENTS.md` and `agents/gemini/GEMINI.md` must be byte-for-byte identical. `tests/check-sync.sh` enforces all five.
+**Instruction file sync rule**: `agents/claude/CLAUDE.md` is canonical source. `agents/kiro/KIRO.md`, `agents/codex/AGENTS.md`, `agents/cursor/AGENTS.md`, `agents/gemini/GEMINI.md` and `agents/copilot/copilot-instructions.md` must be byte-for-byte identical. `tests/check-sync.sh` enforces all six.
 
 ### Agent registry and hook list (`install.sh`)
-- `AGENTS=(claude codex kiro cursor grok gemini)` is the single agent list. It drives agent validation (the "Valid options" error), `all` for install / check / uninstall / `--project`, and dispatch by naming convention: each agent has `install_<agent>`, `uninstall_<agent>`, `check_<agent>` and `install_project_<agent>`. Agent-specific bodies stay in those functions.
+- `AGENTS=(claude codex kiro cursor grok gemini copilot)` is the single agent list. It drives agent validation (the "Valid options" error), `all` for install / check / uninstall / `--project`, and dispatch by naming convention: each agent has `install_<agent>`, `uninstall_<agent>`, `check_<agent>` and `install_project_<agent>`. Agent-specific bodies stay in those functions.
 - `AGENTGUARD_HOOKS` is generated from `hooks/*.sh` at startup. Install copies, `check_*` verifies (all hooks for every agent), uninstall removes (incl. Cursor) from that one list. The release workflow globs `hooks/*.sh` too.
 
 ### Settings merge (`install.sh`: merge_settings)
@@ -106,7 +109,7 @@ Duplication prevented by sentinel comment: `<!-- agentguard:skill:<name> -->`.
 - `project.sh` — exercises `--project` flag installs.
 - `upgrade.sh` — version tracking, `upgrade` (from a throwaway clone), checksum verify.
 - `install.sh` — install edge cases: `claude` then `all`, re-install idempotency, odd settings.json shapes, invalid JSON refused, HOME with a space, Cursor hooks.json, full round trip.
-- `bypass.sh` — bypass regression suite: known bypass forms through the whole Bash hook chain (Claude, Cursor and Gemini CLI payload shapes) stay blocked, everyday commands stay allowed.
+- `bypass.sh` — bypass regression suite: known bypass forms through the whole Bash hook chain (Claude, Cursor, Gemini CLI and Copilot CLI payload shapes) stay blocked, everyday commands stay allowed.
 - `run_all.sh` — runs all suites, exits 1 if any fail.
 
 CI (`.github/workflows/test.yml`) runs `run_all.sh` on ubuntu and macOS (BSD tools) plus a `shellcheck -S warning` job.
@@ -118,5 +121,5 @@ CI (`.github/workflows/test.yml`) runs `run_all.sh` on ubuntu and macOS (BSD too
 - Codex hooks run only after the user trusts them with `/hooks` in Codex. Codex `apply_patch` payloads carry patch text in `tool_input.command`, not a file path, so `block-env-read.sh` is not registered for it; only `block-self-edit.sh` is.
 - Cursor (and Grok project) installs are project-local (CWD) unless `agentguard cursor --user`. Run `agentguard cursor` from the target project root (after the CLI wrapper is installed). For the initial bootstrap you may run the `install.sh` script directly.
 - Upgrade path: use `agentguard upgrade` (or uninstall then reinstall). Re-running skips existing files.
-- Adding new hook: drop it in `hooks/` (install, check, uninstall and release pick it up from `hooks/*.sh`). Start it with `INPUT=$(cat)`, source `_check-disabled.sh`, parse with `_agentguard_command` (or validate JSON and call `_agentguard_invalid_payload`), block with `_grok_block "<msg>"` and end with `_allow`. Register it per agent: `agents/claude/settings.json`, `agents/kiro/agent.json` + `hooks.json`, `agents/codex/hooks.json`, `agents/grok/hooks.json`, `agents/gemini/hooks.json`, and `agents/cursor/hooks.json` with project-relative `.cursor/hooks/` paths (`--user` rewrites them to absolute `~/.cursor/hooks/`).
+- Adding new hook: drop it in `hooks/` (install, check, uninstall and release pick it up from `hooks/*.sh`). Start it with `INPUT=$(cat)`, source `_check-disabled.sh`, parse with `_agentguard_command` (or validate JSON and call `_agentguard_invalid_payload`), block with `_grok_block "<msg>"` and end with `_allow`. Register it per agent: `agents/claude/settings.json`, `agents/kiro/agent.json` + `hooks.json`, `agents/codex/hooks.json`, `agents/grok/hooks.json`, `agents/gemini/hooks.json`, `agents/copilot/hooks.json` (flat `preToolUse` entries with `matcher` + `bash`), and `agents/cursor/hooks.json` with project-relative `.cursor/hooks/` paths (`--user` rewrites them to absolute `~/.cursor/hooks/`).
 - Adding new agent: add its name to `AGENTS` in `install.sh`, then write `install_<agent>`, `uninstall_<agent>`, `check_<agent>` and `install_project_<agent>` (plus an `installed_skills` case if upgrade should keep its skills).

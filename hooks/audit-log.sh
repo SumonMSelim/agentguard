@@ -4,7 +4,8 @@
 # PostToolUse audit log — appends one line per tool call to the agent's audit.log.
 # Shared hook — used by Claude (→ ~/.claude/audit.log), Kiro (→ ~/.kiro/audit.log),
 # Codex (→ ~/.codex/audit.log), Cursor (→ .cursor/audit.log), Grok (→ ~/.grok/audit.log)
-# and Gemini CLI (AfterTool → ~/.gemini/audit.log).
+# and Gemini CLI (AfterTool → ~/.gemini/audit.log); also Copilot CLI
+# (postToolUse → ~/.copilot/audit.log).
 #
 # Provides a forensic record that survives hook failures and helps detect
 # unexpected behaviour or bypasses. Each entry records the UTC timestamp,

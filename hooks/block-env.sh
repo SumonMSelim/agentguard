@@ -5,7 +5,7 @@
 # var dumps via shell commands.
 # Shared hook — used by Claude (Bash), Kiro (execute_bash), Codex (Bash),
 # Cursor (beforeShellExecution), Grok (run_terminal_command / Bash) and
-# Gemini CLI (run_shell_command).
+# Gemini CLI (run_shell_command); also Copilot CLI (bash).
 #
 # LIMITATION: best-effort. block-env-read.sh (Read/Write/Edit tool hook) is the
 # primary enforcement layer for file reads; this hook is defence-in-depth for
@@ -50,9 +50,9 @@ _STMT_START="${_BOUNDARY}((([^[:space:]]*/)?(sudo|doas)|command|exec|nohup|time)
 _ENV_FILE='([^[:space:];|&<>()]*/)?\.(env(rc)?(\.[A-Za-z0-9_.-]+)?|e[nv]*[*?][^[:space:];|&<>()]*)'
 # Credential stores that block-env-read.sh protects for file tools: anything
 # under ~/.ssh, ~/.aws, ~/.gnupg, ~/.azure, ~/.password-store, gcloud, plus
-# kube/docker/gh configs, netrc-style files, Gemini CLI OAuth tokens and SSH
-# private key names.
-_CRED_FILE='([^[:space:];|&<>()]*/)?(\.(ssh|aws|gnupg|azure|password-store)(/[^[:space:];|&<>()]*)?|\.kube/config|\.docker/config\.json|\.config/(gh/hosts\.yml|gcloud(/[^[:space:];|&<>()]*)?)|\.(netrc|git-credentials|pgpass|vault-token)|\.gemini/(oauth_creds|mcp-oauth-tokens)\.json|id_(rsa|dsa|ecdsa|ed25519)(_sk)?)'
+# kube/docker/gh configs, netrc-style files, Gemini CLI OAuth tokens, the
+# Copilot CLI config (its plaintext token fallback) and SSH private key names.
+_CRED_FILE='([^[:space:];|&<>()]*/)?(\.(ssh|aws|gnupg|azure|password-store)(/[^[:space:];|&<>()]*)?|\.kube/config|\.docker/config\.json|\.config/(gh/hosts\.yml|gcloud(/[^[:space:];|&<>()]*)?)|\.(netrc|git-credentials|pgpass|vault-token)|\.gemini/(oauth_creds|mcp-oauth-tokens)\.json|\.copilot/config\.json|id_(rsa|dsa|ecdsa|ed25519)(_sk)?)'
 _SECRET_FILE="(${_ENV_FILE}|${_CRED_FILE})"
 _ENV_END='([[:space:];|&<>),`]|$)'
 _SECRET_ARG="(^|[[:space:]=@<(,:])${_SECRET_FILE}${_ENV_END}"

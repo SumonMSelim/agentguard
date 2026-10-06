@@ -6,7 +6,7 @@
 #
 # Shared hook — used by Claude (Bash), Kiro (execute_bash), Codex (Bash),
 # Cursor (beforeShellExecution), Grok (run_terminal_command / Bash) and
-# Gemini CLI (run_shell_command).
+# Gemini CLI (run_shell_command); also Copilot CLI (bash).
 # Catches: apt, apt-get, brew, yum, dnf, zypper, pacman, apk, snap, port, nix,
 # conda, system gem/cargo installs, global npm/yarn/pnpm/bun, sudo pip installs,
 # and pip / python -m pip / uv pip installs outside an active virtualenv.

@@ -85,6 +85,7 @@ check_true  "kiro installed"                      test -f "$FAKE_HOME/.kiro/agen
 check_true  "codex installed"                     test -f "$FAKE_HOME/.codex/hooks.json"
 check_true  "cursor installed in project"         test -f "$FAKE_PROJECT/.cursor/hooks.json"
 check_true  "gemini installed"                    test -f "$FAKE_HOME/.gemini/settings.json"
+check_true  "copilot installed"                   test -f "$FAKE_HOME/.copilot/hooks/agentguard.json"
 check_true  "claude still tracked" \
   grep -qE '^AGENTGUARD_INSTALLED_AGENTS=.*claude' "$FAKE_HOME/.agentguard/config"
 
@@ -230,6 +231,46 @@ check_false "install fails"                       run_install gemini
 check_true  "file byte-identical"                 cmp "$TMP/invalid.json" "$G"
 run_uninstall gemini
 check_true  "file still byte-identical"           cmp "$TMP/invalid.json" "$G"
+
+# ── GitHub Copilot CLI ────────────────────────────────────────────────────────
+
+echo ""
+echo "copilot — own hooks file next to the user's, instructions kept"
+fresh
+C="$FAKE_HOME/.copilot"
+mkdir -p "$C/hooks"
+printf '%s\n' '{"version":1,"hooks":{"preToolUse":[{"type":"command","bash":"./mine.sh"}]}}' > "$C/hooks/mine.json"
+cp "$C/hooks/mine.json" "$TMP/mine.before"
+printf 'MY COPILOT RULES\n' > "$C/copilot-instructions.md"
+chmod 600 "$C/copilot-instructions.md"
+check_true  "install copilot succeeds"            run_install copilot --skills go
+check_true  "agentguard.json is our config"       cmp "$SCRIPT_DIR/agents/copilot/hooks.json" "$C/hooks/agentguard.json"
+jq_true     "bash hooks use ~/.copilot/hooks"     '[.hooks.preToolUse[].bash] | all(startswith("bash ~/.copilot/hooks/"))' "$C/hooks/agentguard.json"
+check_true  "hook scripts installed"              test -x "$C/hooks/block-env-read.sh"
+check_true  "user hooks file untouched"           cmp "$TMP/mine.before" "$C/hooks/mine.json"
+check_true  "user instructions kept"              grep -qx 'MY COPILOT RULES' "$C/copilot-instructions.md"
+check_true  "skill appended"                      grep -qF '<!-- agentguard:skill:go -->' "$C/copilot-instructions.md"
+check_true  "copilot tracked" \
+  grep -qE '^AGENTGUARD_INSTALLED_AGENTS=.*copilot' "$FAKE_HOME/.agentguard/config"
+run_install copilot --skills go
+check_true  "one skill sentinel after re-install" \
+  test "$(grep -c '<!-- agentguard:skill:go -->' "$C/copilot-instructions.md")" -eq 1
+check_true  "uninstall copilot succeeds"          run_uninstall copilot
+check_false "agentguard.json removed"             test -e "$C/hooks/agentguard.json"
+check_false "hook scripts removed"                test -e "$C/hooks/block-env.sh"
+check_true  "user hooks file kept"                cmp "$TMP/mine.before" "$C/hooks/mine.json"
+check_true  "user instructions kept"              grep -qx 'MY COPILOT RULES' "$C/copilot-instructions.md"
+check_false "skill section stripped"              grep -qF 'agentguard:skill' "$C/copilot-instructions.md"
+check_true  "instructions 600 after skill strip"  test "$(stat -c %a "$C/copilot-instructions.md" 2>/dev/null || stat -f %Lp "$C/copilot-instructions.md")" = 600
+
+echo ""
+echo "copilot — fresh install creates and removes everything"
+fresh
+run_install copilot
+check_true  "instructions created with marker"    grep -qF '<!-- agentguard:created -->' "$FAKE_HOME/.copilot/copilot-instructions.md"
+run_uninstall copilot
+check_false "instructions removed"                test -e "$FAKE_HOME/.copilot/copilot-instructions.md"
+check_false "hooks dir removed"                   test -e "$FAKE_HOME/.copilot/hooks"
 
 # ── file mode kept ────────────────────────────────────────────────────────────
 

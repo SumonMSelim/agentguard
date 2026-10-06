@@ -288,6 +288,18 @@ check_true  "user GEMINI.md kept"     grep -qx 'MY GEMINI RULES' "$FAKE_HOME/.ge
 check_false "skill section stripped"  grep -qF 'agentguard:skill' "$FAKE_HOME/.gemini/GEMINI.md"
 rm -rf "$FAKE_HOME/.gemini"
 
+echo ""
+echo "uninstall copilot — dry-run leaves files intact, then removes them"
+run_install copilot
+run_uninstall copilot --dry-run
+check_true  "copilot agentguard.json still present after dry-run" test -f "$FAKE_HOME/.copilot/hooks/agentguard.json"
+check_true  "copilot instructions still present after dry-run"   test -f "$FAKE_HOME/.copilot/copilot-instructions.md"
+run_uninstall copilot
+check_false "copilot agentguard.json removed"  test -f "$FAKE_HOME/.copilot/hooks/agentguard.json"
+check_false "copilot instructions removed"     test -f "$FAKE_HOME/.copilot/copilot-instructions.md"
+check_false "copilot hooks dir removed"        test -d "$FAKE_HOME/.copilot/hooks"
+rm -rf "$FAKE_HOME/.copilot"
+
 # ── Cursor ────────────────────────────────────────────────────────────────────
 
 echo ""
@@ -397,6 +409,8 @@ check_false "codex hooks.json removed (all)"      test -f "$FAKE_HOME/.codex/hoo
 check_false "GEMINI.md removed (all)"             test -f "$FAKE_HOME/.gemini/GEMINI.md"
 check_false "gemini settings.json removed (all)"  test -f "$FAKE_HOME/.gemini/settings.json"
 check_false "gemini hooks dir removed (all)"      test -d "$FAKE_HOME/.gemini/hooks"
+check_false "copilot instructions removed (all)"  test -f "$FAKE_HOME/.copilot/copilot-instructions.md"
+check_false "copilot hooks dir removed (all)"     test -d "$FAKE_HOME/.copilot/hooks"
 check_false "~/.agentguard/config removed (all)"  test -f "$FAKE_HOME/.agentguard/config"
 check_false "~/.agentguard/ dir removed (all)"    test -d "$FAKE_HOME/.agentguard"
 for h in "${HOOKS[@]}"; do
