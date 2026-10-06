@@ -231,6 +231,28 @@ check_true  "file byte-identical"                 cmp "$TMP/invalid.json" "$G"
 run_uninstall gemini
 check_true  "file still byte-identical"           cmp "$TMP/invalid.json" "$G"
 
+# ── file mode kept ────────────────────────────────────────────────────────────
+
+# mode_of <file> — permission bits (GNU stat, else BSD stat).
+mode_of() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+
+echo ""
+echo "file mode — 600 settings.json stays 600"
+seed '{"model":"opus"}'
+chmod 600 "$S"
+run_install claude
+check_true  "claude settings.json 600 after install"    test "$(mode_of "$S")" = 600
+run_uninstall claude
+check_true  "claude settings.json 600 after uninstall"  test "$(mode_of "$S")" = 600
+mkdir -p "$FAKE_HOME/.gemini"
+printf '%s\n' '{"general":{"vimMode":true},"hooks":{"BeforeTool":[{"matcher":"x","hooks":[{"type":"command","command":"mine.sh"}]}]}}' > "$G"
+chmod 600 "$G"
+run_install gemini
+check_true  "gemini settings.json 600 after install"    test "$(mode_of "$G")" = 600
+run_uninstall gemini
+check_true  "gemini settings.json kept on uninstall"    test -f "$G"
+check_true  "gemini settings.json 600 after uninstall"  test "$(mode_of "$G")" = 600
+
 # ── full round trip ───────────────────────────────────────────────────────────
 
 echo ""

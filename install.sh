@@ -155,6 +155,19 @@ backup_if_exists() {
   fi
 }
 
+# mv_keep_mode <tmp> <dest> — replaces <dest> with <tmp>, giving <tmp> the
+# permission bits of an existing <dest> first, so a 600 settings.json holding
+# secrets stays 600. GNU stat first: on Linux, BSD-style `stat -f` means
+# file-system status and prints unrelated output.
+mv_keep_mode() {
+  local tmp="$1" dest="$2" mode=""
+  if [[ -e "$dest" ]]; then
+    mode=$(stat -c %a "$dest" 2>/dev/null) || mode=$(stat -f %Lp "$dest" 2>/dev/null) || mode=""
+    [[ "$mode" =~ ^[0-7]{3,4}$ ]] && chmod "$mode" "$tmp"
+  fi
+  mv "$tmp" "$dest"
+}
+
 # ── interactive config ────────────────────────────────────────────────────────
 #
 # Prompts the user for git branches to protect from direct commit/push and
@@ -393,7 +406,7 @@ merge_settings() {
       rm -f "${output}.tmp.$$"
       fail "settings.json merge failed — $output left unchanged."
     }
-  mv "${output}.tmp.$$" "$output"
+  mv_keep_mode "${output}.tmp.$$" "$output"
 
   ok "settings.json merged → $output"
 }
@@ -727,7 +740,7 @@ merge_hooks_json() {
             | map(.hooks |= map(select(.command as $c | $have | index($c) | not)))
             | map(select(.hooks | length > 0)))))
   ' "$dest" > "${dest}.tmp.$$" || { rm -f "${dest}.tmp.$$"; fail "${dest##*/} merge failed — $dest left unchanged."; }
-  mv "${dest}.tmp.$$" "$dest"
+  mv_keep_mode "${dest}.tmp.$$" "$dest"
   ok "$label hooks merged → $dest"
 }
 
@@ -813,7 +826,7 @@ merge_cursor_hooks() {
         .[$e.key] = ((.[$e.key] // []) + $e.value))
       | with_entries(select(.value | length > 0)))
   ' "$dest" > "${dest}.tmp.$$" || { rm -f "${dest}.tmp.$$"; fail "hooks.json merge failed — $dest left unchanged."; }
-  mv "${dest}.tmp.$$" "$dest"
+  mv_keep_mode "${dest}.tmp.$$" "$dest"
   ok "hooks.json merged → $dest (user hooks kept)"
 }
 
@@ -841,7 +854,7 @@ unmerge_cursor_hooks() {
   if [[ "$DRY_RUN" -eq 1 ]]; then
     dry "Would strip agentguard hooks from $f"
   else
-    echo "$stripped" > "${f}.tmp.$$" && mv "${f}.tmp.$$" "$f"
+    echo "$stripped" > "${f}.tmp.$$" && mv_keep_mode "${f}.tmp.$$" "$f"
     ok "agentguard hooks stripped from $f (user hooks kept)"
   fi
 }
@@ -1020,7 +1033,7 @@ remove_instruction_file() {
     /^(---)?$/ { pending = pending $0 "\n"; next }
     { printf "%s", pending; pending = ""; print }
     END { printf "%s", pending }
-  ' "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
+  ' "$f" > "${f}.tmp" && mv_keep_mode "${f}.tmp" "$f"
   ok "agentguard skill sections stripped from $f (user content kept)"
 }
 
@@ -1432,7 +1445,7 @@ unmerge_settings() {
       rm -f "${settings}.tmp.$$"
       fail "settings.json unmerge failed — $settings left unchanged."
     }
-  mv "${settings}.tmp.$$" "$settings"
+  mv_keep_mode "${settings}.tmp.$$" "$settings"
   rm -f "$AGENTGUARD_CLAUDE_RECORD"
 
   ok "settings.json unmerged → $settings"

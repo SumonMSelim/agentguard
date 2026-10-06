@@ -87,6 +87,7 @@ Per-agent config installed to agent's home dir:
 When `~/.claude/settings.json` exists, installer merges rather than overwrites:
 - `permissions.allow/ask/deny` → union + deduplicate, user order kept (known-stale entries pruned first)
 - `hooks.PreToolUse/PostToolUse` → merge by matcher key, append hooks (dedup by command string); old per-tool `block-env-read.sh` blocks (`Read`, `Write`, `Edit`, `MultiEdit`) are replaced by `Read|Write|Edit|Grep|Glob|NotebookEdit`
+- File mode kept: every tmp+mv rewrite of a user file (settings.json, Codex/Cursor hooks.json, Gemini settings.json, instruction files) goes through `mv_keep_mode`, so a 600 file stays 600
 - `permissions.defaultMode` → user value wins
 - `attribution`, `includeGitInstructions` → guardrails value always wins. Legacy `includeCoAuthoredBy`, `gitAttribution`, `disableGitWorkflow` are removed when they still hold our old value
 

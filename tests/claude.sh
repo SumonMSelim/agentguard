@@ -1307,6 +1307,7 @@ run_merge_tests() {
   local fn_file="$tmp/merge_fn.sh"
   # Extracted by anchor, not line number, so edits elsewhere in install.sh do not break this.
   awk '/^# ANSI color codes/,/^}/' "$SCRIPT_DIR/install.sh" > "$fn_file"
+  awk '/^mv_keep_mode\(\)/,/^}/' "$SCRIPT_DIR/install.sh" >> "$fn_file"
   awk '/^merge_settings\(\)/,/^}/' "$SCRIPT_DIR/install.sh" >> "$fn_file"
   # shellcheck disable=SC1090
   source "$fn_file"
