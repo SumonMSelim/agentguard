@@ -37,7 +37,7 @@ _grok_block() { echo "$1" >&2; _agentguard_log_block; if _is_cursor; then jq -cn
 # (with -u / VAR=val) or inline VAR=val prefixes that strip the Claude session
 # variables. Checked before the git allowlist so `git status && agentguard
 # disable` is still caught.
-_STMT_START='(^|[;&|`]|\$\()[[:space:]]*(sudo[[:space:]]+)?(env([[:space:]]+(-u[[:space:]]*[^[:space:]]+|-[a-zA-Z]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*))*[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
+_STMT_START='(^|[;&|(`]|\$\()[[:space:]]*(([^[:space:]]*/)?sudo[[:space:]]+)?(([^[:space:]]*/)?env([[:space:]]+(-u[[:space:]]*[^[:space:]]+|-[a-zA-Z]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*))*[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
 _DISABLE_CMD='(([^[:space:];&|]*/)?agentguard|((bash|sh|zsh)[[:space:]]+([^[:space:]]+[[:space:]]+)*)?[^[:space:];&|]*install\.sh)[[:space:]]+disable([[:space:]]|$)'
 if echo "$COMMAND" | grep -qE "${_STMT_START}${_DISABLE_CMD}"; then
   _grok_block "Blocked: agents may not run 'agentguard disable'. Disabling guardrails requires the user to confirm in their own terminal."

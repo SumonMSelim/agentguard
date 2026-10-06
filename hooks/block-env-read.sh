@@ -63,7 +63,8 @@ while IFS= read -r FILE; do
   if echo "$FILE" | grep -qE "$SETTINGS_RE"; then
     _grok_block "Blocked: '$FILE' is a Claude settings file. Project-local settings (.claude/settings.local.json) can set disableAllHooks and turn off every guardrail, so agents may not touch it. Ask the user to make the change."
   fi
-  if { echo "$FILE" | grep -qE "$ENV_RE" && ! echo "$FILE" | grep -qE "$ENV_TEMPLATE_RE"; } \
+  # .env names match case-insensitively: on macOS .ENV opens .env.
+  if { echo "$FILE" | grep -qiE "$ENV_RE" && ! echo "$FILE" | grep -qiE "$ENV_TEMPLATE_RE"; } \
      || echo "$FILE" | grep -qE "$SENSITIVE_RE"; then
     _grok_block "Blocked: reading sensitive file '$FILE' is not permitted globally. If a value from this file is needed, ask the user to supply it directly."
   fi

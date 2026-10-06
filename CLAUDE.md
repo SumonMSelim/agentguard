@@ -52,8 +52,8 @@ Seven shell scripts enforcing rules at tool-call level, plus `_check-disabled.sh
 
 | Hook | What it blocks |
 |------|---------------|
-| `block-env.sh` | `cat .env`, `printenv`, `env`, `gh auth token` (bash surface) |
-| `block-env-read.sh` | Read/Write/Edit on `.env*` (not `.env.example` etc.), private keys, `credentials`, `~/.aws/`, `~/.ssh/`, tool and agent credential stores |
+| `block-env.sh` | `cat .env` (any case), reads of `~/.ssh/*`, `~/.aws/*` and similar credential stores, `printenv`, `env`, `gh auth token` (bash surface) |
+| `block-env-read.sh` | Read/Write/Edit on `.env*` (any case; not `.env.example` etc.), private keys, `credentials`, `~/.aws/`, `~/.ssh/`, tool and agent credential stores |
 | `block-main-branch.sh` | `git push` to `main`/`master`, force push (incl. `+refspec`, `--mirror`, `--all`), `git commit`/`merge`/`rebase`/`cherry-pick`/`revert`/`am` on protected branch. Respects `AGENTGUARD_PROTECTED_BRANCHES` env var |
 | `block-system-installs.sh` | `brew`, `apt`, `yum`, `npm -g`, `yarn global`, `pip install` outside virtualenv (checks `$VIRTUAL_ENV`) |
 | `block-destructive-ops.sh` | `rm` on `/`, `~` or `$HOME`; recursive `rm` of `.`, `..`, `.git`, `*` or a system dir; `find / -delete`; recursive `chmod`/`chown` on root or home; `mkfs`/`dd`/raw disk writes; overwriting `/etc/passwd` and similar; fork bomb; pipe-to-shell (`curl \| bash`, `wget \| sh`, `bash <(curl ...)`) |

@@ -156,7 +156,7 @@ while IFS= read -r -u 3 stmt; do
   # Skip prefixes that still run the next word as a command.
   while (( i < ${#t[@]} )); do
     case "${t[i]}" in
-      sudo|command|exec|time|nohup|'!'|'{'|if|then|else|elif|do|while|until) i=$((i + 1)) ;;
+      sudo|*/sudo|command|exec|time|nohup|'!'|'{'|if|then|else|elif|do|while|until) i=$((i + 1)) ;;
       [A-Za-z_]*=*) i=$((i + 1)) ;;   # VAR=value assignment
       *) break ;;
     esac

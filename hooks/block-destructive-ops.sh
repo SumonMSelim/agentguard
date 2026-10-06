@@ -33,7 +33,8 @@ _allow() { if _is_cursor; then echo '{"permission":"allow"}'; fi; exit 0; }
 _grok_block() { echo "$1" >&2; _agentguard_log_block; if _is_cursor; then jq -cn --arg m "$1" '{permission:"deny",user_message:$m,agent_message:$m}'; elif echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
 
 # Statement-boundary prefix — see block-main-branch.sh for rationale.
-_STMT_START='(^|[;&|]|\$\()[[:space:]]*(sudo[[:space:]]+)?'
+# Boundaries: start, ; & | ( ` and $( ; sudo may carry a path (/usr/bin/sudo).
+_STMT_START='(^|[;&|(`]|\$\()[[:space:]]*(([^[:space:]]*/)?sudo[[:space:]]+)?'
 
 # Block rm on filesystem root or bare home directory.
 # rm must be at a statement boundary; the catastrophic path follows as an argument.
@@ -41,7 +42,7 @@ _STMT_START='(^|[;&|]|\$\()[[:space:]]*(sudo[[:space:]]+)?'
 #          rm $HOME   rm $HOME/   rm $HOME/*   rm ${HOME}
 #          and the same targets in single or double quotes: rm "/"   rm "$HOME"
 # The path separator [[:space:]] before the target handles both "rm /" (no flags)
-# and "rm -rf /" (flags present). ([[:space:]]|$) after ensures we match the full
+# and "rm -rf /" (flags present). A space, separator, ) or ` after ensures we match the full
 # argument and don't fire on /var/log or $HOME/projects etc.
 # Pattern pieces are single-quoted so grep sees \$ (literal $) and $ (end anchor)
 # exactly as written.
@@ -49,13 +50,13 @@ _QUOTE="[\"']?"
 # shellcheck disable=SC2016
 _RM_TARGET='(/[/.]*\*?|~/?\*?|\$(HOME|\{HOME\})/?\*?)'
 if echo "$COMMAND" | grep -qE \
-  "${_STMT_START}"'rm[[:space:]]([^[:space:]]+[[:space:]]+)*'"${_QUOTE}${_RM_TARGET}${_QUOTE}"'([[:space:]]|$)'; then
+  "${_STMT_START}"'rm[[:space:]]([^[:space:]]+[[:space:]]+)*'"${_QUOTE}${_RM_TARGET}${_QUOTE}"'([[:space:];&|)`]|$)'; then
   _grok_block "Blocked: rm on root or home directory is not permitted. If you need to remove specific files, use an explicit path."
 fi
 
 # Recursive-flag argument (-r, -rf, -fR, --recursive) anywhere in the same statement.
 _RFLAG='[[:space:]]([^;&|]*[[:space:]])?(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)[[:space:]]([^;&|]*[[:space:]])?'
-_END='([[:space:];&|)]|$)'
+_END='([[:space:];&|)`]|$)'
 
 # Block recursive rm of the cwd, its parent, .git, a bare * or a top-level system dir.
 # rm -rf ./build, rm -rf build/ and rm -rf /tmp/x stay allowed.
