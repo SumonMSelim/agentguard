@@ -356,6 +356,48 @@ EOF
   check "allows docker run"           allow '{"tool_input":{"command":"docker run -it ubuntu bash"}}'        block-system-installs.sh
   check "allows echo brew install"    allow '{"tool_input":{"command":"echo \"brew install node\""}}'        block-system-installs.sh
 
+  # #71: options between manager and verb, other verbs/managers, prefixes.
+  local c
+  for c in 'apt-get -y install curl' 'apt -yq install curl' 'yum -y install curl' 'dnf -y install curl' \
+           'apk --no-cache add curl' 'brew --verbose install node' 'pacman -S git' 'pacman -Syu git' \
+           'brew reinstall node' 'brew upgrade' 'brew tap foo/bar' 'zypper install git' 'zypper in git' \
+           'snap install code' 'port install git' 'nix-env -i hello' 'nix profile install nixpkgs#hello' \
+           'conda install numpy' 'mamba install numpy' 'gem install rails' 'cargo install ripgrep' \
+           'cargo install --path .' 'VAR=x apt-get install curl' 'sudo -E apt-get install curl' \
+           'sudo -u root apt-get install curl' 'env VAR=x apt-get install curl' 'command apt-get install curl' \
+           'nohup apt-get install curl' 'time apt-get install curl' '/usr/bin/apt-get install curl' \
+           'cd /tmp && (apt-get install curl)' 'bash -c "apt-get install curl"' \
+           'npm i typescript -g' 'npm install -g typescript' 'npm i --global typescript' 'npm -g install typescript' \
+           'pnpm add -g typescript' 'pnpm add --global typescript' 'bun add -g typescript' 'bun install -g typescript' \
+           'python -m pip install requests' 'python3 -m pip install requests' 'py -m pip install requests' \
+           'uv pip install requests' 'pip3 install requests' 'pip install --user requests' \
+           'docker run ubuntu true; apt-get install curl'; do
+    check "blocks $c" block "$(jq -cn --arg c "$c" '{tool_input:{command:$c}}')" block-system-installs.sh
+  done
+  VIRTUAL_ENV=/tmp/fakevenv check "blocks sudo pip install inside venv" \
+    block '{"tool_input":{"command":"sudo pip install requests"}}' block-system-installs.sh
+  check "blocks heredoc fed to bash" \
+    block '{"tool_input":{"command":"bash <<EOF\napt-get install -y curl\nEOF"}}' block-system-installs.sh
+
+  # #75: container installs, venv activation, read-only and local commands.
+  for c in 'docker run --rm ubuntu sh -c "apt-get update && apt-get install -y curl"' \
+           'docker exec c apt-get install curl' 'docker build -t x .' \
+           'podman run --rm alpine sh -c "apk add curl"' 'kubectl exec -it pod -- apt-get install curl' \
+           'docker run -v "$(pwd)":/w python:3 sh -c "pip install -r req.txt && pytest"' \
+           'source .venv/bin/activate && pip install requests' '. venv/bin/activate && pip install requests' \
+           '.venv/bin/pip install requests' './venv/bin/python -m pip install requests' \
+           'poetry add requests' 'pipenv install requests' 'uv add requests' 'uv sync' 'pipx install black' \
+           'brew --version' 'brew list' 'apt list --installed' 'apt-cache search curl' 'pacman -Ss git' \
+           'npm install' 'npm i' 'npm install --global-style' 'yarn add lodash' 'pnpm add lodash' \
+           'gem install --user-install rails' 'bundle exec gem install rails' 'cargo install --root ./bin ripgrep' \
+           'go install golang.org/x/tools/gopls@latest' 'git commit -m "add apt-get install step"'; do
+    check "allows $c" allow "$(jq -cn --arg c "$c" '{tool_input:{command:$c}}')" block-system-installs.sh
+  done
+  VIRTUAL_ENV=/tmp/fakevenv check "allows python -m pip inside venv" \
+    allow '{"tool_input":{"command":"python3 -m pip install requests"}}' block-system-installs.sh
+  check "allows Dockerfile heredoc" \
+    allow '{"tool_input":{"command":"cat > Dockerfile <<'"'"'EOF'"'"'\nFROM ubuntu\nRUN apt-get update && apt-get install -y curl\nEOF\ndocker build ."}}' block-system-installs.sh
+
   echo ""
   echo "block-destructive-ops.sh"
   RM_ROOT='rm -rf /'

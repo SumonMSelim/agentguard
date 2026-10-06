@@ -5,12 +5,14 @@
 # The agent should use Docker instead, or ask the user for permission first.
 #
 # Shared hook — used by both Claude (Bash tool) and Kiro (execute_bash tool).
-# Catches: apt, apt-get, brew, yum, dnf, pacman, apk, global npm/yarn/pnpm,
-# sudo pip installs, and plain pip installs outside an active virtualenv.
+# Catches: apt, apt-get, brew, yum, dnf, zypper, pacman, apk, snap, port, nix,
+# conda, system gem/cargo installs, global npm/yarn/pnpm/bun, sudo pip installs,
+# and pip / python -m pip / uv pip installs outside an active virtualenv.
 #
 # Matching strategy: package manager names are anchored to a statement boundary
 # (start-of-string or a shell separator: ;  &&  ||  |  $() so that a command
-# like `echo "brew install foo"` does not trigger a block.
+# like `echo "brew install foo"` does not trigger a block. Installs inside a
+# container (docker run/exec, kubectl exec) and heredoc bodies are skipped.
 #
 # Exit 2 = blocked. The agent receives the stderr message as feedback.
 
@@ -25,57 +27,108 @@ _allow() { if _is_cursor; then echo '{"permission":"allow"}'; fi; exit 0; }
 # Grok: emit JSON decision on stdout for blocks (in addition to exit 2 + stderr)
 _grok_block() { echo "$1" >&2; if _is_cursor; then jq -cn --arg m "$1" '{permission:"deny",user_message:$m,agent_message:$m}'; elif echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
 
-# Statement-boundary prefix — see block-main-branch.sh for rationale.
-# sudo is included as an optional prefix since package managers are often invoked
-# via sudo and the sudo itself appears at the statement boundary.
-_STMT_START='(^|[;&|]|\$\()[[:space:]]*(sudo[[:space:]]+)?'
+# Split the command into one statement per line, honouring quotes, so that a
+# container's quoted script (sh -c "a && b") stays on the container's line.
+# Heredoc bodies are dropped (e.g. a Dockerfile written via cat <<EOF) unless
+# the heredoc feeds a shell on the host (bash <<EOF).
+_statements() {
+  awk -v q="'" '
+    function flush() { print out; out = "" }
+    {
+      line = $0
+      if (hd != "") { t = line; if (hdtab) sub(/^\t+/, "", t); if (t == hd) hd = ""; next }
+      n = length(line)
+      for (i = 1; i <= n; i++) {
+        c = substr(line, i, 1)
+        if (sq) { out = out c; if (c == q) sq = 0; continue }
+        if (dq) {
+          out = out c
+          if (c == "\\") { i++; out = out substr(line, i, 1) } else if (c == "\"") dq = 0
+          continue
+        }
+        if (c == "\\") { i++; out = out c substr(line, i, 1); continue }
+        if (c == q) sq = 1
+        else if (c == "\"") dq = 1
+        else if (c == ";" || c == "&" || c == "|") { flush(); continue }
+        out = out c
+      }
+      if (sq || dq) { out = out " "; next }
+      if (match(line, "<<-?[[:space:]]*[\"" q "]?[A-Za-z_][A-Za-z0-9_]*") && substr(line, RSTART - 1, 1) != "<") {
+        w = substr(line, RSTART + 2, RLENGTH - 2)
+        hdtab = (substr(w, 1, 1) == "-"); if (hdtab) w = substr(w, 2)
+        gsub("[[:space:]\"" q "]", "", w)
+        if (line ~ /(docker|podman|nerdctl|kubectl)[[:space:]]/ || line !~ /(^|[[:space:];&|])(ba|z|da|k)?sh([[:space:]]|$)/) hd = w
+      }
+      flush()
+    }
+    END { if (out != "") print out }'
+}
 
-# Block system package managers.
-if echo "$COMMAND" | grep -qE \
-  "${_STMT_START}(apt|apt-get|yum|dnf|pacman|brew|apk)[[:space:]]+(install|add)"; then
-  _grok_block "Blocked: system package installation is not permitted. Use Docker instead, or ask the user for explicit permission first."
+# Words that may precede the real command: VAR=x, sudo/env/command/nohup/
+# time/... and their options (-E, -u root, -n 10).
+_PFX='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|sudo|doas|env|command|nohup|time|exec|nice|xargs|then|do|else|!|-[ugCnp][[:space:]]+[^[:space:]]+|-[^[:space:]]+)[[:space:]]+'
+# Statement start: line start (optionally inside ( or {), a separator left
+# inside quotes, $( or backtick, or the opening quote of sh -c "...".
+_STMT_START="(^[[:space:]]*[({]*|[;&|\`]|\\\$\\(|(sh|bash|zsh|dash)[[:space:]]+-[a-z]*c[[:space:]]+[\"'])[[:space:]]*(${_PFX})*"
+# Options between the manager and its verb: -y, --no-cache, -o k=v.
+_OPTS='([[:space:]]+(-[^[:space:]]+|[^[:space:]]+=[^[:space:]]*))*'
+_END='([^A-Za-z0-9_-]|$)'
+# Rest of the same statement, for flags placed after the package (pacman -S).
+_ARGS='([[:space:]]+[^;&|]*)?[[:space:]]'
+
+# Installs inside a container do not touch the host: drop statements that are
+# docker/podman/nerdctl run|exec or kubectl exec. Known gap: a $(...) in such
+# a statement runs on the host but is not inspected.
+_CONTAINER="^[[:space:]]*(${_PFX})*(([^[:space:]]*/)?(docker|podman|nerdctl|docker-compose|podman-compose)${_OPTS}[[:space:]]+((container|compose)${_OPTS}[[:space:]]+)?(run|exec)|kubectl([[:space:]]+[^[:space:]]+)*[[:space:]]+exec)${_END}"
+STATEMENTS=$(printf '%s\n' "$COMMAND" | _statements | grep -vE "$_CONTAINER")
+
+_SYS_MSG="Blocked: system package installation is not permitted. Use Docker instead, or ask the user for explicit permission first."
+_JS_MSG="Blocked: global npm/yarn/pnpm installs are not permitted. Use a local install inside Docker or the project instead."
+
+# Block system package managers (options may sit between manager and verb).
+if echo "$STATEMENTS" | grep -qE \
+  -e "${_STMT_START}([^[:space:]]*/)?(apt|apt-get|aptitude|yum|dnf|microdnf|zypper|apk|port|snap|brew|conda|mamba|micromamba)${_OPTS}[[:space:]]+(install|reinstall|localinstall|groupinstall|add|in|upgrade|dist-upgrade|full-upgrade|tap)${_END}" \
+  -e "${_STMT_START}([^[:space:]]*/)?(pacman|yay|paru)${_ARGS}(-S[yuw]*|-U|--sync|--upgrade)${_END}" \
+  -e "${_STMT_START}([^[:space:]]*/)?nix-env${_ARGS}(-i[A-Za-z]*|--install)${_END}" \
+  -e "${_STMT_START}([^[:space:]]*/)?nix${_OPTS}[[:space:]]+profile[[:space:]]+(install|add)${_END}"; then
+  _grok_block "$_SYS_MSG"
 fi
 
-# Block global JS package installs.
-# Note: `npm install typescript --global` (flag after package name) is not blocked —
-# the flag must precede the package name to match. This is an accepted gap; AI agents
-# consistently place flags before arguments, and blocking all `npm install` with any
-# --global anywhere would risk false positives on package names containing "global".
-if echo "$COMMAND" | grep -qE \
-  "${_STMT_START}npm[[:space:]]+(install|i)[[:space:]]+(-g|--global)"; then
-  _grok_block "Blocked: global npm/yarn/pnpm installs are not permitted. Use a local install inside Docker or the project instead."
+# gem/cargo install write to system paths unless --user-install / --root is
+# given. `bundle exec gem ...` is not statement-anchored, so it is allowed.
+if echo "$STATEMENTS" | grep -E "${_STMT_START}gem${_OPTS}[[:space:]]+install${_END}" | grep -qvE -- "[[:space:]]--user-install${_END}"; then
+  _grok_block "$_SYS_MSG"
 fi
-if echo "$COMMAND" | grep -qE \
-  "${_STMT_START}yarn[[:space:]]+global[[:space:]]+add"; then
-  _grok_block "Blocked: global npm/yarn/pnpm installs are not permitted. Use a local install inside Docker or the project instead."
-fi
-if echo "$COMMAND" | grep -qE \
-  "${_STMT_START}pnpm[[:space:]]+(add|install)[[:space:]]+(-g|--global)"; then
-  _grok_block "Blocked: global npm/yarn/pnpm installs are not permitted. Use a local install inside Docker or the project instead."
+if echo "$STATEMENTS" | grep -E "${_STMT_START}cargo${_OPTS}[[:space:]]+install${_END}" | grep -qvE -- "[[:space:]]--root${_END}"; then
+  _grok_block "$_SYS_MSG"
 fi
 
-# Block sudo pip installs.
-# sudo is already part of _STMT_START so we match: (boundary) sudo pip install
-if echo "$COMMAND" | grep -qE \
-  "(^|[;&|]|\$\()[[:space:]]*sudo[[:space:]]+pip3?[[:space:]]+install"; then
-  _grok_block "Blocked: sudo pip install is not permitted. Use Docker or a virtualenv instead."
+# Block global JS package installs: -g/--global anywhere in the statement.
+if echo "$STATEMENTS" | grep -E "${_STMT_START}(npm|pnpm|bun)${_OPTS}[[:space:]]+(install|i|add|update|up)${_END}" \
+  | grep -qE -- "[[:space:]](-g|--global|--location=global)([[:space:]]|$)"; then
+  _grok_block "$_JS_MSG"
+fi
+if echo "$STATEMENTS" | grep -qE \
+  "${_STMT_START}yarn${_OPTS}[[:space:]]+global[[:space:]]+add"; then
+  _grok_block "$_JS_MSG"
 fi
 
-# Block plain pip install outside an active virtualenv.
-# VIRTUAL_ENV is set by virtualenv/venv activate scripts. If it is unset or empty,
-# pip install would modify the system or user Python environment.
-# Does NOT block: sudo pip (already caught above), pip show/list/freeze/etc.
-#
-# Known gaps (out of scope for this hook):
-#   - conda envs: `conda activate` sets CONDA_DEFAULT_ENV but not VIRTUAL_ENV,
-#     so pip installs inside a conda env are not blocked here. The instruction
-#     file covers this case.
-#   - `python -m pip install`: the pattern only matches the `pip`/`pip3` binary
-#     invocation, not the module form. Blocking `python -m ...` would produce
-#     too many false positives for other modules.
-if echo "$COMMAND" | grep -qE \
-  "(^|[;&|]|\$\()[[:space:]]*pip3?[[:space:]]+install"; then
-  if [[ -z "${VIRTUAL_ENV:-}" ]]; then
+# pip, pip3, python[3] -m pip, py -m pip, uv pip. A path-qualified binary
+# (.venv/bin/pip, ./venv/bin/python -m pip) names its env and is allowed.
+_PIP_LINES=$(echo "$STATEMENTS" | grep -E \
+  "${_STMT_START}(pip[0-9.]*|(python[0-9.]*|py)${_OPTS}[[:space:]]+-m[[:space:]]+pip[0-9.]*|uv${_OPTS}[[:space:]]+pip)${_OPTS}[[:space:]]+install${_END}")
+
+if [[ -n "$_PIP_LINES" ]]; then
+  # Block sudo pip installs regardless of virtualenv.
+  if echo "$_PIP_LINES" | grep -qE "(^|[[:space:];&|(])(sudo|doas)[[:space:]]"; then
+    _grok_block "Blocked: sudo pip install is not permitted. Use Docker or a virtualenv instead."
+  fi
+  # Block pip install outside an active virtualenv. VIRTUAL_ENV is set by
+  # activate scripts; sourcing one in the same command also counts.
+  # Known gap: conda envs set CONDA_DEFAULT_ENV, not VIRTUAL_ENV, so pip
+  # inside a conda env is blocked here unless VIRTUAL_ENV is also set.
+  if [[ -z "${VIRTUAL_ENV:-}" ]] && \
+     ! echo "$STATEMENTS" | grep -qE "^[[:space:]]*(source|\.)[[:space:]]+[^[:space:]]*bin/activate([[:space:]]|$)"; then
     _grok_block "Blocked: pip install outside a virtualenv is not permitted. Activate a virtualenv first, or use Docker."
   fi
 fi
