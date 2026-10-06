@@ -11,7 +11,7 @@
 #
 # Shared hook — used by Claude (Bash), Kiro (execute_bash), Codex (Bash),
 # Cursor (beforeShellExecution), Grok (run_terminal_command / Bash) and
-# Gemini CLI (run_shell_command).
+# Gemini CLI (run_shell_command); also Copilot CLI (bash).
 # Note: general `rm -rf <path>` is NOT blocked — legitimate uses like
 # `rm -rf node_modules` or `rm -rf ./dist` are too common to intercept.
 # Only anchored, catastrophic targets are blocked here.

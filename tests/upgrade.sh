@@ -97,7 +97,7 @@ fi
 echo ""
 echo "agent tracking — install all tracks global agents (not cursor)"
 run_install all
-for agent in claude kiro codex gemini; do
+for agent in claude kiro codex gemini copilot; do
   if grep 'AGENTGUARD_INSTALLED_AGENTS=' "$CFG" | grep -q "$agent"; then
     printf "  PASS  %s tracked after install all\n" "$agent"
     ((pass++))
@@ -203,7 +203,7 @@ git -C "$UP_ORIGIN" init -q
 git -C "$UP_ORIGIN" add -A -f   # -f: agents/*/AGENTS.md matches .gitignore
 git -C "$UP_ORIGIN" -c user.name=test -c user.email=test@example.com commit -qm init
 git clone -q "$UP_ORIGIN" "$UP_CLONE"
-for agent in claude codex kiro grok gemini; do
+for agent in claude codex kiro grok gemini copilot; do
   (cd "$FAKE_PROJECT" && HOME="$UP_HOME" bash "$UP_CLONE/install.sh" "$agent" </dev/null) >/dev/null 2>&1
 done
 (cd "$FAKE_PROJECT" && HOME="$UP_HOME" bash "$UP_CLONE/install.sh" cursor --user </dev/null) >/dev/null 2>&1
@@ -217,7 +217,7 @@ before_tracked=$(tracked_agents "$UP_HOME/.agentguard/config")
 up_out=$(cd "$FAKE_PROJECT" && HOME="$UP_HOME" bash "$UP_CLONE/install.sh" upgrade </dev/null 2>&1) || true
 after_tracked=$(tracked_agents "$UP_HOME/.agentguard/config")
 after_branches=$(protected_branches "$UP_HOME/.agentguard/config")
-if [[ "$before_tracked" == "claude codex kiro grok gemini cursor-user" && "$after_tracked" == "$before_tracked" ]]; then
+if [[ "$before_tracked" == "claude codex kiro grok gemini copilot cursor-user" &&"$after_tracked" == "$before_tracked" ]]; then
   printf "  PASS  upgrade keeps all tracked agents\n"
   ((pass++))
 else
@@ -251,6 +251,14 @@ if [[ -f "$UP_HOME/.gemini/GEMINI.md" ]] && jq -e '[.hooks.BeforeTool[].hooks[].
   ((pass++))
 else
   printf "  FAIL  gemini GEMINI.md or settings.json hooks missing under ~/.gemini after upgrade\n"
+  ((fail++))
+fi
+if [[ -f "$UP_HOME/.copilot/copilot-instructions.md" && -x "$UP_HOME/.copilot/hooks/block-env.sh" ]] \
+   && cmp -s "$UP_CLONE/agents/copilot/hooks.json" "$UP_HOME/.copilot/hooks/agentguard.json"; then
+  printf "  PASS  upgrade reinstalls copilot under ~/.copilot\n"
+  ((pass++))
+else
+  printf "  FAIL  copilot instructions, hooks or agentguard.json missing under ~/.copilot after upgrade\n"
   ((fail++))
 fi
 if jq -e --arg h "$UP_HOME" '[.hooks.preToolUse[].command] == ["./hooks/mine.sh", ($h + "/.cursor/hooks/block-env-read.sh")]' \

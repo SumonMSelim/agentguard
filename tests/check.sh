@@ -50,6 +50,7 @@ check_false "codex check fails when not installed"  run_check codex
 check_false "cursor check fails when not installed" run_check cursor
 check_false "grok check fails when not installed"   run_check grok
 check_false "gemini check fails when not installed" run_check gemini
+check_false "copilot check fails when not installed" run_check copilot
 check_false "all check fails when not installed"    run_check all
 
 # ── fully installed → check passes ───────────────────────────────────────────
@@ -67,6 +68,7 @@ check_true "codex check passes after install"  run_check codex
 check_true "cursor check passes after install" run_check cursor
 check_true "grok check passes after install"   run_check grok
 check_true "gemini check passes after install" run_check gemini
+check_true "copilot check passes after install" run_check copilot
 check_true "all check passes after install"    run_check all
 
 # ── partial install → check fails ────────────────────────────────────────────
@@ -114,6 +116,23 @@ chmod -x "$FAKE_HOME/.gemini/hooks/block-env-read.sh"
 check_false "gemini check fails with non-executable hook" run_check gemini
 chmod +x "$FAKE_HOME/.gemini/hooks/block-env-read.sh"
 check_true  "gemini check passes once restored" run_check gemini
+
+echo ""
+echo "check — copilot → exits 1 when broken"
+CP="$FAKE_HOME/.copilot/hooks/agentguard.json"
+cp "$CP" "$CP.keep"
+jq '.hooks.preToolUse |= .[1:]' "$CP.keep" > "$CP"
+check_false "copilot check fails with modified agentguard.json" run_check copilot
+rm "$CP"
+check_false "copilot check fails with missing agentguard.json" run_check copilot
+mv "$CP.keep" "$CP"
+chmod -x "$FAKE_HOME/.copilot/hooks/block-env.sh"
+check_false "copilot check fails with non-executable hook" run_check copilot
+chmod +x "$FAKE_HOME/.copilot/hooks/block-env.sh"
+mv "$FAKE_HOME/.copilot/copilot-instructions.md" "$FAKE_HOME/copilot-instructions.md.keep"
+check_false "copilot check fails without instructions" run_check copilot
+mv "$FAKE_HOME/copilot-instructions.md.keep" "$FAKE_HOME/.copilot/copilot-instructions.md"
+check_true  "copilot check passes once restored" run_check copilot
 
 echo ""
 echo "check — cursor hooks → exits 1 when broken"

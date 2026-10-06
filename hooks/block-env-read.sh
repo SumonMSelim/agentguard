@@ -3,9 +3,10 @@
 #
 # Blocks Read, Write, Edit, fs_read, and fs_write tools on sensitive file paths.
 # Shared hook — used by Claude (Read/Write/Edit/Grep/Glob/NotebookEdit), Kiro (fs_read/fs_write),
-# Cursor (beforeReadFile), Grok (read_file/search_replace and friends) and
-# Gemini CLI (read_file/write_file/replace and friends). Not
-# registered for Codex: its apply_patch payload holds patch text, not a path.
+# Cursor (beforeReadFile), Grok (read_file/search_replace and friends),
+# Gemini CLI (read_file/write_file/replace and friends) and Copilot CLI
+# (view/create/edit/grep/glob). Not registered for Codex or Copilot
+# apply_patch: that payload holds patch text, not a path.
 #
 # Covers: .env files (not .env.example and other templates), direnv (.envrc),
 # private keys, tool credential stores, shell history, agent config and auth files.
@@ -27,6 +28,8 @@ echo "$INPUT" | jq empty >/dev/null 2>&1 || _agentguard_invalid_payload
 # Gemini:  .tool_input.file_path (read_file/write_file/replace), .tool_input.dir_path
 #          (list_directory/glob/grep_search), .tool_input.pattern (glob),
 #          .tool_input.include_pattern (grep_search), .tool_input.include[] (read_many_files)
+# Copilot: toolArgs, mapped to .tool_input by _check-disabled.sh: .path (view/create/edit/grep/glob),
+#          .pattern (glob), .glob (grep/rg)
 # Collect all candidate paths; trim whitespace via sed (xargs would split paths with spaces).
 PATHS=$(echo "$INPUT" | jq -r '
   (if (.tool_input | type) == "string" then .tool_input = ((.tool_input | fromjson? | objects) // {}) else . end) | (.file_path // ""),
@@ -34,7 +37,7 @@ PATHS=$(echo "$INPUT" | jq -r '
   (.tool_input.path // ""),
   (.tool_input.notebook_path // ""),
   (if .tool_name == "Glob" then .tool_input.pattern // "" else "" end),
-  (if .tool_name == "Grep" then .tool_input.glob // "" else "" end),
+  (if .tool_name == "Grep" or .tool_name == "grep" or .tool_name == "rg" then .tool_input.glob // "" else "" end),
   (.toolInput.file_path // ""),
   (.toolInput.path // ""),
   (.toolInput.target_file // ""),
@@ -62,10 +65,16 @@ SENSITIVE_RE="$KEY_RE|$STORE_RE|$AGENT_RE"
 # Claude settings, user or project level. Project-local settings override user
 # settings, so a write there can set disableAllHooks for the project.
 SETTINGS_RE='(^|/)\.claude/settings(\.local)?\.json$|(^|/)\.claude\.json$'
+# Copilot CLI repository settings: disableAllHooks there skips "every hook from
+# every source" for the repository, including the user-level agentguard hooks.
+COPILOT_SETTINGS_RE='(^|/)\.github/copilot/settings(\.local)?\.json$'
 
 while IFS= read -r FILE; do
   if echo "$FILE" | grep -qE "$SETTINGS_RE"; then
     _grok_block "Blocked: '$FILE' is a Claude settings file. Project-local settings (.claude/settings.local.json) can set disableAllHooks and turn off every guardrail, so agents may not touch it. Ask the user to make the change."
+  fi
+  if echo "$FILE" | grep -qE "$COPILOT_SETTINGS_RE"; then
+    _grok_block "Blocked: '$FILE' is a Copilot CLI repository settings file. It can set disableAllHooks and turn off every guardrail, so agents may not touch it. Ask the user to make the change."
   fi
   # .env names match case-insensitively: on macOS .ENV opens .env.
   if { echo "$FILE" | grep -qiE "$ENV_RE" && ! echo "$FILE" | grep -qiE "$ENV_TEMPLATE_RE"; } \

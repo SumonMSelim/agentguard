@@ -58,14 +58,14 @@ fi
 # paths: only the specific config files and hook directories.
 # shellcheck disable=SC2016 # literal $HOME is matched as text, not expanded
 _HOME_ROOT='(~|\$HOME|\$\{HOME\}|/Users/[^/[:space:]"'"'"']+|/home/[^/[:space:]"'"'"']+|/root)'
-_HOME_CORE="${_HOME_ROOT}/(\.claude|\.agentguard|\.kiro|\.grok|\.cursor/hooks|\.codex|\.gemini)([^a-zA-Z0-9_-]|\$)"
-_REL_CORE='(\.claude/(settings(\.local)?\.json|hooks([^a-zA-Z0-9_-]|$)|CLAUDE\.md)|\.claude\.json|\.kiro/(settings\.json|hooks([^a-zA-Z0-9_-]|$)|agents([^a-zA-Z0-9_-]|$)|KIRO\.md)|\.cursor/(hooks\.json|hooks([^a-zA-Z0-9_-]|$))|\.agentguard([^a-zA-Z0-9_-]|$)|\.grok/(hooks([^a-zA-Z0-9_-]|$)|config\.toml|AGENTS\.md|skills([^a-zA-Z0-9_-]|$)|memory([^a-zA-Z0-9_-]|$))|\.gemini/(settings\.json|hooks([^a-zA-Z0-9_-]|$)|GEMINI\.md)|\.(claude|kiro|grok|cursor|codex|gemini)/audit\.log)'
+_HOME_CORE="${_HOME_ROOT}/(\.claude|\.agentguard|\.kiro|\.grok|\.cursor/hooks|\.codex|\.gemini|\.copilot)([^a-zA-Z0-9_-]|\$)"
+_REL_CORE='(\.claude/(settings(\.local)?\.json|hooks([^a-zA-Z0-9_-]|$)|CLAUDE\.md)|\.claude\.json|\.kiro/(settings\.json|hooks([^a-zA-Z0-9_-]|$)|agents([^a-zA-Z0-9_-]|$)|KIRO\.md)|\.cursor/(hooks\.json|hooks([^a-zA-Z0-9_-]|$))|\.agentguard([^a-zA-Z0-9_-]|$)|\.grok/(hooks([^a-zA-Z0-9_-]|$)|config\.toml|AGENTS\.md|skills([^a-zA-Z0-9_-]|$)|memory([^a-zA-Z0-9_-]|$))|\.gemini/(settings\.json|hooks([^a-zA-Z0-9_-]|$)|GEMINI\.md)|\.copilot/(settings\.json|config\.json|hooks([^a-zA-Z0-9_-]|$)|copilot-instructions\.md)|\.github/copilot/settings(\.local)?\.json|\.(claude|kiro|grok|cursor|codex|gemini|copilot)/audit\.log)'
 _SELF_CORE="(${_HOME_CORE}|${_REL_CORE})"
 # Anchored so "myclaude/..." doesn't false-match.
 _SELF_PATH="(^|[^a-zA-Z0-9_-])${_SELF_CORE}"
 # Any agent directory name, used where the path is only a prefix (cd target,
 # variable value, bind-mount source).
-_SELF_DIR='(\.claude|\.agentguard|\.kiro|\.grok|\.cursor|\.codex|\.gemini)([^a-zA-Z0-9_-]|$)'
+_SELF_DIR='(\.claude|\.agentguard|\.kiro|\.grok|\.cursor|\.codex|\.gemini|\.copilot|\.github/copilot)([^a-zA-Z0-9_-]|$)'
 
 # Write-style operators that, combined with a self-config path, indicate an
 # attempt to modify the configuration. Plain `>` is handled separately (only

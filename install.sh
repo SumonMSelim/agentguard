@@ -6,7 +6,7 @@
 # `agentguard <cmd>` from any directory after the initial install.
 #
 # Preferred usage (after the `agentguard` CLI wrapper is installed):
-#   agentguard [claude|codex|kiro|cursor|grok|gemini|all]
+#   agentguard [claude|codex|kiro|cursor|grok|gemini|copilot|all]
 #   agentguard uninstall ...
 #   agentguard check ...
 #   agentguard upgrade
@@ -20,6 +20,7 @@
 #   --dry-run              — show what would be changed without writing anything
 #   --project              — append skills to the project-level instruction file in CWD
 #                            Claude: .claude/CLAUDE.md  Codex: AGENTS.md  Gemini: GEMINI.md  Kiro: not supported
+#                            Copilot: .github/copilot-instructions.md
 #   --user                 — Cursor only: install hooks to ~/.cursor/ (all projects) instead of CWD
 #
 # Re-running install is safe. Existing files are backed up before any writes.
@@ -47,7 +48,7 @@ CURSOR_USER=0
 # Agent registry, in install / check / uninstall order. Each agent has
 # install_<agent>, uninstall_<agent>, check_<agent> and install_project_<agent>
 # functions; "all" runs them for every agent in this list.
-AGENTS=(claude codex kiro cursor grok gemini)
+AGENTS=(claude codex kiro cursor grok gemini copilot)
 
 # Our hook filenames, generated from hooks/*.sh. Installed, checked and
 # removed by name; the release workflow globs the same directory.
@@ -782,6 +783,37 @@ install_gemini() {
   track_installed_agent "gemini"
 }
 
+# GitHub Copilot CLI runs every *.json in ~/.copilot/hooks/ ("all hook entries
+# from all sources are run"), so our entries go in a file of their own,
+# hooks/agentguard.json, next to the scripts (only *.json is read as config).
+# camelCase preToolUse/postToolUse, regex matcher on toolName, stdin JSON with
+# toolName/toolArgs/cwd; exit 2 denies. Global instructions come from
+# ~/.copilot/copilot-instructions.md. COPILOT_HOME moves both; we install to
+# ~/.copilot only and warn.
+# Ref: docs.github.com/en/copilot/reference/hooks-configuration,
+#      docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-custom-instructions
+COPILOT_DIR="$HOME/.copilot"
+
+install_copilot() {
+  local dest="$COPILOT_DIR"
+
+  section "Installing GitHub Copilot CLI guardrails → $dest"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
+
+  install_hooks "$dest/hooks"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would copy agents/copilot/hooks.json → $dest/hooks/agentguard.json"
+  else
+    cp "$SCRIPT_DIR/agents/copilot/hooks.json" "$dest/hooks/agentguard.json"
+    ok "Copilot CLI hooks registered → $dest/hooks/agentguard.json"
+  fi
+  install_instruction_file "$SCRIPT_DIR/agents/copilot/copilot-instructions.md" "$dest/copilot-instructions.md" "copilot-instructions.md installed"
+  if [[ -n "${COPILOT_HOME:-}" && "${COPILOT_HOME%/}" != "$dest" ]]; then
+    warn "COPILOT_HOME is set to $COPILOT_HOME — Copilot CLI reads hooks and instructions from there, not $dest. Unset it to use the agentguard guardrails."
+  fi
+  track_installed_agent "copilot"
+}
+
 # cursor_root — the directory holding .cursor/: the CWD (project install) or
 # $HOME (--user install, ~/.cursor/hooks.json applies to every project).
 cursor_root() {
@@ -1062,6 +1094,7 @@ installed_skills() {
     codex)  f="$HOME/.codex/AGENTS.md"; [[ -f "$f" ]] || f="$HOME/AGENTS.md" ;;
     grok)   f="$HOME/AGENTS.md" ;;
     gemini) f="$HOME/.gemini/GEMINI.md" ;;
+    copilot) f="$HOME/.copilot/copilot-instructions.md" ;;
     *)      return 0 ;;
   esac
   skills_in_file "$f"
@@ -1554,6 +1587,28 @@ uninstall_gemini() {
   untrack_installed_agent "gemini"
 }
 
+uninstall_copilot() {
+  local dest="$COPILOT_DIR"
+
+  section "Uninstalling GitHub Copilot CLI guardrails from $dest"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be changed)"
+
+  remove_hooks "$dest/hooks"
+  # Our own generated file: removed without a backup, so the hooks dir can go.
+  if [[ ! -f "$dest/hooks/agentguard.json" ]]; then
+    log "agentguard.json not found (already removed?)"
+  elif [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would remove $dest/hooks/agentguard.json"
+  else
+    rm "$dest/hooks/agentguard.json"
+    ok "Removed $dest/hooks/agentguard.json"
+  fi
+  remove_instruction_file "$dest/copilot-instructions.md" "$SCRIPT_DIR/agents/copilot/copilot-instructions.md"
+
+  [[ "$DRY_RUN" -eq 0 ]] && { rmdir "$dest/hooks" 2>/dev/null || true; }
+  untrack_installed_agent "copilot"
+}
+
 uninstall_cursor() {
   local dest
   dest="$(cursor_root)"
@@ -1798,6 +1853,18 @@ check_gemini() {
   echo ""
 }
 
+check_copilot() {
+  local dest="$COPILOT_DIR"
+  section "Checking GitHub Copilot CLI installation → $dest"
+  check_file "$dest/copilot-instructions.md" "copilot-instructions.md"
+  check_hook_execs "$dest/hooks"
+  check_file "$dest/hooks/agentguard.json" "agentguard.json (copilot hooks)"
+  if [[ -f "$dest/hooks/agentguard.json" ]] && ! cmp -s "$dest/hooks/agentguard.json" "$SCRIPT_DIR/agents/copilot/hooks.json"; then
+    _check_fail "agentguard.json differs from agentguard's copy (re-run 'agentguard copilot')"
+  fi
+  echo ""
+}
+
 check_exec() {
   local f="$1" label="$2"
   if [[ -f "$f" && -x "$f" ]]; then
@@ -1862,6 +1929,7 @@ check_grok() {
 #   Kiro:   not supported      (prints warning, exits 0)
 #   Grok:   AGENTS.md          (created if absent; Grok also supports .grok/ for project)
 #   Gemini: GEMINI.md          (created if absent)
+#   Copilot: .github/copilot-instructions.md (created if absent)
 
 # install_project_file <label> <file> — creates <file> (empty) if absent, then
 # appends skills to it.
@@ -1890,6 +1958,7 @@ install_project_claude() { install_project_file "Claude Code" "$(pwd)/.claude/CL
 install_project_codex()  { install_project_file "Codex" "$(pwd)/AGENTS.md"; }
 install_project_grok()   { install_project_file "Grok" "$(pwd)/AGENTS.md"; }
 install_project_gemini() { install_project_file "Gemini CLI" "$(pwd)/GEMINI.md"; }
+install_project_copilot() { install_project_file "GitHub Copilot CLI" "$(pwd)/.github/copilot-instructions.md"; }
 
 install_project_cursor() {
   log "Cursor is always project-local — running full install instead"

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      { "type": "command", "matcher": "bash", "bash": "bash ~/.copilot/hooks/block-env.sh", "timeoutSec": 30 },
+      { "type": "command", "matcher": "bash", "bash": "bash ~/.copilot/hooks/block-main-branch.sh", "timeoutSec": 30 },
+      { "type": "command", "matcher": "bash", "bash": "bash ~/.copilot/hooks/block-system-installs.sh", "timeoutSec": 30 },
+      { "type": "command", "matcher": "bash", "bash": "bash ~/.copilot/hooks/block-destructive-ops.sh", "timeoutSec": 30 },
+      { "type": "command", "matcher": "bash|apply_patch", "bash": "bash ~/.copilot/hooks/block-self-edit.sh", "timeoutSec": 30 },
+      { "type": "command", "matcher": "view|create|edit|str_replace_editor|grep|rg|glob", "bash": "bash ~/.copilot/hooks/block-env-read.sh", "timeoutSec": 30 }
+    ],
+    "postToolUse": [
+      { "type": "command", "bash": "bash ~/.copilot/hooks/audit-log.sh", "timeoutSec": 30 }
+    ]
+  }
+}

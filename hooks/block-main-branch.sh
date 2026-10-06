@@ -18,7 +18,7 @@
 #
 # Shared hook — used by Claude (Bash), Kiro (execute_bash), Codex (Bash),
 # Cursor (beforeShellExecution), Grok (run_terminal_command / Bash) and
-# Gemini CLI (run_shell_command).
+# Gemini CLI (run_shell_command); also Copilot CLI (bash).
 # Static deny rules cannot inspect git state — this hook runs in the actual
 # working directory (the payload .cwd when present) so it can call git at runtime.
 #
