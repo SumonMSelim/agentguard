@@ -1,13 +1,17 @@
 #!/bin/bash
 # hooks/_check-disabled.sh
 #
-# Sourced (NOT executed) by every guardrail hook. If the current directory
-# is in the agentguard disabled list, exits 0 — short-circuiting the host
-# hook so all its checks are skipped.
+# Sourced (NOT executed) by every guardrail hook, after the hook has read its
+# payload into INPUT. If the agent's directory is in the agentguard disabled
+# list, exits 0 — short-circuiting the host hook so all its checks are skipped.
+#
+# The agent's directory is the payload's .cwd (Claude Code, Codex and Cursor
+# send it; it follows the agent's `cd`), else the hook's own working directory.
 #
 # The disabled list lives at ~/.agentguard/disabled-dirs, one absolute path
 # per line. A directory matches if it equals an entry, or is below one
-# (ancestor disables descendants). Blank lines and `#` comments ignored.
+# (ancestor disables descendants). Trailing slashes are ignored, so `/`
+# disables everything. Blank lines and `#` comments ignored.
 #
 # Override the path with AGENTGUARD_DISABLED_DIRS_FILE (test seam).
 #
@@ -52,12 +56,19 @@ fi
 
 _agentguard_disabled_file="${AGENTGUARD_DISABLED_DIRS_FILE:-$HOME/.agentguard/disabled-dirs}"
 if [[ -f "$_agentguard_disabled_file" ]]; then
-  _agentguard_cur="$(pwd -P 2>/dev/null || pwd)"
+  _agentguard_cur=$(jq -r '.cwd // .tool_input.cwd // empty' <<<"${INPUT:-}" 2>/dev/null)
+  if [[ -n "$_agentguard_cur" && -d "$_agentguard_cur" ]]; then
+    _agentguard_cur="$(cd "$_agentguard_cur" && { pwd -P 2>/dev/null || pwd; })"
+  else
+    _agentguard_cur="$(pwd -P 2>/dev/null || pwd)"
+  fi
   while IFS= read -r _agentguard_line || [[ -n "$_agentguard_line" ]]; do
     _agentguard_line="${_agentguard_line%$'\r'}"
     _agentguard_line="${_agentguard_line#"${_agentguard_line%%[![:space:]]*}"}"
     _agentguard_line="${_agentguard_line%"${_agentguard_line##*[![:space:]]}"}"
     [[ -z "$_agentguard_line" || "${_agentguard_line:0:1}" == "#" ]] && continue
+    # Strip trailing slashes; "/" becomes "" and then matches every path.
+    _agentguard_line="${_agentguard_line%"${_agentguard_line##*[!/]}"}"
     if [[ "$_agentguard_cur" == "$_agentguard_line" || "$_agentguard_cur" == "$_agentguard_line"/* ]]; then
       _agentguard_skip=1
       break
@@ -66,7 +77,7 @@ if [[ -f "$_agentguard_disabled_file" ]]; then
   if [[ -n "${_agentguard_skip:-}" ]]; then
     # Cursor permission hooks need {"permission":"allow"} on stdout even when
     # skipped; postToolUse (audit-log.sh) needs no output.
-    if [[ "${0##*/}" != audit-log.sh ]] && jq -e '(has("command") or has("file_path")) and ((has("tool_input") or has("toolInput")) | not)' >/dev/null 2>&1; then
+    if [[ "${0##*/}" != audit-log.sh ]] && jq -e '(has("command") or has("file_path")) and ((has("tool_input") or has("toolInput")) | not)' <<<"${INPUT:-}" >/dev/null 2>&1; then
       echo '{"permission":"allow"}'
     fi
     exit 0

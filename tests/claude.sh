@@ -413,6 +413,18 @@ run_hook_tests() {
   HOME="$MAIN_REPO" bmb_in / "blocks cd ~ && commit (main)"     block 'cd ~ && git commit -m x'
   HOME="$MAIN_REPO" bmb_in / "blocks cd \$HOME && commit (main)" block 'cd $HOME && git commit -m x'
   HOME="$FEAT_REPO" bmb_in / "allows cd ~ && commit (feat)"     allow 'cd ~ && git commit -m x'
+  HOME="$(dirname "$MAIN_REPO")" bmb_in / "blocks cd ~/repo && commit (main)" block "cd ~/$(basename "$MAIN_REPO") && git commit -m x"
+  HOME="$(dirname "$MAIN_REPO")" bmb_in / "blocks cd \$HOME/repo && commit (main)" block "cd \$HOME/$(basename "$MAIN_REPO") && git commit -m x"
+  HOME="$(dirname "$FEAT_REPO")" bmb_in / "allows cd ~/repo && commit (feat)" allow "cd ~/$(basename "$FEAT_REPO") && git commit -m x"
+  # Payload .cwd (follows the agent's cd) wins over the hook's own cwd (#78).
+  check_in / "blocks commit when payload cwd is on main" \
+    block "$(jq -n --arg d "$MAIN_REPO" '{cwd:$d,tool_input:{command:"git commit -m x"}}')" block-main-branch.sh
+  check_in "$MAIN_REPO" "allows commit when payload cwd is on feat" \
+    allow "$(jq -n --arg d "$FEAT_REPO" '{cwd:$d,tool_input:{command:"git commit -m x"}}')" block-main-branch.sh
+  check_in "$MAIN_REPO" "nonexistent payload cwd falls back to hook cwd" \
+    block '{"cwd":"/nonexistent/agentguard","tool_input":{"command":"git commit -m x"}}' block-main-branch.sh
+  check_in / "relative cd resolves against payload cwd" \
+    block "$(jq -n --arg d "$(dirname "$MAIN_REPO")" --arg c "cd $(basename "$MAIN_REPO") && git commit -m x" '{cwd:$d,tool_input:{command:$c}}')" block-main-branch.sh
   bmb_in "$MAIN_REPO" "blocks push origin HEAD on main"  block 'git push origin HEAD'
   bmb_in "$MAIN_REPO" "blocks push -u origin on main"    block 'git push -u origin'
   bmb_in "$MAIN_REPO" "blocks push --set-upstream origin" block 'git push --set-upstream origin'
@@ -961,6 +973,37 @@ EOF
   AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
     check "block-env: ancestor entry disables descendant" \
     allow '{"tool_input":{"command":"cat .env"}}' block-env.sh
+
+  # Trailing slash on an entry still matches; "/" disables everything (#78).
+  echo "$(pwd -P)/" > "$DISABLED_TMP"
+  AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
+    check "block-env: entry with trailing slash matches" \
+    allow '{"tool_input":{"command":"cat .env"}}' block-env.sh
+  echo "$ANCESTOR//" > "$DISABLED_TMP"
+  AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
+    check "block-env: ancestor entry with trailing slashes matches" \
+    allow '{"tool_input":{"command":"cat .env"}}' block-env.sh
+  echo "/" > "$DISABLED_TMP"
+  AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
+    check "block-env: / entry disables every dir" \
+    allow '{"tool_input":{"command":"cat .env"}}' block-env.sh
+  # Prefix of a sibling name is not an ancestor.
+  echo "${MAIN_REPO%?}" > "$DISABLED_TMP"
+  AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
+    check_in "$MAIN_REPO" "block-env: name-prefix entry does not match" \
+    block '{"tool_input":{"command":"cat .env"}}' block-env.sh
+
+  # Payload .cwd decides, not the hook's own cwd (#78).
+  (cd "$MAIN_REPO" && pwd -P) > "$DISABLED_TMP"
+  AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
+    check_in / "block-env: no-op when payload cwd is disabled" \
+    allow "$(jq -n --arg d "$MAIN_REPO" '{cwd:$d,tool_input:{command:"cat .env"}}')" block-env.sh
+  AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
+    check_in "$MAIN_REPO" "block-env: blocks when payload cwd is not disabled" \
+    block '{"cwd":"/","tool_input":{"command":"cat .env"}}' block-env.sh
+  AGENTGUARD_DISABLED_DIRS_FILE="$DISABLED_TMP" \
+    check_stdout "cursor: payload cwd disabled still prints allow JSON" allow \
+    "$(jq -n --arg d "$MAIN_REPO" '{cwd:$d,command:"cat .env"}')" block-env.sh '. == {"permission":"allow"}'
 
   # Comments and blank lines ignored.
   printf '# a comment\n\n   \n/some/other/dir\n' > "$DISABLED_TMP"
