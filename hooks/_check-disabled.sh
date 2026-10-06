@@ -1,9 +1,12 @@
 #!/bin/bash
 # hooks/_check-disabled.sh
 #
-# Sourced (NOT executed) by every guardrail hook, after the hook has read its
-# payload into INPUT. If the agent's directory is in the agentguard disabled
-# list, exits 0 — short-circuiting the host hook so all its checks are skipped.
+# Shared library, sourced (NOT executed) by every guardrail hook after the hook
+# has read its payload into INPUT. It resolves jq (fail closed without it),
+# defines the audit-log, payload and block helpers (_agentguard_command,
+# _agentguard_invalid_payload, _allow, _grok_block), and, if the agent's
+# directory is in the agentguard disabled list, exits 0 — short-circuiting the
+# host hook so all its checks are skipped.
 #
 # The agent's directory is the payload's .cwd (Claude Code, Codex and Cursor
 # send it; it follows the agent's `cd`), else the hook's own working directory.
@@ -19,8 +22,8 @@
 # run inside Claude Code). Re-enabling is open — restoring guardrails can't
 # hurt.
 #
-# Cursor output contract (cursor.com/docs/agent/hooks, checked 2026-10-06).
-# Each hook pastes _is_cursor/_allow/_grok_block to implement it:
+# Cursor output contract (cursor.com/docs/agent/hooks, checked 2026-10-06),
+# implemented by _is_cursor/_allow/_grok_block below:
 #   - Input: every hook gets conversation_id, generation_id, hook_event_name,
 #     workspace_roots, ... at top level. beforeShellExecution adds flat
 #     "command"/"cwd"; beforeReadFile adds flat "file_path"/"content". So a
@@ -90,6 +93,35 @@ _agentguard_log_block() {
   _agentguard_audit_append "$entry"
 }
 
+# Shell command from the payload: Cursor (flat .command), Claude/Kiro/Codex
+# (.tool_input.command) or Grok (.toolInput.command). Fails on invalid JSON.
+_agentguard_command() {
+  echo "$INPUT" | jq -r '.command // .tool_input.command // .toolInput.command // ""'
+}
+# Fail closed on a payload that cannot be parsed.
+_agentguard_invalid_payload() { echo "agentguard: invalid hook payload; blocking tool call" >&2; _agentguard_log_block; exit 2; }
+# Cursor: flat .command/.file_path, preToolUse and beforeMCPExecution payloads
+# must get permission JSON on stdout (see the contract above).
+_is_cursor() { echo "$INPUT" | jq -e '.hook_event_name == "preToolUse" or .hook_event_name == "beforeMCPExecution" or ((has("command") or has("file_path")) and ((has("tool_input") or has("toolInput")) | not))' >/dev/null 2>&1; }
+_allow() { if _is_cursor; then echo '{"permission":"allow"}'; fi; exit 0; }
+# Block: stderr message, BLOCKED audit line, exit 2. Cursor also gets deny JSON
+# (block-env-read.sh serves beforeReadFile: permission + user_message only);
+# Grok gets a JSON decision on stdout.
+_grok_block() {
+  echo "$1" >&2
+  _agentguard_log_block
+  if _is_cursor; then
+    if [[ "${0##*/}" == block-env-read.sh ]]; then
+      jq -cn --arg m "$1" '{permission:"deny",user_message:$m}'
+    else
+      jq -cn --arg m "$1" '{permission:"deny",user_message:$m,agent_message:$m}'
+    fi
+  elif echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then
+    printf '{"decision":"deny","reason":"%s"}\n' "$1"
+  fi
+  exit 2
+}
+
 # Resolve jq before anything else. GUI-launched agents (macOS Dock) often get
 # a PATH without /opt/homebrew/bin or /usr/local/bin; without jq a hook cannot
 # parse its payload, so fail closed (exit 2; exit 1 is non-blocking in Claude
@@ -140,7 +172,7 @@ if [[ -f "$_agentguard_disabled_file" ]]; then
   if [[ -n "${_agentguard_skip:-}" ]]; then
     # Cursor permission hooks need {"permission":"allow"} on stdout even when
     # skipped; postToolUse (audit-log.sh) needs no output.
-    if [[ "${0##*/}" != audit-log.sh ]] && jq -e '.hook_event_name == "preToolUse" or .hook_event_name == "beforeMCPExecution" or ((has("command") or has("file_path")) and ((has("tool_input") or has("toolInput")) | not))' <<<"${INPUT:-}" >/dev/null 2>&1; then
+    if [[ "${0##*/}" != audit-log.sh ]] && _is_cursor; then
       echo '{"permission":"allow"}'
     fi
     exit 0

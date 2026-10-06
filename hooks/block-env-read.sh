@@ -14,8 +14,9 @@
 INPUT=$(cat)
 
 # Skip all checks if the current directory is in the agentguard disabled list.
+# Also defines the shared payload and block helpers (_allow, _grok_block).
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_check-disabled.sh"
-echo "$INPUT" | jq empty >/dev/null 2>&1 || { echo "agentguard: invalid hook payload; blocking tool call" >&2; _agentguard_log_block; exit 2; }
+echo "$INPUT" | jq empty >/dev/null 2>&1 || _agentguard_invalid_payload
 # Claude:  .tool_input.file_path (Read/Write/Edit), .tool_input.path (Grep/Glob),
 #          .tool_input.notebook_path (NotebookEdit), .tool_input.pattern (Glob), .tool_input.glob (Grep)
 # Kiro:    .tool_input.path (fs_write),   .tool_input.operations[].path (fs_read)
@@ -37,11 +38,6 @@ PATHS=$(echo "$INPUT" | jq -r '
   (.toolInput.operations // [] | .[].path // ""),
   (.tool_input.edits // [] | .[].file_path // "")
 ' 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)
-# Cursor: flat .command/.file_path, preToolUse and beforeMCPExecution payloads must get permission JSON on stdout (see _check-disabled.sh)
-_is_cursor() { echo "$INPUT" | jq -e '.hook_event_name == "preToolUse" or .hook_event_name == "beforeMCPExecution" or ((has("command") or has("file_path")) and ((has("tool_input") or has("toolInput")) | not))' >/dev/null 2>&1; }
-_allow() { if _is_cursor; then echo '{"permission":"allow"}'; fi; exit 0; }
-# Grok: emit JSON decision on stdout for blocks (in addition to exit 2 + stderr)
-_grok_block() { echo "$1" >&2; _agentguard_log_block; if _is_cursor; then jq -cn --arg m "$1" '{permission:"deny",user_message:$m}'; elif echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
 
 # .env and .env.<suffix> (also Glob forms like .env*), but not committed templates.
 ENV_RE='(^|/)\.env([.*][^/]*)?$'
