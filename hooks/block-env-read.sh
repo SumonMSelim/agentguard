@@ -9,10 +9,10 @@
 #
 # Exit 2 = blocked. The agent receives the stderr message as feedback.
 
+INPUT=$(cat)
+
 # Skip all checks if the current directory is in the agentguard disabled list.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_check-disabled.sh"
-
-INPUT=$(cat)
 echo "$INPUT" | jq empty >/dev/null 2>&1 || { echo "agentguard: invalid hook payload; blocking tool call" >&2; exit 2; }
 # Claude:  .tool_input.file_path (Read/Write/Edit), .tool_input.path (Grep/Glob),
 #          .tool_input.notebook_path (NotebookEdit), .tool_input.pattern (Glob), .tool_input.glob (Grep)

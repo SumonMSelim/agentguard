@@ -18,7 +18,7 @@
 #
 # Shared hook — used by both Claude (Bash tool) and Kiro (execute_bash tool).
 # Static deny rules cannot inspect git state — this hook runs in the actual
-# working directory so it can call git at runtime.
+# working directory (the payload .cwd when present) so it can call git at runtime.
 #
 # Parsing strategy: the command is split into statements on shell separators
 # (newline ; & | ( ) ` and $( ) while tracking single/double quotes, so
@@ -33,10 +33,10 @@
 #
 # Exit 2 = blocked. The agent receives the stderr message as feedback.
 
+INPUT=$(cat)
+
 # Skip all checks if the current directory is in the agentguard disabled list.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_check-disabled.sh"
-
-INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // .toolInput.command // ""') || { echo "agentguard: invalid hook payload; blocking tool call" >&2; exit 2; }
 # Cursor: flat .command/.file_path payload must get permission JSON on stdout (see _check-disabled.sh)
 _is_cursor() { echo "$INPUT" | jq -e '(has("command") or has("file_path")) and ((has("tool_input") or has("toolInput")) | not)' >/dev/null 2>&1; }
@@ -46,6 +46,13 @@ _grok_block() { echo "$1" >&2; if _is_cursor; then jq -cn --arg m "$1" '{permiss
 
 # Cheap prefilter: nothing to check unless the command mentions git at all.
 [[ "$COMMAND" == *git* ]] || _allow
+
+# Detect the branch where the agent's shell is: the payload .cwd follows the
+# agent's `cd` (Claude Code, Codex, Cursor). Missing or not a directory: keep
+# the hook's own working directory.
+_cwd=$(echo "$INPUT" | jq -r '.cwd // .tool_input.cwd // empty' 2>/dev/null)
+if [[ -n "$_cwd" && -d "$_cwd" ]]; then cd "$_cwd" 2>/dev/null; fi
+unset _cwd
 
 # Load config file when env var unset. Env var still wins so users can
 # override per-shell without touching the config.
