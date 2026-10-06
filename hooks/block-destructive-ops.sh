@@ -21,8 +21,11 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_check-disabled.sh"
 
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // .toolInput.command // ""') || exit 0
+# Cursor: flat .command/.file_path payload must get permission JSON on stdout (see _check-disabled.sh)
+_is_cursor() { echo "$INPUT" | jq -e '(has("command") or has("file_path")) and ((has("tool_input") or has("toolInput")) | not)' >/dev/null 2>&1; }
+_allow() { if _is_cursor; then echo '{"permission":"allow"}'; fi; exit 0; }
 # Grok: emit JSON decision on stdout for blocks (in addition to exit 2 + stderr)
-_grok_block() { echo "$1" >&2; if echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
+_grok_block() { echo "$1" >&2; if _is_cursor; then jq -cn --arg m "$1" '{permission:"deny",user_message:$m,agent_message:$m}'; elif echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
 
 # Statement-boundary prefix — see block-main-branch.sh for rationale.
 _STMT_START='(^|[;&|]|\$\()[[:space:]]*(sudo[[:space:]]+)?'
@@ -53,4 +56,4 @@ if echo "$COMMAND" | grep -qE \
   _grok_block "Blocked: pipe-to-shell (curl|bash, wget|sh, etc.) is not permitted. Download the script first, inspect it, then run it explicitly."
 fi
 
-exit 0
+_allow

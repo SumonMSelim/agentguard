@@ -58,6 +58,26 @@ check_in() {
   fi
 }
 
+# Like check() but also asserts stdout: "empty", or a jq filter that must hold.
+check_stdout() {
+  local label="$1" expected="$2" input="$3" hook="$4" want="$5" out code ok=1
+  out=$(echo "$input" | bash "$HOOKS_DIR/$hook" 2>/dev/null)
+  code=$?
+  if [[ "$expected" == "block" ]]; then [[ "$code" -eq 2 ]] || ok=0; else [[ "$code" -eq 0 ]] || ok=0; fi
+  if [[ "$want" == "empty" ]]; then
+    [[ -z "$out" ]] || ok=0
+  else
+    jq -e "$want" <<<"$out" >/dev/null 2>&1 || ok=0
+  fi
+  if [[ "$ok" -eq 1 ]]; then
+    printf "  PASS  %s\n" "$label"
+    ((pass++))
+  else
+    printf "  FAIL  %s (exit %d, expected %s, stdout: %s)\n" "$label" "$code" "$expected" "$out"
+    ((fail++))
+  fi
+}
+
 # Temp git repo on 'main' for branch-detection tests.
 # CI checkouts are detached HEAD, so tests that rely on the current branch
 # must supply their own controlled git environment.
@@ -232,6 +252,45 @@ EOF
   check "grok blocks read .env"        block '{"toolName":"read_file","toolInput":{"target_file":".env"}}'   block-env-read.sh
   check "grok blocks search .env"      block '{"toolName":"search_replace","toolInput":{"file_path":".env","new_string":"x"}}' block-env-read.sh
   check "grok allows normal cmd"       allow '{"toolName":"run_terminal_command","toolInput":{"command":"ls -l"}}' block-env.sh
+
+  # Cursor payload shape (flat command/file_path): stdout must be permission JSON,
+  # since Cursor blocks on empty or invalid stdout.
+  echo ""
+  echo "cursor-shaped payloads (flat command/file_path)"
+  local CUR='"conversation_id":"c1","generation_id":"g1","hook_event_name":"beforeShellExecution","workspace_roots":["/w"],"cwd":"/w"'
+  local CUR_READ='"conversation_id":"c1","generation_id":"g1","hook_event_name":"beforeReadFile","workspace_roots":["/w"],"content":"x"'
+  local ALLOW='. == {"permission":"allow"}'
+  local DENY='.permission == "deny" and (.user_message | length > 0)'
+  local h
+  for h in block-env.sh block-main-branch.sh block-system-installs.sh block-destructive-ops.sh block-self-edit.sh; do
+    check_stdout "cursor $h allows ls with allow JSON" allow "{$CUR,\"command\":\"ls -la\"}" "$h" "$ALLOW"
+  done
+  check_stdout "cursor block-env-read allows README with allow JSON" allow "{$CUR_READ,\"file_path\":\"/w/README.md\"}" block-env-read.sh "$ALLOW"
+  check_stdout "cursor block-env-read allows minimal flat payload" allow '{"file_path":"/w/README.md"}' block-env-read.sh "$ALLOW"
+  check_stdout "cursor block-env denies cat .env"           block "{$CUR,\"command\":\"cat .env\"}"                    block-env.sh "$DENY and (.agent_message | length > 0)"
+  check_stdout "cursor block-env-read denies .env"          block "{$CUR_READ,\"file_path\":\"/w/.env\"}"              block-env-read.sh "$DENY"
+  check_stdout "cursor block-main-branch denies push main"  block "{$CUR,\"command\":\"git push origin main\"}"        block-main-branch.sh "$DENY"
+  check_stdout "cursor block-main-branch denies force push" block "{$CUR,\"command\":\"git push --force origin feat/x\"}" block-main-branch.sh "$DENY"
+  check_stdout "cursor block-main-branch allows feat push"  allow "{$CUR,\"command\":\"git push origin feat/x\"}"      block-main-branch.sh "$ALLOW"
+  check_stdout "cursor block-system-installs denies brew"   block "{$CUR,\"command\":\"brew install node\"}"           block-system-installs.sh "$DENY"
+  check_stdout "cursor block-destructive-ops denies rm /"   block "{$CUR,\"command\":\"rm -rf /\"}"                    block-destructive-ops.sh "$DENY"
+  check_stdout "cursor block-self-edit denies settings write" block "{$CUR,\"command\":\"echo {} > ~/.claude/settings.json\"}" block-self-edit.sh "$DENY"
+  check_stdout "cursor block-self-edit allows git (allowlist)" allow "{$CUR,\"command\":\"git status\"}"              block-self-edit.sh "$ALLOW"
+  local CUR_DIS
+  CUR_DIS=$(mktemp)
+  pwd -P > "$CUR_DIS"
+  AGENTGUARD_DISABLED_DIRS_FILE="$CUR_DIS" \
+    check_stdout "cursor disabled dir still prints allow JSON" allow "{$CUR,\"command\":\"cat .env\"}" block-env.sh "$ALLOW"
+  AGENTGUARD_DISABLED_DIRS_FILE="$CUR_DIS" \
+    check_stdout "claude disabled dir prints nothing" allow '{"tool_input":{"command":"cat .env"}}' block-env.sh empty
+  rm -f "$CUR_DIS"
+  # Regression: Claude/Kiro/Grok shapes keep their previous stdout.
+  for h in block-env.sh block-main-branch.sh block-system-installs.sh block-destructive-ops.sh block-self-edit.sh; do
+    check_stdout "claude $h allow prints nothing" allow '{"tool_input":{"command":"ls -la"}}' "$h" empty
+  done
+  check_stdout "claude block-env-read allow prints nothing" allow '{"tool_input":{"file_path":"/w/README.md"}}' block-env-read.sh empty
+  check_stdout "claude block-env block prints nothing"      block '{"tool_input":{"command":"cat .env"}}'      block-env.sh empty
+  check_stdout "grok block-env block prints decision JSON"  block '{"toolName":"run_terminal_command","toolInput":{"command":"cat .env"}}' block-env.sh '.decision == "deny"'
   check "blocks pip install outside venv" block '{"tool_input":{"command":"pip install requests"}}'          block-system-installs.sh
   VIRTUAL_ENV=/tmp/fakevenv check "allows pip install inside venv" allow '{"tool_input":{"command":"pip install requests"}}' block-system-installs.sh
   check "allows local npm install"    allow '{"tool_input":{"command":"npm install lodash"}}'                block-system-installs.sh

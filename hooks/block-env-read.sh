@@ -27,8 +27,11 @@ PATHS=$(echo "$INPUT" | jq -r '
   (.toolInput.operations // [] | .[].path // ""),
   (.tool_input.edits // [] | .[].file_path // "")
 ' 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)
+# Cursor: flat .command/.file_path payload must get permission JSON on stdout (see _check-disabled.sh)
+_is_cursor() { echo "$INPUT" | jq -e '(has("command") or has("file_path")) and ((has("tool_input") or has("toolInput")) | not)' >/dev/null 2>&1; }
+_allow() { if _is_cursor; then echo '{"permission":"allow"}'; fi; exit 0; }
 # Grok: emit JSON decision on stdout for blocks (in addition to exit 2 + stderr)
-_grok_block() { echo "$1" >&2; if echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
+_grok_block() { echo "$1" >&2; if _is_cursor; then jq -cn --arg m "$1" '{permission:"deny",user_message:$m}'; elif echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
 
 SENSITIVE_RE='(^|/)\.env(\.|$)|(^|/)\.env$|\.envrc$|secrets/|\.aws/|\.ssh/|credentials|\.netrc$|\.(pem|key|p12|pfx)$|/\.agentguard($|/)|/\.claude/(settings\.json|hooks/|CLAUDE\.md$)|/\.kiro/(settings\.json|hooks/|agents/|KIRO\.md$)|(^|/)\.cursor/(hooks\.json$|hooks/)|/\.grok/(hooks/|config\.toml|AGENTS\.md$|skills/|memory/)|(^|/)\.grok/(hooks/|config\.toml|AGENTS\.md$)'
 
@@ -38,4 +41,4 @@ while IFS= read -r FILE; do
   fi
 done <<< "$PATHS"
 
-exit 0
+_allow
