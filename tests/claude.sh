@@ -524,6 +524,31 @@ EOF
   check "codex blocks rm -rf /"        block '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"rm -rf /"},"cwd":"/tmp"}' block-destructive-ops.sh
   check "codex allows normal cmd"      allow '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls -l"},"cwd":"/tmp"}' block-destructive-ops.sh
 
+  # Gemini CLI payload shape (BeforeTool; tool_name/tool_input/cwd), per
+  # geminicli.com/docs/hooks/reference. Exit 2 + stderr blocks, so stdout stays empty.
+  echo ""
+  echo "gemini-shaped payloads (BeforeTool, tool_name/tool_input)"
+  local GEM='"session_id":"s1","transcript_path":"/tmp/t.json","cwd":"/tmp","hook_event_name":"BeforeTool","timestamp":"2026-10-06T00:00:00Z"'
+  check_stdout "gemini blocks cat .env"           block "{$GEM,\"tool_name\":\"run_shell_command\",\"tool_input\":{\"command\":\"cat .env\"}}" block-env.sh empty
+  check_stdout "gemini blocks rm -rf /"           block "{$GEM,\"tool_name\":\"run_shell_command\",\"tool_input\":{\"command\":\"rm -rf /\",\"dir_path\":\"/tmp\"}}" block-destructive-ops.sh empty
+  check_stdout "gemini blocks brew install"       block "{$GEM,\"tool_name\":\"run_shell_command\",\"tool_input\":{\"command\":\"brew install jq\"}}" block-system-installs.sh empty
+  check_stdout "gemini blocks settings write"     block "{$GEM,\"tool_name\":\"run_shell_command\",\"tool_input\":{\"command\":\"echo {} > ~/.gemini/settings.json\"}}" block-self-edit.sh empty
+  check_stdout "gemini allows normal cmd"         allow "{$GEM,\"tool_name\":\"run_shell_command\",\"tool_input\":{\"command\":\"ls -l\"}}" block-env.sh empty
+  check_stdout "gemini blocks read_file .env"     block "{$GEM,\"tool_name\":\"read_file\",\"tool_input\":{\"file_path\":\"/p/.env\"}}" block-env-read.sh empty
+  check_stdout "gemini blocks write_file hooks"   block "{$GEM,\"tool_name\":\"write_file\",\"tool_input\":{\"file_path\":\"/h/u/.gemini/hooks/block-env.sh\",\"content\":\"\"}}" block-env-read.sh empty
+  check_stdout "gemini blocks replace settings"   block "{$GEM,\"tool_name\":\"replace\",\"tool_input\":{\"file_path\":\"/h/u/.gemini/settings.json\",\"old_string\":\"a\",\"new_string\":\"b\"}}" block-env-read.sh empty
+  check_stdout "gemini blocks read_many_files"    block "{$GEM,\"tool_name\":\"read_many_files\",\"tool_input\":{\"include\":[\"src/**\",\".env\"]}}" block-env-read.sh empty
+  check_stdout "gemini blocks glob .env*"         block "{$GEM,\"tool_name\":\"glob\",\"tool_input\":{\"pattern\":\".env*\"}}" block-env-read.sh empty
+  check_stdout "gemini blocks grep_search .env*"  block "{$GEM,\"tool_name\":\"grep_search\",\"tool_input\":{\"pattern\":\"KEY\",\"include_pattern\":\".env*\"}}" block-env-read.sh empty
+  check_stdout "gemini blocks list ~/.ssh"        block "{$GEM,\"tool_name\":\"list_directory\",\"tool_input\":{\"dir_path\":\"/h/u/.ssh\"}}" block-env-read.sh empty
+  check_stdout "gemini allows read_file src"      allow "{$GEM,\"tool_name\":\"read_file\",\"tool_input\":{\"file_path\":\"/p/src/main.go\"}}" block-env-read.sh empty
+  check_stdout "gemini allows glob *.go"          allow "{$GEM,\"tool_name\":\"glob\",\"tool_input\":{\"pattern\":\"**/*.go\",\"dir_path\":\"/p\"}}" block-env-read.sh empty
+  check "blocks Read .gemini mcp tokens"   block '{"tool_input":{"file_path":"/h/u/.gemini/mcp-oauth-tokens.json"}}' block-env-read.sh
+  check "blocks Read .gemini/GEMINI.md"    block '{"tool_input":{"file_path":"/h/u/.gemini/GEMINI.md"}}'             block-env-read.sh
+  check "blocks Read ~/.gemini/audit.log"  block '{"tool_input":{"file_path":"/h/u/.gemini/audit.log"}}'              block-env-read.sh
+  check "allows Read .gemini/commands"     allow '{"tool_input":{"file_path":"/p/.gemini/commands/x.toml"}}'         block-env-read.sh
+  check "blocks cat gemini oauth creds"    block '{"tool_input":{"command":"cat ~/.gemini/oauth_creds.json"}}'       block-env.sh
+
   # Cursor payload shape (flat command/file_path): stdout must be permission JSON,
   # since Cursor blocks on empty or invalid stdout.
   echo ""
@@ -982,6 +1007,11 @@ EOF
   self_edit block 'rm -rf ${HOME}/.kiro'
   self_edit block 'rm -rf /Users/x/.grok/anything'
   self_edit block 'echo x >> $HOME/.codex/config.toml'
+  self_edit block 'rm ~/.gemini/hooks/block-env.sh'
+  self_edit block 'sed -i /block/d ~/.gemini/settings.json'
+  self_edit block 'cd ~/.gemini && echo {} > settings.json'
+  self_edit block 'echo {"hooksConfig":{"enabled":false}} > .gemini/settings.json'
+  self_edit allow 'cat ~/.gemini/settings.json'
   self_edit block 'truncate -s0 ~/.cursor/hooks/audit-log.sh'
   self_edit block "echo '{\"disableAllHooks\":true}' > .claude/settings.local.json"
   self_edit block 'echo {} > .claude/settings.json'
@@ -1277,6 +1307,7 @@ run_merge_tests() {
   local fn_file="$tmp/merge_fn.sh"
   # Extracted by anchor, not line number, so edits elsewhere in install.sh do not break this.
   awk '/^# ANSI color codes/,/^}/' "$SCRIPT_DIR/install.sh" > "$fn_file"
+  awk '/^mv_keep_mode\(\)/,/^}/' "$SCRIPT_DIR/install.sh" >> "$fn_file"
   awk '/^merge_settings\(\)/,/^}/' "$SCRIPT_DIR/install.sh" >> "$fn_file"
   # shellcheck disable=SC1090
   source "$fn_file"

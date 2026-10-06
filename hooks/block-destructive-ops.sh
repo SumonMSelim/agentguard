@@ -10,7 +10,8 @@
 #   - pipe-to-shell (curl|bash, wget|sh, bash <(curl), sh -c "$(curl)") — supply chain risk
 #
 # Shared hook — used by Claude (Bash), Kiro (execute_bash), Codex (Bash),
-# Cursor (beforeShellExecution) and Grok (run_terminal_command / Bash).
+# Cursor (beforeShellExecution), Grok (run_terminal_command / Bash) and
+# Gemini CLI (run_shell_command).
 # Note: general `rm -rf <path>` is NOT blocked — legitimate uses like
 # `rm -rf node_modules` or `rm -rf ./dist` are too common to intercept.
 # Only anchored, catastrophic targets are blocked here.

@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "BeforeTool": [
+      {
+        "matcher": "run_shell_command",
+        "hooks": [
+          { "name": "agentguard-block-env", "type": "command", "command": "bash ~/.gemini/hooks/block-env.sh" },
+          { "name": "agentguard-block-main-branch", "type": "command", "command": "bash ~/.gemini/hooks/block-main-branch.sh" },
+          { "name": "agentguard-block-system-installs", "type": "command", "command": "bash ~/.gemini/hooks/block-system-installs.sh" },
+          { "name": "agentguard-block-destructive-ops", "type": "command", "command": "bash ~/.gemini/hooks/block-destructive-ops.sh" },
+          { "name": "agentguard-block-self-edit", "type": "command", "command": "bash ~/.gemini/hooks/block-self-edit.sh" }
+        ]
+      },
+      {
+        "matcher": "read_file|write_file|replace|read_many_files|glob|grep_search|search_file_content|list_directory",
+        "hooks": [
+          { "name": "agentguard-block-env-read", "type": "command", "command": "bash ~/.gemini/hooks/block-env-read.sh" }
+        ]
+      }
+    ],
+    "AfterTool": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          { "name": "agentguard-audit-log", "type": "command", "command": "bash ~/.gemini/hooks/audit-log.sh" }
+        ]
+      }
+    ]
+  }
+}

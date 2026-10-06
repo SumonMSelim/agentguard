@@ -6,7 +6,7 @@
 # `agentguard <cmd>` from any directory after the initial install.
 #
 # Preferred usage (after the `agentguard` CLI wrapper is installed):
-#   agentguard [claude|codex|kiro|cursor|grok|all]
+#   agentguard [claude|codex|kiro|cursor|grok|gemini|all]
 #   agentguard uninstall ...
 #   agentguard check ...
 #   agentguard upgrade
@@ -19,7 +19,7 @@
 #                            list appends only the named skills; --skills none appends none
 #   --dry-run              — show what would be changed without writing anything
 #   --project              — append skills to the project-level instruction file in CWD
-#                            Claude: .claude/CLAUDE.md  Codex: AGENTS.md  Kiro: not supported
+#                            Claude: .claude/CLAUDE.md  Codex: AGENTS.md  Gemini: GEMINI.md  Kiro: not supported
 #   --user                 — Cursor only: install hooks to ~/.cursor/ (all projects) instead of CWD
 #
 # Re-running install is safe. Existing files are backed up before any writes.
@@ -47,7 +47,7 @@ CURSOR_USER=0
 # Agent registry, in install / check / uninstall order. Each agent has
 # install_<agent>, uninstall_<agent>, check_<agent> and install_project_<agent>
 # functions; "all" runs them for every agent in this list.
-AGENTS=(claude codex kiro cursor grok)
+AGENTS=(claude codex kiro cursor grok gemini)
 
 # Our hook filenames, generated from hooks/*.sh. Installed, checked and
 # removed by name; the release workflow globs the same directory.
@@ -153,6 +153,19 @@ backup_if_exists() {
       log "Backed up $(basename "$file") → $(basename "$file").bak.${ts}"
     fi
   fi
+}
+
+# mv_keep_mode <tmp> <dest> — replaces <dest> with <tmp>, giving <tmp> the
+# permission bits of an existing <dest> first, so a 600 settings.json holding
+# secrets stays 600. GNU stat first: on Linux, BSD-style `stat -f` means
+# file-system status and prints unrelated output.
+mv_keep_mode() {
+  local tmp="$1" dest="$2" mode=""
+  if [[ -e "$dest" ]]; then
+    mode=$(stat -c %a "$dest" 2>/dev/null) || mode=$(stat -f %Lp "$dest" 2>/dev/null) || mode=""
+    [[ "$mode" =~ ^[0-7]{3,4}$ ]] && chmod "$mode" "$tmp"
+  fi
+  mv "$tmp" "$dest"
 }
 
 # ── interactive config ────────────────────────────────────────────────────────
@@ -393,7 +406,7 @@ merge_settings() {
       rm -f "${output}.tmp.$$"
       fail "settings.json merge failed — $output left unchanged."
     }
-  mv "${output}.tmp.$$" "$output"
+  mv_keep_mode "${output}.tmp.$$" "$output"
 
   ok "settings.json merged → $output"
 }
@@ -701,11 +714,12 @@ migrate_codex_legacy_agents_md() {
   remove_file "$legacy"
 }
 
-# merge_codex_hooks <dest> — writes our hooks.json entries into <dest>, keeping
-# any user hooks. Our entries are appended per event, skipping commands that
-# are already registered, so re-runs are idempotent.
-merge_codex_hooks() {
-  local dest="$1" src="$SCRIPT_DIR/agents/codex/hooks.json"
+# merge_hooks_json <dest> <src> <label> — writes the .hooks entries of <src>
+# into <dest>, keeping every other key and any user hooks. Our entries are
+# appended per event, skipping commands that are already registered, so
+# re-runs are idempotent. Used for Codex hooks.json and Gemini settings.json.
+merge_hooks_json() {
+  local dest="$1" src="$2" label="$3"
   require jq
   if [[ "$DRY_RUN" -eq 1 ]]; then
     dry "Would register hooks → $dest"
@@ -713,7 +727,7 @@ merge_codex_hooks() {
   fi
   if [[ ! -f "$dest" ]]; then
     cp "$src" "$dest"
-    ok "Codex hooks registered → $dest"
+    ok "$label hooks registered → $dest"
     return
   fi
   jq empty "$dest" || fail "$dest is not valid JSON — fix it and re-run. File left unchanged."
@@ -725,9 +739,9 @@ merge_codex_hooks() {
         | $cur + ($e.value
             | map(.hooks |= map(select(.command as $c | $have | index($c) | not)))
             | map(select(.hooks | length > 0)))))
-  ' "$dest" > "${dest}.tmp.$$" || { rm -f "${dest}.tmp.$$"; fail "hooks.json merge failed — $dest left unchanged."; }
-  mv "${dest}.tmp.$$" "$dest"
-  ok "Codex hooks merged → $dest"
+  ' "$dest" > "${dest}.tmp.$$" || { rm -f "${dest}.tmp.$$"; fail "${dest##*/} merge failed — $dest left unchanged."; }
+  mv_keep_mode "${dest}.tmp.$$" "$dest"
+  ok "$label hooks merged → $dest"
 }
 
 install_codex() {
@@ -739,10 +753,33 @@ install_codex() {
   migrate_codex_legacy_agents_md
 
   install_hooks "$dest/hooks"
-  merge_codex_hooks "$dest/hooks.json"
+  merge_hooks_json "$dest/hooks.json" "$SCRIPT_DIR/agents/codex/hooks.json" "Codex"
   install_instruction_file "$SCRIPT_DIR/agents/codex/AGENTS.md" "$dest/AGENTS.md" "AGENTS.md installed"
   log "Note: Codex runs new hooks only after you trust them. Open Codex and run /hooks to review them."
   track_installed_agent "codex"
+}
+
+# Gemini CLI reads hooks from the "hooks" key of ~/.gemini/settings.json
+# (BeforeTool/AfterTool, regex matchers, run via the shell, stdin JSON with
+# tool_name/tool_input/cwd, exit 2 blocks with stderr as the reason) and global
+# instructions from ~/.gemini/GEMINI.md. Hooks are on by default (v0.26.0+);
+# hooksConfig.enabled=false turns them all off, which install warns about.
+# Ref: geminicli.com/docs/hooks/reference, geminicli.com/docs/reference/configuration
+GEMINI_DIR="$HOME/.gemini"
+
+install_gemini() {
+  local dest="$GEMINI_DIR"
+
+  section "Installing Gemini CLI guardrails → $dest"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
+
+  install_hooks "$dest/hooks"
+  merge_hooks_json "$dest/settings.json" "$SCRIPT_DIR/agents/gemini/hooks.json" "Gemini CLI"
+  install_instruction_file "$SCRIPT_DIR/agents/gemini/GEMINI.md" "$dest/GEMINI.md" "GEMINI.md installed"
+  if [[ -f "$dest/settings.json" ]] && jq -e '.hooksConfig.enabled == false' "$dest/settings.json" >/dev/null 2>&1; then
+    warn "hooksConfig.enabled is false in $dest/settings.json — Gemini CLI will not run any hooks until you set it to true."
+  fi
+  track_installed_agent "gemini"
 }
 
 # cursor_root — the directory holding .cursor/: the CWD (project install) or
@@ -789,7 +826,7 @@ merge_cursor_hooks() {
         .[$e.key] = ((.[$e.key] // []) + $e.value))
       | with_entries(select(.value | length > 0)))
   ' "$dest" > "${dest}.tmp.$$" || { rm -f "${dest}.tmp.$$"; fail "hooks.json merge failed — $dest left unchanged."; }
-  mv "${dest}.tmp.$$" "$dest"
+  mv_keep_mode "${dest}.tmp.$$" "$dest"
   ok "hooks.json merged → $dest (user hooks kept)"
 }
 
@@ -817,7 +854,7 @@ unmerge_cursor_hooks() {
   if [[ "$DRY_RUN" -eq 1 ]]; then
     dry "Would strip agentguard hooks from $f"
   else
-    echo "$stripped" > "${f}.tmp.$$" && mv "${f}.tmp.$$" "$f"
+    echo "$stripped" > "${f}.tmp.$$" && mv_keep_mode "${f}.tmp.$$" "$f"
     ok "agentguard hooks stripped from $f (user hooks kept)"
   fi
 }
@@ -996,7 +1033,7 @@ remove_instruction_file() {
     /^(---)?$/ { pending = pending $0 "\n"; next }
     { printf "%s", pending; pending = ""; print }
     END { printf "%s", pending }
-  ' "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
+  ' "$f" > "${f}.tmp" && mv_keep_mode "${f}.tmp" "$f"
   ok "agentguard skill sections stripped from $f (user content kept)"
 }
 
@@ -1024,6 +1061,7 @@ installed_skills() {
     # Fall back to the pre-#69 location so an upgrade keeps the skills it migrates.
     codex)  f="$HOME/.codex/AGENTS.md"; [[ -f "$f" ]] || f="$HOME/AGENTS.md" ;;
     grok)   f="$HOME/AGENTS.md" ;;
+    gemini) f="$HOME/.gemini/GEMINI.md" ;;
     *)      return 0 ;;
   esac
   skills_in_file "$f"
@@ -1407,7 +1445,7 @@ unmerge_settings() {
       rm -f "${settings}.tmp.$$"
       fail "settings.json unmerge failed — $settings left unchanged."
     }
-  mv "${settings}.tmp.$$" "$settings"
+  mv_keep_mode "${settings}.tmp.$$" "$settings"
   rm -f "$AGENTGUARD_CLAUDE_RECORD"
 
   ok "settings.json unmerged → $settings"
@@ -1438,10 +1476,12 @@ uninstall_kiro() {
   untrack_installed_agent "kiro"
 }
 
-# unmerge_codex_hooks <file> — strips our entries from hooks.json; removes the
-# file if nothing of the user is left in it.
-unmerge_codex_hooks() {
-  local f="$1" src="$SCRIPT_DIR/agents/codex/hooks.json"
+# unmerge_hooks_json <file> <src> — strips the hook commands of <src> from
+# <file> (Codex hooks.json, Gemini settings.json); removes the file if nothing
+# of the user is left in it. Non-array values under .hooks (e.g. an old Gemini
+# "hooks": {"enabled": true}) are left as they are.
+unmerge_hooks_json() {
+  local f="$1" src="$2"
   if [[ ! -f "$f" ]]; then
     log "$(basename "$f") not found (already removed?)"
     return
@@ -1450,9 +1490,12 @@ unmerge_codex_hooks() {
   stripped=$(jq --slurpfile g "$src" '
     [$g[0].hooks[][].hooks[].command] as $ours
     | .hooks |= ((. // {})
-        | with_entries(.value |= (map(.hooks |= map(select(.command as $c | $ours | index($c) | not)))
-                                  | map(select(.hooks | length > 0))))
-        | with_entries(select(.value | length > 0)))
+        | with_entries(if (.value | type) == "array" then
+            .value |= (map(if type == "object" and (.hooks | type) == "array"
+                           then .hooks |= map(select(.command as $c | $ours | index($c) | not)) else . end)
+                       | map(select(type != "object" or (.hooks | type) != "array" or (.hooks | length > 0))))
+          else . end)
+        | with_entries(select(.value != [])))
     | if .hooks == {} then del(.hooks) else . end
   ' "$f") || { warn "$f is not valid JSON — leaving in place"; return; }
   # Only our entries were in it: nothing of the user's to back up.
@@ -1481,7 +1524,7 @@ uninstall_codex() {
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be changed)"
 
   remove_hooks "$dest/hooks"
-  unmerge_codex_hooks "$dest/hooks.json"
+  unmerge_hooks_json "$dest/hooks.json" "$SCRIPT_DIR/agents/codex/hooks.json"
   remove_instruction_file "$dest/AGENTS.md" "$SCRIPT_DIR/agents/codex/AGENTS.md"
 
   # Pre-#69 installs wrote ~/AGENTS.md. Clean it up unless grok still uses it.
@@ -1495,6 +1538,20 @@ uninstall_codex() {
 
   [[ "$DRY_RUN" -eq 0 ]] && { rmdir "$dest/hooks" 2>/dev/null || true; }
   untrack_installed_agent "codex"
+}
+
+uninstall_gemini() {
+  local dest="$GEMINI_DIR"
+
+  section "Uninstalling Gemini CLI guardrails from $dest"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be changed)"
+
+  remove_hooks "$dest/hooks"
+  unmerge_hooks_json "$dest/settings.json" "$SCRIPT_DIR/agents/gemini/hooks.json"
+  remove_instruction_file "$dest/GEMINI.md" "$SCRIPT_DIR/agents/gemini/GEMINI.md"
+
+  [[ "$DRY_RUN" -eq 0 ]] && { rmdir "$dest/hooks" 2>/dev/null || true; }
+  untrack_installed_agent "gemini"
 }
 
 uninstall_cursor() {
@@ -1707,18 +1764,36 @@ check_codex() {
   check_file "$dest/AGENTS.md" "AGENTS.md"
   check_hook_execs "$dest/hooks"
   check_file "$dest/hooks.json" "hooks.json"
-  if [[ -f "$dest/hooks.json" ]]; then
-    local missing
-    missing=$(jq -r --slurpfile g "$SCRIPT_DIR/agents/codex/hooks.json" '
-      [.hooks // {} | .[][]?.hooks[]?.command] as $have
-      | [$g[0].hooks[][].hooks[].command] - $have | unique | .[]
-    ' "$dest/hooks.json" 2>/dev/null) || missing="(hooks.json is not valid JSON)"
-    if [[ -z "$missing" ]]; then
-      _check_ok "hooks.json: all hook commands registered"
-    else
-      _check_fail "hooks.json: hook command(s) missing"
-      printf '      missing: %s\n' "$missing"
-    fi
+  check_hook_commands "$dest/hooks.json" "$SCRIPT_DIR/agents/codex/hooks.json"
+  echo ""
+}
+
+# check_hook_commands <file> <src> — every hook command of <src> is registered
+# in <file> (any event). Silent when <file> is missing (check_file reports it).
+check_hook_commands() {
+  local f="$1" src="$2" name="${1##*/}" missing
+  [[ -f "$f" ]] || return 0
+  missing=$(jq -r --slurpfile g "$src" '
+    [.hooks // {} | .[]? | arrays | .[] | objects | .hooks[]? | objects | .command] as $have
+    | [$g[0].hooks[][].hooks[].command] - $have | unique | .[]
+  ' "$f" 2>/dev/null) || missing="($name is not valid JSON)"
+  if [[ -z "$missing" ]]; then
+    _check_ok "$name: all hook commands registered"
+  else
+    _check_fail "$name: hook command(s) missing"
+    printf '      missing: %s\n' "$missing"
+  fi
+}
+
+check_gemini() {
+  local dest="$GEMINI_DIR"
+  section "Checking Gemini CLI installation → $dest"
+  check_file "$dest/GEMINI.md" "GEMINI.md"
+  check_hook_execs "$dest/hooks"
+  check_file "$dest/settings.json" "settings.json"
+  check_hook_commands "$dest/settings.json" "$SCRIPT_DIR/agents/gemini/hooks.json"
+  if [[ -f "$dest/settings.json" ]] && jq -e '.hooksConfig.enabled == false' "$dest/settings.json" >/dev/null 2>&1; then
+    _check_fail "settings.json: hooksConfig.enabled is false (Gemini CLI runs no hooks)"
   fi
   echo ""
 }
@@ -1786,6 +1861,7 @@ check_grok() {
 #   Cursor: always project-local — --project runs full install instead
 #   Kiro:   not supported      (prints warning, exits 0)
 #   Grok:   AGENTS.md          (created if absent; Grok also supports .grok/ for project)
+#   Gemini: GEMINI.md          (created if absent)
 
 # install_project_file <label> <file> — creates <file> (empty) if absent, then
 # appends skills to it.
@@ -1813,6 +1889,7 @@ install_project_file() {
 install_project_claude() { install_project_file "Claude Code" "$(pwd)/.claude/CLAUDE.md"; }
 install_project_codex()  { install_project_file "Codex" "$(pwd)/AGENTS.md"; }
 install_project_grok()   { install_project_file "Grok" "$(pwd)/AGENTS.md"; }
+install_project_gemini() { install_project_file "Gemini CLI" "$(pwd)/GEMINI.md"; }
 
 install_project_cursor() {
   log "Cursor is always project-local — running full install instead"

@@ -40,6 +40,12 @@
 #     the action." Empty stdout on exit 0 is therefore printed as allow JSON.
 #   - postToolUse output is optional ("no output is required"); audit-log.sh
 #     prints nothing.
+#
+# Gemini CLI (geminicli.com/docs/hooks/reference, checked 2026-10-06) sends the
+# Claude shape: tool_name, tool_input (.command for run_shell_command,
+# .file_path for file tools), cwd, hook_event_name "BeforeTool"/"AfterTool".
+# "Exit code 2: System Block ... stderr is used as rejection reason"; on exit 0
+# empty stdout is fine. So it takes the Claude path: no JSON on stdout.
 
 # Audit log, shared by audit-log.sh (one line per tool call) and every block
 # path (_agentguard_log_block writes a BLOCKED line). The log sits next to the

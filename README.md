@@ -16,6 +16,7 @@ Security guardrails and workflow policies for AI coding agents. Blocks dangerous
 | [Cursor](https://cursor.com)                                        | Hooks via `.cursor/` (or `~/.cursor/` with `--user`) + AGENTS.md |
 | [Grok](https://x.ai)                                                | Shell hooks (via `~/.grok/hooks/`) + AGENTS.md      |
 | [OpenAI Codex](https://github.com/openai/codex)                     | Shell hooks (via `~/.codex/hooks.json`) + AGENTS.md |
+| [Gemini CLI](https://geminicli.com/docs/hooks/)                     | Shell hooks (via `~/.gemini/settings.json`) + GEMINI.md |
 
 See [docs/configuration.md](docs/configuration.md) for the full list of enforced rules.
 
@@ -64,6 +65,7 @@ The script installs the `agentguard` wrapper to `~/.local/bin/`. After this, use
 ```bash
 agentguard claude   # Claude Code
 agentguard grok     # Grok
+agentguard gemini   # Gemini CLI
 agentguard all      # All agents
 agentguard check claude
 agentguard uninstall claude
@@ -184,6 +186,7 @@ agentguard claude --skills none
 | Codex       | `AGENTS.md` in CWD                                    |                                  |
 | Cursor      | `.cursor/` in CWD (hooks + `AGENTS.md`)               | Always project-local; full install |
 | Grok        | `AGENTS.md` in CWD                                    | Hooks global only (project rules supported) |
+| Gemini CLI  | `GEMINI.md` in CWD                                    |                                  |
 | Kiro        | —                                                     | Not supported; prints warning    |
 
 ```bash
@@ -194,6 +197,7 @@ agentguard all --project --skills go,aws
 agentguard claude --project --skills go,aws     # → .claude/CLAUDE.md
 agentguard codex  --project --skills go,aws     # → AGENTS.md
 agentguard grok   --project --skills go,aws     # → AGENTS.md (Grok loads it)
+agentguard gemini --project --skills go,aws     # → GEMINI.md
 agentguard cursor --skills go,aws               # → .cursor/ (hooks + AGENTS.md)
 
 # Preview without writing:
@@ -214,6 +218,7 @@ Create `skills/<name>/SKILL.md` with YAML frontmatter (`name`, `tags`, `descript
 - **Cursor** — `agentguard cursor` installs `.cursor/` into the current directory. `agentguard cursor --user` installs hooks only to `~/.cursor/` so they apply to every project (Cursor has no user-level instruction file; it is tracked for `agentguard upgrade`). `hooks.json` is merged: your own hooks are kept, ours are refreshed on every re-run, and uninstall strips only ours. Registered events: `beforeShellExecution`, `beforeReadFile`, `preToolUse` (`Write|Delete`), `beforeMCPExecution`, `postToolUse`.
 - **Grok** — native hooks via `~/.grok/hooks/agentguard.json` + shared scripts; global rules via `~/AGENTS.md`. Grok also loads Claude/Cursor locations for compatibility.
 - **Codex** — hooks in `~/.codex/hooks.json` (merged with your own hooks) + shared scripts in `~/.codex/hooks/`; global rules via `~/.codex/AGENTS.md`. Codex runs new hooks only after you trust them: open Codex and run `/hooks`. File edits through `apply_patch` are checked by the self-edit hook only, since the payload holds patch text, not a file path. An agentguard-created `~/AGENTS.md` from older releases is moved to `~/.codex/AGENTS.md` (left in place while Grok is installed).
+- **Gemini CLI** — hooks in the `hooks` key of `~/.gemini/settings.json` (merged: your settings and hooks are kept, uninstall strips only ours) + shared scripts in `~/.gemini/hooks/`; global rules via `~/.gemini/GEMINI.md`. Registered: `BeforeTool` for `run_shell_command` and the file tools (`read_file`, `write_file`, `replace`, `read_many_files`, `glob`, `grep_search`, `list_directory`), `AfterTool` for the audit log. Hooks are on by default (Gemini CLI v0.26.0+); `hooksConfig.enabled: false` turns them all off, and `agentguard check gemini` reports it.
 - **`block-env.sh`** — best-effort on the bash surface. `block-env-read.sh` is the primary layer (intercepts Read/Write/Edit tools directly).
 - **Protected branches** — install prompts for which branches to protect from direct commit/push (default: `main,master`). Your answer is saved to `~/.agentguard/config` and applies across all agents. Override per-shell with `export AGENTGUARD_PROTECTED_BRANCHES="main,master,develop"`.
 

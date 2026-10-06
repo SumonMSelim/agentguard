@@ -84,6 +84,7 @@ check_true  "one karpathy skill sentinel" \
 check_true  "kiro installed"                      test -f "$FAKE_HOME/.kiro/agents/agentguard.json"
 check_true  "codex installed"                     test -f "$FAKE_HOME/.codex/hooks.json"
 check_true  "cursor installed in project"         test -f "$FAKE_PROJECT/.cursor/hooks.json"
+check_true  "gemini installed"                    test -f "$FAKE_HOME/.gemini/settings.json"
 check_true  "claude still tracked" \
   grep -qE '^AGENTGUARD_INSTALLED_AGENTS=.*claude' "$FAKE_HOME/.agentguard/config"
 
@@ -171,12 +172,96 @@ while IFS= read -r cmd; do
 done < <(jq -r '.. | .command? // empty' "$H")
 check_true  "every hook command script exists"   test -z "$missing"
 
+# ── Gemini settings.json ──────────────────────────────────────────────────────
+
+echo ""
+echo "gemini — merge into user settings.json"
+fresh
+G="$FAKE_HOME/.gemini/settings.json"
+mkdir -p "$FAKE_HOME/.gemini"
+printf '%s\n' '{"model":{"name":"gemini-2.5-pro"},"general":{"vimMode":true},"hooksConfig":{"notifications":false},"hooks":{"BeforeTool":[{"matcher":"write_file","hooks":[{"type":"command","command":"my-check.sh"}]}],"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"hello.sh"}]}]}}' > "$G"
+cp "$G" "$TMP/gemini.before"
+check_true  "install gemini succeeds"             run_install gemini
+check_true  "settings.json is valid JSON"         jq empty "$G"
+jq_true     "user keys kept"                      '.model.name == "gemini-2.5-pro" and .general.vimMode and .hooksConfig == {"notifications":false}' "$G"
+jq_true     "user hooks kept"                     '[.hooks[][].hooks[].command] | index("my-check.sh") != null and index("hello.sh") != null' "$G"
+jq_true     "our shell hooks added"               '[.hooks.BeforeTool[] | select(.matcher == "run_shell_command") | .hooks[].command] | any(test("/\\.gemini/hooks/block-env.sh$"))' "$G"
+jq_true     "our audit hook added"                '[.hooks.AfterTool[].hooks[].command] | any(test("audit-log.sh"))' "$G"
+check_true  "hook scripts installed"              test -x "$FAKE_HOME/.gemini/hooks/block-env-read.sh"
+check_true  "GEMINI.md installed"                 grep -qF '<!-- agentguard:created -->' "$FAKE_HOME/.gemini/GEMINI.md"
+check_true  "gemini tracked" \
+  grep -qE '^AGENTGUARD_INSTALLED_AGENTS=.*gemini' "$FAKE_HOME/.agentguard/config"
+cp "$G" "$TMP/gemini.1"
+run_install gemini
+check_true  "settings.json unchanged by second install" same_json "$TMP/gemini.1" "$G"
+check_true  "one karpathy skill sentinel" \
+  test "$(grep -c '<!-- agentguard:skill:karpathy-guidelines -->' "$FAKE_HOME/.gemini/GEMINI.md")" -eq 1
+check_true  "uninstall gemini succeeds"           run_uninstall gemini
+check_true  "uninstall restores settings.json"    same_json "$TMP/gemini.before" "$G"
+check_false "GEMINI.md removed"                   test -e "$FAKE_HOME/.gemini/GEMINI.md"
+check_false "hooks dir removed"                   test -e "$FAKE_HOME/.gemini/hooks"
+
+echo ""
+echo "gemini — legacy hooks.enabled key survives uninstall"
+fresh
+mkdir -p "$FAKE_HOME/.gemini"
+printf '%s\n' '{"hooks":{"enabled":true,"disabled":["x"]}}' > "$G"
+cp "$G" "$TMP/gemini.before"
+run_install gemini
+jq_true     "legacy keys kept on install"         '.hooks.enabled == true and .hooks.disabled == ["x"]' "$G"
+run_uninstall gemini
+check_true  "uninstall restores settings.json"    same_json "$TMP/gemini.before" "$G"
+
+echo ""
+echo "gemini — no settings.json: created, then removed on uninstall"
+fresh
+run_install gemini
+check_true  "settings.json created"               jq empty "$G"
+run_uninstall gemini
+check_false "settings.json removed"               test -e "$G"
+
+echo ""
+echo "gemini — invalid settings.json is refused and left unchanged"
+fresh
+mkdir -p "$FAKE_HOME/.gemini"
+printf '{"model":{},}\n' > "$G"
+cp "$G" "$TMP/invalid.json"
+check_false "install fails"                       run_install gemini
+check_true  "file byte-identical"                 cmp "$TMP/invalid.json" "$G"
+run_uninstall gemini
+check_true  "file still byte-identical"           cmp "$TMP/invalid.json" "$G"
+
+# ── file mode kept ────────────────────────────────────────────────────────────
+
+# mode_of <file> — permission bits (GNU stat, else BSD stat).
+mode_of() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+
+echo ""
+echo "file mode — 600 settings.json stays 600"
+seed '{"model":"opus"}'
+chmod 600 "$S"
+run_install claude
+check_true  "claude settings.json 600 after install"    test "$(mode_of "$S")" = 600
+run_uninstall claude
+check_true  "claude settings.json 600 after uninstall"  test "$(mode_of "$S")" = 600
+mkdir -p "$FAKE_HOME/.gemini"
+printf '%s\n' '{"general":{"vimMode":true},"hooks":{"BeforeTool":[{"matcher":"x","hooks":[{"type":"command","command":"mine.sh"}]}]}}' > "$G"
+chmod 600 "$G"
+run_install gemini
+check_true  "gemini settings.json 600 after install"    test "$(mode_of "$G")" = 600
+run_uninstall gemini
+check_true  "gemini settings.json kept on uninstall"    test -f "$G"
+check_true  "gemini settings.json 600 after uninstall"  test "$(mode_of "$G")" = 600
+
 # ── full round trip ───────────────────────────────────────────────────────────
 
 echo ""
 echo "round trip — claude, all, uninstall all leaves HOME as it was"
 seed '{"model":"opus","permissions":{"allow":["WebSearch"]}}'
 printf 'MY OWN RULES\n' > "$FAKE_HOME/.claude/CLAUDE.md"
+mkdir -p "$FAKE_HOME/.gemini"
+printf '%s\n' '{"general":{"vimMode":true}}' > "$FAKE_HOME/.gemini/settings.json"
+cp "$FAKE_HOME/.gemini/settings.json" "$TMP/gemini.before"
 tree_sig "$FAKE_HOME" > "$TMP/sig.before"
 run_install claude
 run_install all
@@ -184,6 +269,7 @@ run_uninstall all
 tree_sig "$FAKE_HOME" > "$TMP/sig.after"
 check_true  "same files and contents after uninstall all" diff "$TMP/sig.before" "$TMP/sig.after"
 check_true  "settings.json restored"              same_json "$TMP/before.json" "$S"
+check_true  "gemini settings.json restored"       same_json "$TMP/gemini.before" "$FAKE_HOME/.gemini/settings.json"
 check_false "cursor hooks.json removed"           test -e "$FAKE_PROJECT/.cursor/hooks.json"
 
 # ── results ───────────────────────────────────────────────────────────────────
