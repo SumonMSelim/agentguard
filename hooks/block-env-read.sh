@@ -13,7 +13,7 @@ INPUT=$(cat)
 
 # Skip all checks if the current directory is in the agentguard disabled list.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_check-disabled.sh"
-echo "$INPUT" | jq empty >/dev/null 2>&1 || { echo "agentguard: invalid hook payload; blocking tool call" >&2; exit 2; }
+echo "$INPUT" | jq empty >/dev/null 2>&1 || { echo "agentguard: invalid hook payload; blocking tool call" >&2; _agentguard_log_block; exit 2; }
 # Claude:  .tool_input.file_path (Read/Write/Edit), .tool_input.path (Grep/Glob),
 #          .tool_input.notebook_path (NotebookEdit), .tool_input.pattern (Glob), .tool_input.glob (Grep)
 # Kiro:    .tool_input.path (fs_write),   .tool_input.operations[].path (fs_read)
@@ -37,7 +37,7 @@ PATHS=$(echo "$INPUT" | jq -r '
 _is_cursor() { echo "$INPUT" | jq -e '(has("command") or has("file_path")) and ((has("tool_input") or has("toolInput")) | not)' >/dev/null 2>&1; }
 _allow() { if _is_cursor; then echo '{"permission":"allow"}'; fi; exit 0; }
 # Grok: emit JSON decision on stdout for blocks (in addition to exit 2 + stderr)
-_grok_block() { echo "$1" >&2; if _is_cursor; then jq -cn --arg m "$1" '{permission:"deny",user_message:$m}'; elif echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
+_grok_block() { echo "$1" >&2; _agentguard_log_block; if _is_cursor; then jq -cn --arg m "$1" '{permission:"deny",user_message:$m}'; elif echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
 
 # .env and .env.<suffix> (also Glob forms like .env*), but not committed templates.
 ENV_RE='(^|/)\.env([.*][^/]*)?$'
@@ -47,8 +47,9 @@ KEY_RE='\.(pem|key|p12|pfx|ppk|jks|keystore|p8|gpg|kdbx|ovpn)$|(^|/)id_(rsa|dsa|
 # Credential stores of common tools. Names must be whole path segments, so
 # src/credentialsService.ts or k8s/sealed-secret.yaml do not match.
 STORE_RE='\.envrc$|(^|/)\.?secrets?/|(^|/)secrets?\.(ya?ml|json|env)$|(^|/)credentials(\.(json|ya?ml|xml|ini|txt|csv))?$|(^|/)\.(aws|ssh|kube|azure|gnupg|password-store)(/|$)|(^|/)\.config/gcloud(/|$)|(^|/)\.config/gh/hosts\.yml$|(^|/)\.docker/config\.json$|(^|/)\.terraform\.d/credentials|(^|/)terraform\.tfstate(\.backup)?$|(^|/)\.(netrc|npmrc|pypirc|terraformrc|git-credentials|boto|s3cfg|pgpass|my\.cnf|vault-token|bash_history|zsh_history)$|(^|/)\.authinfo(\.gpg)?$|(^|/)wp-config\.php$'
-# Agent config and auth files (agentguard's own and other agents').
-AGENT_RE='/\.agentguard($|/)|/\.claude/(settings\.json|hooks/|CLAUDE\.md$)|/\.kiro/(settings\.json|hooks/|agents/|KIRO\.md$)|(^|/)\.cursor/(hooks\.json$|hooks/|mcp\.json$)|/\.grok/(hooks/|config\.toml|AGENTS\.md$|skills/|memory/)|(^|/)\.grok/(hooks/|config\.toml|AGENTS\.md$)|(^|/)\.codex/(config\.toml|auth\.json|hooks\.json)$|(^|/)\.gemini/(settings\.json|oauth_creds\.json|GEMINI\.md)$|(^|/)\.copilot(/|$)'
+# Agent config and auth files (agentguard's own and other agents'), and the
+# agentguard audit logs (they hold command history).
+AGENT_RE='/\.agentguard($|/)|/\.claude/(settings\.json|hooks/|CLAUDE\.md$)|/\.kiro/(settings\.json|hooks/|agents/|KIRO\.md$)|(^|/)\.cursor/(hooks\.json$|hooks/|mcp\.json$)|/\.grok/(hooks/|config\.toml|AGENTS\.md$|skills/|memory/)|(^|/)\.grok/(hooks/|config\.toml|AGENTS\.md$)|(^|/)\.codex/(config\.toml|auth\.json|hooks\.json)$|(^|/)\.gemini/(settings\.json|oauth_creds\.json|GEMINI\.md)$|(^|/)\.copilot(/|$)|(^|/)\.(claude|kiro|codex|grok|cursor)/audit\.log(\.1)?$'
 SENSITIVE_RE="$KEY_RE|$STORE_RE|$AGENT_RE"
 # Claude settings, user or project level. Project-local settings override user
 # settings, so a write there can set disableAllHooks for the project.

@@ -52,7 +52,10 @@ check_in() {
 
 MAIN_REPO=$(mktemp -d)
 DEVELOP_REPO=""   # populated later in run_hook_tests; declared here so the trap covers it
-trap 'rm -rf "$MAIN_REPO" "${DEVELOP_REPO:-}"' EXIT
+# Source hooks log next to hooks/ by default; keep test runs out of the repo.
+AUDIT_DIR=$(mktemp -d)
+export AGENTGUARD_AUDIT_LOG="$AUDIT_DIR/audit.log"
+trap 'rm -rf "$MAIN_REPO" "${DEVELOP_REPO:-}" "$AUDIT_DIR"' EXIT
 git -C "$MAIN_REPO" init -q
 git -C "$MAIN_REPO" symbolic-ref HEAD refs/heads/main
 git -C "$MAIN_REPO" -c user.email=t@t.com -c user.name=t commit --allow-empty -q -m init
@@ -194,7 +197,7 @@ run_hook_tests() {
   else
     BEFORE=$(wc -l < "$LOG" 2>/dev/null || echo 0)
     echo '{"tool_name":"execute_bash","tool_input":{"command":"echo test"}}' \
-      | bash "$INSTALLED_HOOK" >/dev/null 2>&1
+      | env -u AGENTGUARD_AUDIT_LOG bash "$INSTALLED_HOOK" >/dev/null 2>&1
     AFTER=$(wc -l < "$LOG" 2>/dev/null || echo 0)
     if [[ "$AFTER" -gt "$BEFORE" ]]; then
       printf "  PASS  appends to ~/.kiro/audit.log\n"

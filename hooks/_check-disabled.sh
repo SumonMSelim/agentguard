@@ -35,6 +35,58 @@
 #   - postToolUse output is optional ("no output is required"); audit-log.sh
 #     prints nothing.
 
+# Audit log, shared by audit-log.sh (one line per tool call) and every block
+# path (_agentguard_log_block writes a BLOCKED line). The log sits next to the
+# hooks dir: ~/.claude/hooks/x.sh -> ~/.claude/audit.log. AGENTGUARD_AUDIT_LOG
+# overrides the path (test seam). The file is mode 600; above 1 MB it moves to
+# audit.log.1 (one generation kept). Secrets are redacted before writing.
+# Logging never fails the hook: all errors are dropped and nothing is printed.
+_agentguard_audit_append() {
+  (
+    umask 077
+    log="${AGENTGUARD_AUDIT_LOG:-$(cd "$(dirname "$0")/.." && pwd)/audit.log}"
+    if [[ -f "$log" ]] && (( $(wc -c < "$log") > 1048576 )); then mv -f "$log" "$log.1"; fi
+    printf '%s\n' "$1" >> "$log" && chmod 600 "$log"
+  ) >/dev/null 2>&1 || true
+}
+# Log line for the payload in $INPUT: "<UTC time> <$1>tool=<name> <detail>".
+# Redacts token/key/secret/password=..., Bearer ... and Authorization: ...
+# before truncating the detail to 200 characters.
+_agentguard_audit_entry() {
+  echo "${INPUT:-}" | jq -r --arg pfx "$1" '
+    (.tool_name // .tool // .toolName // "unknown") as $tool |
+    (
+      .command //
+      .file_path //
+      .tool_input.command //
+      .tool_input.file_path //
+      .tool_input.path //
+      .toolInput.command //
+      .toolInput.file_path //
+      .toolInput.path //
+      .toolInput.target_file //
+      (.tool_input.operations // [] | first | .path // "") //
+      (.toolInput.operations // [] | first | .path // "") //
+      .tool_input.description //
+      ""
+    ) as $detail |
+    ($detail | tostring
+      | gsub("(?<k>(token|key|secret|password)=)\\S+"; "\(.k)***"; "i")
+      | gsub("(?<k>bearer\\s+)\\S+"; "\(.k)***"; "i")
+      | gsub("(?<k>authorization:\\s*([a-z]+\\s+)?)\\S+"; "\(.k)***"; "i")
+      | .[0:200]) as $safe |
+    "\(now | strftime("%Y-%m-%dT%H:%M:%SZ")) \($pfx)tool=\($tool) \($safe)"
+  ' 2>/dev/null
+}
+# Called by every block path just before exit 2. Falls back to a line without
+# tool detail when jq is missing or the payload is not valid JSON.
+_agentguard_log_block() {
+  local entry
+  entry=$(_agentguard_audit_entry "BLOCKED hook=${0##*/} " 2>/dev/null)
+  [[ -n "$entry" ]] || entry="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) BLOCKED hook=${0##*/}"
+  _agentguard_audit_append "$entry"
+}
+
 # Resolve jq before anything else. GUI-launched agents (macOS Dock) often get
 # a PATH without /opt/homebrew/bin or /usr/local/bin; without jq a hook cannot
 # parse its payload, so fail closed (exit 2; exit 1 is non-blocking in Claude
@@ -50,6 +102,7 @@ if ! command -v jq >/dev/null 2>&1; then
   if ! command -v jq >/dev/null 2>&1; then
     [[ "${0##*/}" == audit-log.sh ]] && exit 0
     echo "agentguard: jq not found in PATH; blocking tool call (install jq or fix PATH)" >&2
+    _agentguard_log_block
     exit 2
   fi
 fi
