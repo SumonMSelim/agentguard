@@ -2121,7 +2121,11 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     kiro)   uninstall_kiro   ;;
     cursor) uninstall_cursor ;;
     grok)   uninstall_grok   ;;
-    all)    uninstall_claude; echo; uninstall_codex; echo; uninstall_kiro; echo; uninstall_cursor; echo; uninstall_grok; echo; remove_agentguard_config; remove_file "$HOME/.local/bin/agentguard" ;;
+    all)    uninstall_claude; echo; uninstall_codex; echo; uninstall_kiro; echo
+            CURSOR_USER=0; uninstall_cursor; echo
+            # A tracked user-level Cursor install goes too, before the config holding the tracking is removed.
+            if is_agent_tracked "cursor-user"; then CURSOR_USER=1; uninstall_cursor; echo; fi
+            uninstall_grok; echo; remove_agentguard_config; remove_file "$HOME/.local/bin/agentguard" ;;
     *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | grok | all" ;;
   esac
   echo ""

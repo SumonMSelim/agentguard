@@ -352,9 +352,13 @@ rm -rf "$FAKE_HOME/.cursor"
 echo ""
 echo "uninstall all — removes everything"
 run_install all
+run_install cursor --user
 run_uninstall all
 
 check_false "CLI wrapper removed (all)"           test -f "$WRAPPER"
+check_false "cursor --user hook scripts removed (all)" test -f "$FAKE_HOME/.cursor/hooks/block-env-read.sh"
+check_false "cursor --user hooks.json removed (all)"   test -f "$FAKE_HOME/.cursor/hooks.json"
+
 check_false "CLAUDE.md removed (all)"             test -f "$FAKE_HOME/.claude/CLAUDE.md"
 check_false "KIRO.md removed (all)"               test -f "$FAKE_HOME/.kiro/KIRO.md"
 check_false "agentguard.json removed (all)"       test -f "$FAKE_HOME/.kiro/agents/agentguard.json"
