@@ -51,8 +51,9 @@ _ENV_FILE='([^[:space:];|&<>()]*/)?\.(env(rc)?(\.[A-Za-z0-9_.-]+)?|e[nv]*[*?][^[
 # Credential stores that block-env-read.sh protects for file tools: anything
 # under ~/.ssh, ~/.aws, ~/.gnupg, ~/.azure, ~/.password-store, gcloud, plus
 # kube/docker/gh configs, netrc-style files, Gemini CLI OAuth tokens, the
-# Copilot CLI config (its plaintext token fallback) and SSH private key names.
-_CRED_FILE='([^[:space:];|&<>()]*/)?(\.(ssh|aws|gnupg|azure|password-store)(/[^[:space:];|&<>()]*)?|\.kube/config|\.docker/config\.json|\.config/(gh/hosts\.yml|gcloud(/[^[:space:];|&<>()]*)?)|\.(netrc|git-credentials|pgpass|vault-token)|\.gemini/(oauth_creds|mcp-oauth-tokens)\.json|\.copilot/config\.json|id_(rsa|dsa|ecdsa|ed25519)(_sk)?)'
+# Copilot CLI config (its plaintext token fallback), Windsurf MCP config (holds
+# server API keys) and SSH private key names.
+_CRED_FILE='([^[:space:];|&<>()]*/)?(\.(ssh|aws|gnupg|azure|password-store)(/[^[:space:];|&<>()]*)?|\.kube/config|\.docker/config\.json|\.config/(gh/hosts\.yml|gcloud(/[^[:space:];|&<>()]*)?|devin/mcp_config\.json)|\.codeium/windsurf/mcp_config\.json|\.(netrc|git-credentials|pgpass|vault-token)|\.gemini/(oauth_creds|mcp-oauth-tokens)\.json|\.copilot/config\.json|id_(rsa|dsa|ecdsa|ed25519)(_sk)?)'
 _SECRET_FILE="(${_ENV_FILE}|${_CRED_FILE})"
 _ENV_END='([[:space:];|&<>),`]|$)'
 _SECRET_ARG="(^|[[:space:]=@<(,:])${_SECRET_FILE}${_ENV_END}"

@@ -4,9 +4,10 @@
 # Blocks Read, Write, Edit, fs_read, and fs_write tools on sensitive file paths.
 # Shared hook — used by Claude (Read/Write/Edit/Grep/Glob/NotebookEdit), Kiro (fs_read/fs_write),
 # Cursor (beforeReadFile), Grok (read_file/search_replace and friends),
-# Gemini CLI (read_file/write_file/replace and friends) and Copilot CLI
-# (view/create/edit/grep/glob). Not registered for Codex or Copilot
-# apply_patch: that payload holds patch text, not a path.
+# Gemini CLI (read_file/write_file/replace and friends), Copilot CLI
+# (view/create/edit/grep/glob) and Windsurf
+# (pre_read_code/pre_write_code/pre_mcp_tool_use). Not registered for Codex or
+# Copilot apply_patch: that payload holds patch text, not a path.
 #
 # Covers: .env files (not .env.example and other templates), direnv (.envrc),
 # private keys, tool credential stores, shell history, agent config and auth files.
@@ -30,6 +31,8 @@ echo "$INPUT" | jq empty >/dev/null 2>&1 || _agentguard_invalid_payload
 #          .tool_input.include_pattern (grep_search), .tool_input.include[] (read_many_files)
 # Copilot: toolArgs, mapped to .tool_input by _check-disabled.sh: .path (view/create/edit/grep/glob),
 #          .pattern (glob), .glob (grep/rg)
+# Windsurf: .tool_info.file_path (pre_read_code/pre_write_code),
+#          .tool_info.mcp_tool_arguments.file_path/.path (pre_mcp_tool_use)
 # Collect all candidate paths; trim whitespace via sed (xargs would split paths with spaces).
 PATHS=$(echo "$INPUT" | jq -r '
   (if (.tool_input | type) == "string" then .tool_input = ((.tool_input | fromjson? | objects) // {}) else . end) | (.file_path // ""),
@@ -47,7 +50,9 @@ PATHS=$(echo "$INPUT" | jq -r '
   (.tool_input.dir_path // ""),
   (if .tool_name == "glob" then .tool_input.pattern // "" else "" end),
   (if .tool_name == "grep_search" or .tool_name == "search_file_content" then .tool_input.include_pattern // "" else "" end),
-  (if .tool_name == "read_many_files" then (.tool_input.include // [] | .[]? | strings) else "" end)
+  (if .tool_name == "read_many_files" then (.tool_input.include // [] | .[]? | strings) else "" end),
+  (.tool_info.file_path // ""),
+  (.tool_info.mcp_tool_arguments | objects | (.file_path // ""), (.path // ""))
 ' 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)
 
 # .env and .env.<suffix> (also Glob forms like .env*), but not committed templates.
@@ -60,7 +65,7 @@ KEY_RE='\.(pem|key|p12|pfx|ppk|jks|keystore|p8|gpg|kdbx|ovpn)$|(^|/)id_(rsa|dsa|
 STORE_RE='\.envrc$|(^|/)\.?secrets?/|(^|/)secrets?\.(ya?ml|json|env)$|(^|/)credentials(\.(json|ya?ml|xml|ini|txt|csv))?$|(^|/)\.(aws|ssh|kube|azure|gnupg|password-store)(/|$)|(^|/)\.config/gcloud(/|$)|(^|/)\.config/gh/hosts\.yml$|(^|/)\.docker/config\.json$|(^|/)\.terraform\.d/credentials|(^|/)terraform\.tfstate(\.backup)?$|(^|/)\.(netrc|npmrc|pypirc|terraformrc|git-credentials|boto|s3cfg|pgpass|my\.cnf|vault-token|bash_history|zsh_history)$|(^|/)\.authinfo(\.gpg)?$|(^|/)wp-config\.php$'
 # Agent config and auth files (agentguard's own and other agents'), and the
 # agentguard audit logs (they hold command history).
-AGENT_RE='/\.agentguard($|/)|/\.claude/(settings\.json|hooks/|CLAUDE\.md$)|/\.kiro/(settings\.json|hooks/|agents/|KIRO\.md$)|(^|/)\.cursor/(hooks\.json$|hooks/|mcp\.json$)|/\.grok/(hooks/|config\.toml|AGENTS\.md$|skills/|memory/)|(^|/)\.grok/(hooks/|config\.toml|AGENTS\.md$)|(^|/)\.codex/(config\.toml|auth\.json|hooks\.json)$|(^|/)\.gemini/(settings\.json$|oauth_creds\.json$|mcp-oauth-tokens\.json$|GEMINI\.md$|hooks/)|(^|/)\.copilot(/|$)|(^|/)\.(claude|kiro|codex|grok|cursor|gemini)/audit\.log(\.1)?$'
+AGENT_RE='/\.agentguard($|/)|/\.claude/(settings\.json|hooks/|CLAUDE\.md$)|/\.kiro/(settings\.json|hooks/|agents/|KIRO\.md$)|(^|/)\.cursor/(hooks\.json$|hooks/|mcp\.json$)|/\.grok/(hooks/|config\.toml|AGENTS\.md$|skills/|memory/)|(^|/)\.grok/(hooks/|config\.toml|AGENTS\.md$)|(^|/)\.codex/(config\.toml|auth\.json|hooks\.json)$|(^|/)\.gemini/(settings\.json$|oauth_creds\.json$|mcp-oauth-tokens\.json$|GEMINI\.md$|hooks/)|(^|/)\.copilot(/|$)|(^|/)\.codeium/windsurf/(hooks\.json$|hooks/|memories/global_rules\.md$|mcp_config\.json$|audit\.log(\.1)?$)|(^|/)\.config/devin/mcp_config\.json$|(^|/)\.(devin|windsurf)/hooks\.json$|(^|/)\.(claude|kiro|codex|grok|cursor|gemini)/audit\.log(\.1)?$'
 SENSITIVE_RE="$KEY_RE|$STORE_RE|$AGENT_RE"
 # Claude settings, user or project level. Project-local settings override user
 # settings, so a write there can set disableAllHooks for the project.

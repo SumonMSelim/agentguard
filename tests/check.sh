@@ -51,6 +51,7 @@ check_false "cursor check fails when not installed" run_check cursor
 check_false "grok check fails when not installed"   run_check grok
 check_false "gemini check fails when not installed" run_check gemini
 check_false "copilot check fails when not installed" run_check copilot
+check_false "windsurf check fails when not installed" run_check windsurf
 check_false "all check fails when not installed"    run_check all
 
 # ── fully installed → check passes ───────────────────────────────────────────
@@ -69,6 +70,7 @@ check_true "cursor check passes after install" run_check cursor
 check_true "grok check passes after install"   run_check grok
 check_true "gemini check passes after install" run_check gemini
 check_true "copilot check passes after install" run_check copilot
+check_true "windsurf check passes after install" run_check windsurf
 check_true "all check passes after install"    run_check all
 
 # ── partial install → check fails ────────────────────────────────────────────
@@ -133,6 +135,23 @@ mv "$FAKE_HOME/.copilot/copilot-instructions.md" "$FAKE_HOME/copilot-instruction
 check_false "copilot check fails without instructions" run_check copilot
 mv "$FAKE_HOME/copilot-instructions.md.keep" "$FAKE_HOME/.copilot/copilot-instructions.md"
 check_true  "copilot check passes once restored" run_check copilot
+
+echo ""
+echo "check — windsurf → exits 1 when broken"
+W="$FAKE_HOME/.codeium/windsurf/hooks.json"
+cp "$W" "$W.keep"
+jq 'del(.hooks.pre_mcp_tool_use)' "$W.keep" > "$W"
+check_false "windsurf check fails with unregistered event" run_check windsurf
+rm "$W"
+check_false "windsurf check fails with missing hooks.json" run_check windsurf
+mv "$W.keep" "$W"
+chmod -x "$FAKE_HOME/.codeium/windsurf/hooks/block-env.sh"
+check_false "windsurf check fails with non-executable hook" run_check windsurf
+chmod +x "$FAKE_HOME/.codeium/windsurf/hooks/block-env.sh"
+mv "$FAKE_HOME/.codeium/windsurf/memories/global_rules.md" "$FAKE_HOME/rules.keep"
+check_false "windsurf check fails with missing global_rules.md" run_check windsurf
+mv "$FAKE_HOME/rules.keep" "$FAKE_HOME/.codeium/windsurf/memories/global_rules.md"
+check_true  "windsurf check passes once restored" run_check windsurf
 
 echo ""
 echo "check — cursor hooks → exits 1 when broken"

@@ -57,7 +57,8 @@ Priority: optional
 Homepage: https://github.com/SumonMSelim/agentguard
 Description: Security guardrails for AI coding agents
  agentguard installs shell-level hooks that block dangerous operations
- performed by AI coding agents (Claude Code, Kiro, Cursor, Codex, Grok, Gemini CLI, Copilot CLI).
+ performed by AI coding agents (Claude Code, Kiro, Cursor, Codex, Grok, Gemini CLI,
+ Copilot CLI, Windsurf).
  .
  Enforced rules include: blocking .env reads, preventing force-pushes,
  blocking system package installs, blocking pipe-to-shell execution,

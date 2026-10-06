@@ -1,5 +1,5 @@
 class Agentguard < Formula
-  desc "Security guardrails for AI coding agents (Claude Code, Kiro, Cursor, Codex, Grok, Gemini CLI, Copilot CLI)"
+  desc "Security guardrails for AI coding agents (Claude Code, Kiro, Cursor, Codex, Grok, Gemini CLI, Copilot CLI, Windsurf)"
   homepage "https://github.com/SumonMSelim/agentguard"
   url "https://github.com/SumonMSelim/agentguard/archive/refs/tags/v2.1.4.tar.gz"
   sha256 "a7d89af13b76f7b61dc3a9fb5a7d4c2a868b8be4fbc63515f7b2a148ce084494"
@@ -28,6 +28,7 @@ class Agentguard < Formula
         agentguard grok          # Grok
         agentguard gemini        # Gemini CLI
         agentguard copilot       # GitHub Copilot CLI
+        agentguard windsurf      # Windsurf (Cascade)
         agentguard all           # All agents
 
       Upgrade guardrails to the latest version:

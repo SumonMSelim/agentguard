@@ -6,7 +6,7 @@
 # `agentguard <cmd>` from any directory after the initial install.
 #
 # Preferred usage (after the `agentguard` CLI wrapper is installed):
-#   agentguard [claude|codex|kiro|cursor|grok|gemini|copilot|all]
+#   agentguard [claude|codex|kiro|cursor|grok|gemini|copilot|windsurf|all]
 #   agentguard uninstall ...
 #   agentguard check ...
 #   agentguard upgrade
@@ -21,6 +21,7 @@
 #   --project              — append skills to the project-level instruction file in CWD
 #                            Claude: .claude/CLAUDE.md  Codex: AGENTS.md  Gemini: GEMINI.md  Kiro: not supported
 #                            Copilot: .github/copilot-instructions.md
+#                            Windsurf: AGENTS.md
 #   --user                 — Cursor only: install hooks to ~/.cursor/ (all projects) instead of CWD
 #
 # Re-running install is safe. Existing files are backed up before any writes.
@@ -48,7 +49,7 @@ CURSOR_USER=0
 # Agent registry, in install / check / uninstall order. Each agent has
 # install_<agent>, uninstall_<agent>, check_<agent> and install_project_<agent>
 # functions; "all" runs them for every agent in this list.
-AGENTS=(claude codex kiro cursor grok gemini copilot)
+AGENTS=(claude codex kiro cursor grok gemini copilot windsurf)
 
 # Our hook filenames, generated from hooks/*.sh. Installed, checked and
 # removed by name; the release workflow globs the same directory.
@@ -513,9 +514,19 @@ skill_already_present() {
   [[ -f "$dest_file" ]] && grep -qF "<!-- agentguard:skill:${name} -->" "$dest_file"
 }
 
-# append_skills <instruction_file> — appends selected skills to the instruction file
+# skill_section <name> <skill_dir> — prints the sentinel-wrapped skill block
+# that append_skills writes.
+skill_section() {
+  printf '\n\n---\n\n<!-- agentguard:skill:%s -->\n' "$1"
+  strip_frontmatter "$2/SKILL.md"
+  printf '<!-- agentguard:end-skill:%s -->\n' "$1"
+}
+
+# append_skills <instruction_file> [max_bytes] — appends selected skills to the
+# instruction file. With max_bytes, a skill that would grow the file past it is
+# skipped with a warning (Windsurf caps global rules; bytes >= characters).
 append_skills() {
-  local dest_file="$1"
+  local dest_file="$1" max_bytes="${2:-}"
   [[ -d "$SCRIPT_DIR/skills" ]] || return 0
   [[ "$SKILLS_ARG" == "none" ]] && return 0
 
@@ -547,11 +558,16 @@ append_skills() {
         dry "Would append skill '$name' → $(basename "$dest_file")"
         appended=$((appended + 1))
       else
-        {
-          printf '\n\n---\n\n<!-- agentguard:skill:%s -->\n' "$name"
-          strip_frontmatter "$skill_dir/SKILL.md"
-          printf '<!-- agentguard:end-skill:%s -->\n' "$name"
-        } >> "$dest_file"
+        if [[ -n "$max_bytes" ]]; then
+          local have=0 add
+          [[ -f "$dest_file" ]] && have=$(wc -c < "$dest_file")
+          add=$(skill_section "$name" "$skill_dir" | wc -c)
+          if (( have + add > max_bytes )); then
+            warn "Skill '$name' skipped: $(basename "$dest_file") would exceed its $max_bytes character limit. Add it per project with --project."
+            continue
+          fi
+        fi
+        skill_section "$name" "$skill_dir" >> "$dest_file"
         ok "Skill '$name' appended → $(basename "$dest_file")"
         appended=$((appended + 1))
       fi
@@ -561,13 +577,13 @@ append_skills() {
   [[ "$appended" -eq 0 ]] && log "No skills appended" || true
 }
 
-# install_instruction_file <src> <dest> <installed_msg> — writes <dest> from
+# install_instruction_file <src> <dest> <installed_msg> [max_bytes] — writes <dest> from
 # <src> (with the created marker) only if it doesn't already exist, then
 # appends skills. Skills are appended once: the sentinel check in append_skills
 # prevents duplicates on re-runs. If the file is missing (first install or
 # after uninstall), it is written fresh.
 install_instruction_file() {
-  local src="$1" dest="$2" msg="$3" name="${2##*/}"
+  local src="$1" dest="$2" msg="$3" max_bytes="${4:-}" name="${2##*/}"
   if [[ ! -f "$dest" ]]; then
     if [[ "$DRY_RUN" -eq 1 ]]; then
       dry "Would copy $name → $dest"
@@ -584,7 +600,7 @@ install_instruction_file() {
       log "$name already present — skipping base copy"
     fi
   fi
-  append_skills "$dest"
+  append_skills "$dest" "$max_bytes"
 }
 
 install_claude() {
@@ -832,17 +848,19 @@ cursor_hooks_json() {
   fi
 }
 
-# merge_cursor_hooks <dest> — writes our entries into <dest>, keeping user
-# entries. Our old entries are dropped first (matched by command), so re-runs
-# add no duplicates and pick up changed entries (new events, matchers, flags).
+# merge_cursor_hooks <dest> [ours_json] — writes our entries (default: Cursor's)
+# into <dest>, keeping user entries. Our old entries are dropped first (matched
+# by command), so re-runs add no duplicates and pick up changed entries (new
+# events, matchers, flags). Also used for Windsurf, whose hooks.json has the
+# same flat {"hooks":{"<event>":[{"command":..}]}} shape without "version".
 merge_cursor_hooks() {
-  local dest="$1" ours
+  local dest="$1" ours="${2:-}"
   require jq
   if [[ "$DRY_RUN" -eq 1 ]]; then
     dry "Would merge hooks → $dest"
     return
   fi
-  ours=$(cursor_hooks_json)
+  [[ -n "$ours" ]] || ours=$(cursor_hooks_json)
   if [[ ! -f "$dest" ]]; then
     echo "$ours" > "$dest"
     ok "hooks.json installed → $dest"
@@ -852,7 +870,7 @@ merge_cursor_hooks() {
   backup_if_exists "$dest"
   jq --argjson g "$ours" '
     [$g.hooks[][].command] as $ours
-    | .version //= $g.version
+    | if $g | has("version") then .version //= $g.version else . end
     | .hooks = (reduce ($g.hooks | to_entries[]) as $e (
         ((.hooks // {}) | map_values(map(select(.command as $c | $ours | index($c) | not))));
         .[$e.key] = ((.[$e.key] // []) + $e.value))
@@ -862,16 +880,17 @@ merge_cursor_hooks() {
   ok "hooks.json merged → $dest (user hooks kept)"
 }
 
-# unmerge_cursor_hooks <file> — strips our entries; removes the file if only
-# ours were in it.
+# unmerge_cursor_hooks <file> [ours_json] — strips our entries (default:
+# Cursor's); removes the file if only ours were in it.
 unmerge_cursor_hooks() {
-  local f="$1"
+  local f="$1" ours="${2:-}"
   if [[ ! -f "$f" ]]; then
     log "$(basename "$f") not found (already removed?)"
     return
   fi
+  [[ -n "$ours" ]] || ours=$(cursor_hooks_json)
   local stripped
-  stripped=$(jq --argjson g "$(cursor_hooks_json)" '
+  stripped=$(jq --argjson g "$ours" '
     [$g.hooks[][].command] as $ours
     | .hooks |= ((. // {})
         | map_values(map(select(.command as $c | $ours | index($c) | not)))
@@ -976,6 +995,41 @@ install_grok() {
   install_instruction_file "$SCRIPT_DIR/agents/codex/AGENTS.md" "$HOME/AGENTS.md" "AGENTS.md installed → $HOME/AGENTS.md"
 
   track_installed_agent "grok"
+}
+
+# Windsurf (Devin Desktop) Cascade reads user hooks from
+# ~/.codeium/windsurf/hooks.json: {"hooks":{"<event>":[{"command":..}]}},
+# each command run via bash -c with a JSON payload on stdin
+# (agent_action_name, tool_info.command_line/cwd/file_path/mcp_tool_arguments).
+# A pre_* hook blocks with exit 2, stderr shown to the agent; any other
+# non-zero exit lets the action proceed. Hooks are merged system -> user ->
+# workspace and need no enabling, but do not run in Restricted Mode. Global
+# rules live in ~/.codeium/windsurf/memories/global_rules.md, limited to 6,000
+# characters, so skills that would pass that limit are skipped.
+# Ref: docs.devin.ai/desktop/cascade/hooks, docs.devin.ai/desktop/cascade/memories
+WINDSURF_DIR="$HOME/.codeium/windsurf"
+WINDSURF_RULES_LIMIT=6000
+
+# windsurf_hooks_json — our entries, from agents/windsurf/hooks.json.
+windsurf_hooks_json() { jq . "$SCRIPT_DIR/agents/windsurf/hooks.json"; }
+
+install_windsurf() {
+  local dest="$WINDSURF_DIR"
+
+  section "Installing Windsurf guardrails → $dest"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
+
+  require jq
+  install_hooks "$dest/hooks"
+  [[ "$DRY_RUN" -eq 1 ]] || mkdir -p "$dest"
+  merge_cursor_hooks "$dest/hooks.json" "$(windsurf_hooks_json)"
+  install_instruction_file "$SCRIPT_DIR/agents/windsurf/global_rules.md" "$dest/memories/global_rules.md" \
+    "global_rules.md installed" "$WINDSURF_RULES_LIMIT"
+  if [[ -f "$dest/memories/global_rules.md" ]] && (( $(wc -c < "$dest/memories/global_rules.md") > WINDSURF_RULES_LIMIT )); then
+    warn "$dest/memories/global_rules.md is over Windsurf's $WINDSURF_RULES_LIMIT character limit for global rules."
+  fi
+  log "Note: Windsurf hooks do not run while a workspace is in Restricted Mode."
+  track_installed_agent "windsurf"
 }
 
 # ── uninstallers ──────────────────────────────────────────────────────────────
@@ -1095,6 +1149,7 @@ installed_skills() {
     grok)   f="$HOME/AGENTS.md" ;;
     gemini) f="$HOME/.gemini/GEMINI.md" ;;
     copilot) f="$HOME/.copilot/copilot-instructions.md" ;;
+    windsurf) f="$HOME/.codeium/windsurf/memories/global_rules.md" ;;
     *)      return 0 ;;
   esac
   skills_in_file "$f"
@@ -1694,6 +1749,20 @@ uninstall_grok() {
   untrack_installed_agent "grok"
 }
 
+uninstall_windsurf() {
+  local dest="$WINDSURF_DIR"
+
+  section "Uninstalling Windsurf guardrails from $dest"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be changed)"
+
+  remove_hooks "$dest/hooks"
+  unmerge_cursor_hooks "$dest/hooks.json" "$(windsurf_hooks_json)"
+  remove_instruction_file "$dest/memories/global_rules.md" "$SCRIPT_DIR/agents/windsurf/global_rules.md"
+
+  [[ "$DRY_RUN" -eq 0 ]] && { rmdir "$dest/hooks" 2>/dev/null || true; }
+  untrack_installed_agent "windsurf"
+}
+
 # ── check ─────────────────────────────────────────────────────────────────────
 #
 # Reports whether the installation matches expected state. No writes.
@@ -1891,22 +1960,27 @@ check_cursor() {
   [[ "$CURSOR_USER" -eq 0 ]] && check_file "$(pwd)/AGENTS.md" "AGENTS.md"
   check_hook_execs "$dest/hooks"
   check_file "$dest/hooks.json" "hooks.json"
-  if [[ -f "$dest/hooks.json" ]]; then
-    local missing
-    # Per event, so an older hooks.json without the newer events is reported.
-    missing=$(jq -r --argjson g "$(cursor_hooks_json)" '
-      def pairs: to_entries[] | .key as $k | .value[]? | "\($k): \(.command)";
-      [.hooks // {} | pairs] as $have
-      | [$g.hooks | pairs] - $have | unique | .[]
-    ' "$dest/hooks.json" 2>/dev/null) || missing="(hooks.json is not valid JSON)"
-    if [[ -z "$missing" ]]; then
-      _check_ok "hooks.json: all hook commands registered"
-    else
-      _check_fail "hooks.json: hook command(s) missing"
-      printf '      missing: %s\n' "$missing"
-    fi
-  fi
+  check_flat_hooks "$dest/hooks.json" "$(cursor_hooks_json)"
   echo ""
+}
+
+# check_flat_hooks <file> <ours_json> — every event/command pair of <ours_json>
+# is registered in a flat hooks.json (Cursor, Windsurf). Per event, so an older
+# hooks.json without the newer events is reported. Silent when <file> is missing.
+check_flat_hooks() {
+  local f="$1" ours="$2" missing
+  [[ -f "$f" ]] || return 0
+  missing=$(jq -r --argjson g "$ours" '
+    def pairs: to_entries[] | .key as $k | .value[]? | "\($k): \(.command)";
+    [.hooks // {} | pairs] as $have
+    | [$g.hooks | pairs] - $have | unique | .[]
+  ' "$f" 2>/dev/null) || missing="(hooks.json is not valid JSON)"
+  if [[ -z "$missing" ]]; then
+    _check_ok "hooks.json: all hook commands registered"
+  else
+    _check_fail "hooks.json: hook command(s) missing"
+    printf '      missing: %s\n' "$missing"
+  fi
 }
 
 check_grok() {
@@ -1915,6 +1989,19 @@ check_grok() {
   check_file "$dest/hooks/agentguard.json" "agentguard.json (grok hooks)"
   check_hook_execs "$dest/hooks"
   check_file "$HOME/AGENTS.md" "AGENTS.md"
+  echo ""
+}
+
+check_windsurf() {
+  local dest="$WINDSURF_DIR" rules="$WINDSURF_DIR/memories/global_rules.md"
+  section "Checking Windsurf installation → $dest"
+  check_file "$rules" "global_rules.md"
+  if [[ -f "$rules" ]] && (( $(wc -c < "$rules") > WINDSURF_RULES_LIMIT )); then
+    warn "global_rules.md is over Windsurf's $WINDSURF_RULES_LIMIT character limit"
+  fi
+  check_hook_execs "$dest/hooks"
+  check_file "$dest/hooks.json" "hooks.json"
+  check_flat_hooks "$dest/hooks.json" "$(windsurf_hooks_json)"
   echo ""
 }
 
@@ -1930,6 +2017,7 @@ check_grok() {
 #   Grok:   AGENTS.md          (created if absent; Grok also supports .grok/ for project)
 #   Gemini: GEMINI.md          (created if absent)
 #   Copilot: .github/copilot-instructions.md (created if absent)
+#   Windsurf: AGENTS.md        (created if absent)
 
 # install_project_file <label> <file> — creates <file> (empty) if absent, then
 # appends skills to it.
@@ -1959,6 +2047,8 @@ install_project_codex()  { install_project_file "Codex" "$(pwd)/AGENTS.md"; }
 install_project_grok()   { install_project_file "Grok" "$(pwd)/AGENTS.md"; }
 install_project_gemini() { install_project_file "Gemini CLI" "$(pwd)/GEMINI.md"; }
 install_project_copilot() { install_project_file "GitHub Copilot CLI" "$(pwd)/.github/copilot-instructions.md"; }
+# Windsurf reads a root-level AGENTS.md as an always-on workspace rule.
+install_project_windsurf() { install_project_file "Windsurf" "$(pwd)/AGENTS.md"; }
 
 install_project_cursor() {
   log "Cursor is always project-local — running full install instead"

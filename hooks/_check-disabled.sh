@@ -57,6 +57,13 @@
 # apply_patch) so every hook reads it like Claude. Deny: "exit code 2 is
 # treated as a deny", output {"permissionDecision":"deny",
 # "permissionDecisionReason":...}; "Empty output uses default behavior".
+#
+# Windsurf / Devin Desktop Cascade (docs.devin.ai/desktop/cascade/hooks,
+# checked 2026-10-07) sends agent_action_name ("pre_run_command", ...) and
+# tool_info: .command_line/.cwd (run_command), .file_path (read_code,
+# write_code), .mcp_tool_arguments (mcp_tool_use). "Exit 2 ... The Cascade
+# agent will see the error message from stderr. For pre-hooks, this blocks the
+# action"; no stdout contract, so it takes the Claude path too.
 
 # Audit log, shared by audit-log.sh (one line per tool call) and every block
 # path (_agentguard_log_block writes a BLOCKED line). The log sits next to the
@@ -77,10 +84,12 @@ _agentguard_audit_append() {
 # before truncating the detail to 200 characters.
 _agentguard_audit_entry() {
   echo "${INPUT:-}" | jq -r --arg pfx "$1" '
-    (.tool_name // .tool // .toolName // "unknown") as $tool |
+    (.tool_name // .tool // .toolName // .agent_action_name // "unknown") as $tool |
     (
       .command //
       .file_path //
+      (.tool_info | objects | .command_line // .file_path
+        // (if .mcp_tool_name then "\(.mcp_server_name // "")/\(.mcp_tool_name)" else null end)) //
       .tool_input.command //
       .tool_input.file_path //
       .tool_input.path //
@@ -88,8 +97,8 @@ _agentguard_audit_entry() {
       .toolInput.file_path //
       .toolInput.path //
       .toolInput.target_file //
-      (.tool_input.operations // [] | first | .path // "") //
-      (.toolInput.operations // [] | first | .path // "") //
+      (.tool_input.operations // [] | first | .path // empty) //
+      (.toolInput.operations // [] | first | .path // empty) //
       .tool_input.description //
       ""
     ) as $detail |
@@ -111,9 +120,10 @@ _agentguard_log_block() {
 }
 
 # Shell command from the payload: Cursor (flat .command), Claude/Kiro/Codex
-# (.tool_input.command) or Grok (.toolInput.command). Fails on invalid JSON.
+# (.tool_input.command), Grok (.toolInput.command) or Windsurf
+# (.tool_info.command_line). Fails on invalid JSON.
 _agentguard_command() {
-  echo "$INPUT" | jq -r '.command // .tool_input.command // .toolInput.command // ""'
+  echo "$INPUT" | jq -r '.command // .tool_input.command // .toolInput.command // .tool_info.command_line // ""'
 }
 # Fail closed on a payload that cannot be parsed.
 _agentguard_invalid_payload() { echo "agentguard: invalid hook payload; blocking tool call" >&2; _agentguard_log_block; exit 2; }
@@ -186,7 +196,7 @@ fi
 
 _agentguard_disabled_file="${AGENTGUARD_DISABLED_DIRS_FILE:-$HOME/.agentguard/disabled-dirs}"
 if [[ -f "$_agentguard_disabled_file" ]]; then
-  _agentguard_cur=$(jq -r '.cwd // .tool_input.cwd // empty' <<<"${INPUT:-}" 2>/dev/null)
+  _agentguard_cur=$(jq -r '.cwd // .tool_input.cwd // .tool_info.cwd // empty' <<<"${INPUT:-}" 2>/dev/null)
   if [[ -n "$_agentguard_cur" && -d "$_agentguard_cur" ]]; then
     _agentguard_cur="$(cd "$_agentguard_cur" && { pwd -P 2>/dev/null || pwd; })"
   else

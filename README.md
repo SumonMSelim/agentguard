@@ -18,6 +18,7 @@ Security guardrails and workflow policies for AI coding agents. Blocks dangerous
 | [OpenAI Codex](https://github.com/openai/codex)                     | Shell hooks (via `~/.codex/hooks.json`) + AGENTS.md |
 | [Gemini CLI](https://geminicli.com/docs/hooks/)                     | Shell hooks (via `~/.gemini/settings.json`) + GEMINI.md |
 | [GitHub Copilot CLI](https://docs.github.com/en/copilot/reference/hooks-configuration) | Shell hooks (via `~/.copilot/hooks/agentguard.json`) + copilot-instructions.md |
+| [Windsurf](https://docs.devin.ai/desktop/cascade/hooks) (Cascade)   | Shell hooks (via `~/.codeium/windsurf/hooks.json`) + global_rules.md |
 
 See [docs/configuration.md](docs/configuration.md) for the full list of enforced rules.
 
@@ -68,6 +69,7 @@ agentguard claude   # Claude Code
 agentguard grok     # Grok
 agentguard gemini   # Gemini CLI
 agentguard copilot  # GitHub Copilot CLI
+agentguard windsurf # Windsurf (Cascade)
 agentguard all      # All agents
 agentguard check claude
 agentguard uninstall claude
@@ -190,6 +192,7 @@ agentguard claude --skills none
 | Grok        | `AGENTS.md` in CWD                                    | Hooks global only (project rules supported) |
 | Gemini CLI  | `GEMINI.md` in CWD                                    |                                  |
 | Copilot CLI | `.github/copilot-instructions.md` in CWD              |                                  |
+| Windsurf    | `AGENTS.md` in CWD                                    | Root `AGENTS.md` is an always-on workspace rule |
 | Kiro        | —                                                     | Not supported; prints warning    |
 
 ```bash
@@ -202,6 +205,7 @@ agentguard codex  --project --skills go,aws     # → AGENTS.md
 agentguard grok   --project --skills go,aws     # → AGENTS.md (Grok loads it)
 agentguard gemini --project --skills go,aws     # → GEMINI.md
 agentguard copilot --project --skills go,aws    # → .github/copilot-instructions.md
+agentguard windsurf --project --skills go,aws   # → AGENTS.md (Windsurf loads it)
 agentguard cursor --skills go,aws               # → .cursor/ (hooks + AGENTS.md)
 
 # Preview without writing:
@@ -224,6 +228,7 @@ Create `skills/<name>/SKILL.md` with YAML frontmatter (`name`, `tags`, `descript
 - **Codex** — hooks in `~/.codex/hooks.json` (merged with your own hooks) + shared scripts in `~/.codex/hooks/`; global rules via `~/.codex/AGENTS.md`. Codex runs new hooks only after you trust them: open Codex and run `/hooks`. File edits through `apply_patch` are checked by the self-edit hook only, since the payload holds patch text, not a file path. An agentguard-created `~/AGENTS.md` from older releases is moved to `~/.codex/AGENTS.md` (left in place while Grok is installed).
 - **Gemini CLI** — hooks in the `hooks` key of `~/.gemini/settings.json` (merged: your settings and hooks are kept, uninstall strips only ours) + shared scripts in `~/.gemini/hooks/`; global rules via `~/.gemini/GEMINI.md`. Registered: `BeforeTool` for `run_shell_command` and the file tools (`read_file`, `write_file`, `replace`, `read_many_files`, `glob`, `grep_search`, `list_directory`), `AfterTool` for the audit log. Hooks are on by default (Gemini CLI v0.26.0+); `hooksConfig.enabled: false` turns them all off, and `agentguard check gemini` reports it.
 - **GitHub Copilot CLI** — Copilot runs every `*.json` file in `~/.copilot/hooks/`, so agentguard writes its own `~/.copilot/hooks/agentguard.json` next to the shared scripts and never touches your hook files. Global rules via `~/.copilot/copilot-instructions.md`. Registered: `preToolUse` for `bash`, `apply_patch` (self-edit hook only, the payload is patch text) and the file tools (`view`, `create`, `edit`, `str_replace_editor`, `grep`, `rg`, `glob`), `postToolUse` for the audit log. A block exits 2 and prints a `permissionDecision: "deny"` JSON. Agents may not edit `.github/copilot/settings.json` or `settings.local.json`, since `disableAllHooks` there turns off every hook for the repository. If `COPILOT_HOME` is set, Copilot reads from that directory instead of `~/.copilot` and install warns. Hook timeouts are fail-open in Copilot CLI.
+- **Windsurf (Cascade)** — hooks in `~/.codeium/windsurf/hooks.json` (merged: your hooks are kept, uninstall strips only ours) + shared scripts in `~/.codeium/windsurf/hooks/`; global rules via `~/.codeium/windsurf/memories/global_rules.md`. Registered: `pre_run_command`, `pre_read_code`, `pre_write_code`, `pre_mcp_tool_use`, and the matching `post_*` events for the audit log. Hooks need no enabling but do not run in Restricted Mode. Windsurf limits global rules to 6,000 characters, so a skill that would pass the limit is skipped with a warning (the default `karpathy-guidelines` does not fit next to the base rules); add skills per project with `agentguard windsurf --project`. Workspace hooks (`.devin/hooks.json`, legacy `.windsurf/hooks.json`) are not written, but agents may not edit them.
 - **`block-env.sh`** — best-effort on the bash surface. `block-env-read.sh` is the primary layer (intercepts Read/Write/Edit tools directly).
 - **Protected branches** — install prompts for which branches to protect from direct commit/push (default: `main,master`). Your answer is saved to `~/.agentguard/config` and applies across all agents. Override per-shell with `export AGENTGUARD_PROTECTED_BRANCHES="main,master,develop"`.
 
