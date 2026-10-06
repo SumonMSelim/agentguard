@@ -39,6 +39,8 @@ bash tests/claude.sh                         # Hook logic + Claude install check
 bash tests/claude.sh hooks                   # Hook logic only
 bash tests/claude.sh install                 # Install check only
 bash tests/check-sync.sh                     # Assert instruction files are in sync
+bash tests/install.sh                        # Install / merge edge cases
+bash tests/bypass.sh                         # Bypass regression suite
 ```
 
 Requirements: `bash`, `jq`.
@@ -95,8 +97,12 @@ Duplication prevented by sentinel comment: `<!-- agentguard:skill:<name> -->`.
 - `uninstall.sh` — installs then uninstalls, verifies clean state.
 - `check.sh` — exercises `agentguard check` (or direct script during development).
 - `project.sh` — exercises `--project` flag installs.
-- `upgrade.sh` — version check, agent tracking and `agentguard upgrade`.
+- `upgrade.sh` — version tracking, `upgrade` (from a throwaway clone), checksum verify.
+- `install.sh` — install edge cases: `claude` then `all`, re-install idempotency, odd settings.json shapes, invalid JSON refused, HOME with a space, Cursor hooks.json, full round trip.
+- `bypass.sh` — bypass regression suite: known bypass forms through the whole Bash hook chain (Claude and Cursor payload shapes) stay blocked, everyday commands stay allowed.
 - `run_all.sh` — runs all suites, exits 1 if any fail.
+
+CI (`.github/workflows/test.yml`) runs `run_all.sh` on ubuntu and macOS (BSD tools) plus a `shellcheck -S warning` job.
 
 ## Key constraints
 

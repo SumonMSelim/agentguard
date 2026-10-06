@@ -52,7 +52,7 @@ _grok_block() { echo "$1" >&2; _agentguard_log_block; if _is_cursor; then jq -cn
 # agent's `cd` (Claude Code, Codex, Cursor). Missing or not a directory: keep
 # the hook's own working directory.
 _cwd=$(echo "$INPUT" | jq -r '.cwd // .tool_input.cwd // empty' 2>/dev/null)
-if [[ -n "$_cwd" && -d "$_cwd" ]]; then cd "$_cwd" 2>/dev/null; fi
+if [[ -n "$_cwd" && -d "$_cwd" ]]; then cd "$_cwd" 2>/dev/null || true; fi
 unset _cwd
 
 # Load config file when env var unset. Env var still wins so users can

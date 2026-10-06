@@ -468,9 +468,14 @@ strip_frontmatter() {
 skill_has_tag() {
   local skill_file="$1/SKILL.md"
   [[ -f "$skill_file" ]] || return 1
-  # Extract front-matter block (between first pair of ---) and grep for the tag
-  awk '/^---/{if(NR==1){in_fm=1;next}else{exit}} in_fm{print}' "$skill_file" \
-    | grep -qE "\b$2\b"
+  # Look for the tag as a whole word in the front-matter block (between the
+  # first pair of ---). One awk, no pipe: `awk | grep -q` under pipefail fails
+  # at random when grep exits first and awk dies of SIGPIPE.
+  awk -v tag="$2" '
+    /^---/ { if (NR == 1) { in_fm = 1; next } else exit }
+    in_fm { n = split($0, w, /[^A-Za-z0-9_]+/); for (i = 1; i <= n; i++) if (w[i] == tag) { found = 1; exit } }
+    END { exit !found }
+  ' "$skill_file"
 }
 
 # Appended to an instruction file only when agentguard created it, so uninstall

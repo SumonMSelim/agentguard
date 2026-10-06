@@ -278,7 +278,9 @@ check_true "custom line present after upgrade"  grep -qxF 'MY OWN RULES' "$UP_HO
 check_true "go skill present after upgrade"     grep -qF '<!-- agentguard:skill:go -->' "$UP_HOME/.claude/CLAUDE.md"
 
 # ── .deb upgrade checksum verification (#87) ──────────────────────────────────
-# Load only verify_sha256 from install.sh, with fail/ok stubs.
+# Load only verify_sha256 from install.sh, with fail/ok stubs. The function is
+# cut out here, not inside bash -c: bash 3.2 (macOS) brace-expands "{/,/^}"
+# in a double-quoted $(...).
 
 echo ""
 echo "verify_sha256 — .deb upgrade checksum check"
@@ -288,13 +290,14 @@ good=$(cd "$SUM_DIR" && { sha256sum agentguard_9.9.9_all.deb 2>/dev/null || shas
 printf '%s\n' "$good" > "$SUM_DIR/good.sums"
 printf '%064d  agentguard_9.9.9_all.deb\n' 0 > "$SUM_DIR/bad.sums"
 printf '%064d  other.deb\n' 0 > "$SUM_DIR/other.sums"
+sed -n '/^verify_sha256() {/,/^}/p' "$SCRIPT_DIR/install.sh" > "$SUM_DIR/verify_sha256.sh"
 run_verify() {
   bash -c '
     fail() { echo "$*" >&2; exit 1; }
     ok()   { :; }
-    eval "$(sed -n "/^verify_sha256() {/,/^}/p" "$1")"
+    source "$1"
     verify_sha256 "$2" "$3" agentguard_9.9.9_all.deb
-  ' _ "$SCRIPT_DIR/install.sh" "$SUM_DIR/agentguard_9.9.9_all.deb" "$1"
+  ' _ "$SUM_DIR/verify_sha256.sh" "$SUM_DIR/agentguard_9.9.9_all.deb" "$1"
 }
 check_true  "matching checksum passes"      run_verify "$SUM_DIR/good.sums"
 check_false "checksum mismatch aborts"      run_verify "$SUM_DIR/bad.sums"
