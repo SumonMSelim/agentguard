@@ -97,8 +97,8 @@ _agentguard_audit_entry() {
       .toolInput.file_path //
       .toolInput.path //
       .toolInput.target_file //
-      (.tool_input.operations // [] | first | .path // "") //
-      (.toolInput.operations // [] | first | .path // "") //
+      (.tool_input.operations // [] | first | .path // empty) //
+      (.toolInput.operations // [] | first | .path // empty) //
       .tool_input.description //
       ""
     ) as $detail |
