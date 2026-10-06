@@ -190,17 +190,74 @@ done
 # ── Codex ─────────────────────────────────────────────────────────────────────
 
 echo ""
-echo "uninstall codex — dry-run leaves file intact"
+echo "uninstall codex — dry-run leaves files intact"
 run_install codex
+check_false "nothing written to ~/AGENTS.md"         test -f "$FAKE_HOME/AGENTS.md"
 run_uninstall codex --dry-run
 
-check_true "AGENTS.md still present after dry-run" test -f "$FAKE_HOME/AGENTS.md"
+check_true "AGENTS.md still present after dry-run"  test -f "$FAKE_HOME/.codex/AGENTS.md"
+check_true "hooks.json still present after dry-run" test -f "$FAKE_HOME/.codex/hooks.json"
+for h in "${HOOKS[@]}"; do
+  check_true "codex hook $h still present after dry-run" test -f "$FAKE_HOME/.codex/hooks/$h"
+done
 
 echo ""
-echo "uninstall codex — removes file"
+echo "uninstall codex — removes files"
 run_uninstall codex
 
-check_false "AGENTS.md removed" test -f "$FAKE_HOME/AGENTS.md"
+check_false "AGENTS.md removed"       test -f "$FAKE_HOME/.codex/AGENTS.md"
+check_false "hooks.json removed"      test -f "$FAKE_HOME/.codex/hooks.json"
+check_false "hooks dir removed"       test -d "$FAKE_HOME/.codex/hooks"
+check_false "no hooks.json backups"   compgen -G "$FAKE_HOME/.codex/hooks*"
+for h in "${HOOKS[@]}"; do
+  check_false "codex hook $h removed" test -f "$FAKE_HOME/.codex/hooks/$h"
+done
+
+echo ""
+echo "uninstall codex — keeps user hooks in hooks.json"
+mkdir -p "$FAKE_HOME/.codex"
+printf '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"my-hook.sh"}]}]}}\n' > "$FAKE_HOME/.codex/hooks.json"
+run_install codex
+jq_true  "user hook kept after install"     '[.hooks.PreToolUse[].hooks[].command] | index("my-hook.sh") != null' "$FAKE_HOME/.codex/hooks.json"
+jq_true  "our hook merged in"               '[.hooks.PreToolUse[].hooks[].command] | any(test("block-env.sh"))'  "$FAKE_HOME/.codex/hooks.json"
+run_install codex
+jq_true  "re-install does not duplicate"    '[.hooks.PreToolUse[].hooks[].command | select(test("block-env.sh"))] | length == 1' "$FAKE_HOME/.codex/hooks.json"
+run_uninstall codex
+jq_true  "user hook kept after uninstall"   '.hooks.PreToolUse[0].hooks == [{"type":"command","command":"my-hook.sh"}]' "$FAKE_HOME/.codex/hooks.json"
+jq_false "our hooks gone"                   '[.. | .command? // empty | test("codex/hooks/")] | any' "$FAKE_HOME/.codex/hooks.json"
+jq_false "empty PostToolUse dropped"        '.hooks | has("PostToolUse")' "$FAKE_HOME/.codex/hooks.json"
+rm -rf "$FAKE_HOME/.codex"
+
+echo ""
+echo "install codex — migrates agentguard-created ~/AGENTS.md"
+cp "$SCRIPT_DIR/agents/codex/AGENTS.md" "$FAKE_HOME/AGENTS.md"
+printf '<!-- agentguard:created -->\n\n---\n\n<!-- agentguard:skill:go -->\nGO\n<!-- agentguard:end-skill:go -->\n' >> "$FAKE_HOME/AGENTS.md"
+run_install codex --skills none
+check_false "legacy ~/AGENTS.md removed"        test -f "$FAKE_HOME/AGENTS.md"
+check_true  "~/.codex/AGENTS.md created"        test -f "$FAKE_HOME/.codex/AGENTS.md"
+check_true  "legacy skill carried over"         grep -qF '<!-- agentguard:skill:go -->' "$FAKE_HOME/.codex/AGENTS.md"
+run_uninstall codex
+check_false "~/.codex/AGENTS.md removed"        test -f "$FAKE_HOME/.codex/AGENTS.md"
+
+echo ""
+echo "install codex — migrates pre-marker ~/AGENTS.md with old Codex header"
+{ head -n 2 "$SCRIPT_DIR/agents/codex/AGENTS.md"
+  printf '> Codex instruction file. Keep in sync with agents/claude/CLAUDE.md.\n> Enforcement is instruction-only.\n\n'
+  tail -n +3 "$SCRIPT_DIR/agents/codex/AGENTS.md"; } > "$FAKE_HOME/AGENTS.md"
+run_install codex
+check_false "legacy ~/AGENTS.md removed"        test -f "$FAKE_HOME/AGENTS.md"
+run_uninstall codex
+
+echo ""
+echo "install codex — leaves ~/AGENTS.md while grok is installed"
+run_install grok
+run_install codex
+check_true  "~/AGENTS.md kept for grok"         test -f "$FAKE_HOME/AGENTS.md"
+check_true  "~/.codex/AGENTS.md created"        test -f "$FAKE_HOME/.codex/AGENTS.md"
+run_uninstall codex
+check_true  "~/AGENTS.md kept after codex uninstall" test -f "$FAKE_HOME/AGENTS.md"
+run_uninstall grok
+check_false "~/AGENTS.md removed after grok uninstall" test -f "$FAKE_HOME/AGENTS.md"
 
 # ── Cursor ────────────────────────────────────────────────────────────────────
 
@@ -232,11 +289,14 @@ check_false "CLAUDE.md removed (all)"             test -f "$FAKE_HOME/.claude/CL
 check_false "KIRO.md removed (all)"               test -f "$FAKE_HOME/.kiro/KIRO.md"
 check_false "agentguard.json removed (all)"       test -f "$FAKE_HOME/.kiro/agents/agentguard.json"
 check_false "AGENTS.md removed (all)"             test -f "$FAKE_HOME/AGENTS.md"
+check_false "codex AGENTS.md removed (all)"       test -f "$FAKE_HOME/.codex/AGENTS.md"
+check_false "codex hooks.json removed (all)"      test -f "$FAKE_HOME/.codex/hooks.json"
 check_false "~/.agentguard/config removed (all)"  test -f "$FAKE_HOME/.agentguard/config"
 check_false "~/.agentguard/ dir removed (all)"    test -d "$FAKE_HOME/.agentguard"
 for h in "${HOOKS[@]}"; do
   check_false "claude hook $h removed (all)" test -f "$FAKE_HOME/.claude/hooks/$h"
   check_false "kiro hook $h removed (all)"   test -f "$FAKE_HOME/.kiro/hooks/$h"
+  check_false "codex hook $h removed (all)"  test -f "$FAKE_HOME/.codex/hooks/$h"
 done
 
 for f in "${CURSOR_FILES[@]}"; do
@@ -283,23 +343,22 @@ check_true  "CLAUDE.md restored to user content"  diff <(printf 'MY OWN RULES\n'
 
 echo ""
 echo "uninstall codex — keeps user-authored AGENTS.md, strips only skill sections"
-printf 'MY AGENTS\n' > "$FAKE_HOME/AGENTS.md"
+mkdir -p "$FAKE_HOME/.codex"
+printf 'MY AGENTS\n' > "$FAKE_HOME/.codex/AGENTS.md"
 run_install codex
-check_true  "skills appended to user AGENTS.md"   grep -qF '<!-- agentguard:skill:' "$FAKE_HOME/AGENTS.md"
+check_true  "skills appended to user AGENTS.md"   grep -qF '<!-- agentguard:skill:' "$FAKE_HOME/.codex/AGENTS.md"
 run_uninstall codex
-check_true  "user AGENTS.md kept"                 test -f "$FAKE_HOME/AGENTS.md"
-check_true  "custom line present"                 grep -qxF 'MY AGENTS' "$FAKE_HOME/AGENTS.md"
-check_false "agentguard skill sections gone"      grep -qF 'agentguard:' "$FAKE_HOME/AGENTS.md"
+check_true  "user AGENTS.md kept"                 test -f "$FAKE_HOME/.codex/AGENTS.md"
+check_true  "custom line present"                 grep -qxF 'MY AGENTS' "$FAKE_HOME/.codex/AGENTS.md"
+check_false "agentguard skill sections gone"      grep -qF 'agentguard:' "$FAKE_HOME/.codex/AGENTS.md"
+check_false "no hooks left under ~/.codex"        compgen -G "$FAKE_HOME/.codex/hooks*"
 
 echo ""
-echo "uninstall codex — keeps ~/AGENTS.md while grok still uses it"
-rm -f "$FAKE_HOME/AGENTS.md"
-run_install grok
+echo "uninstall codex — keeps user-authored ~/AGENTS.md"
+printf 'MY HOME AGENTS\n' > "$FAKE_HOME/AGENTS.md"
 run_install codex
 run_uninstall codex
-check_true  "AGENTS.md kept while grok installed" test -f "$FAKE_HOME/AGENTS.md"
-run_uninstall grok
-check_false "AGENTS.md removed after grok uninstalled too" test -f "$FAKE_HOME/AGENTS.md"
+check_true  "user ~/AGENTS.md kept"               diff <(printf 'MY HOME AGENTS\n') "$FAKE_HOME/AGENTS.md"
 
 # ── results ───────────────────────────────────────────────────────────────────
 

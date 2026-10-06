@@ -15,7 +15,7 @@ Security guardrails and workflow policies for AI coding agents. Blocks dangerous
 | [Kiro](https://kiro.dev/docs/cli/hooks/)                            | Shell hooks + agent config + instruction file       |
 | [Cursor](https://cursor.com)                                        | Project-level hooks + rules/skills (via `.cursor/`) |
 | [Grok](https://x.ai)                                                | Shell hooks (via `~/.grok/hooks/`) + AGENTS.md      |
-| [OpenAI Codex](https://github.com/openai/codex)                     | Instruction file only (no hook support)             |
+| [OpenAI Codex](https://github.com/openai/codex)                     | Shell hooks (via `~/.codex/hooks.json`) + AGENTS.md |
 
 See [docs/configuration.md](docs/configuration.md) for the full list of enforced rules.
 
@@ -198,7 +198,7 @@ agentguard cursor --skills go,aws               # → .cursor/ (hooks + AGENTS.m
 agentguard all --project --skills go,aws --dry-run
 ```
 
-Claude Code loads both `~/.claude/CLAUDE.md` (global) and `.claude/CLAUDE.md` (project) simultaneously — project skills layer on top. Codex checks `AGENTS.md` in CWD first, then `~/AGENTS.md`. Cursor reads only the project-local `AGENTS.md`.
+Claude Code loads both `~/.claude/CLAUDE.md` (global) and `.claude/CLAUDE.md` (project) simultaneously — project skills layer on top. Codex loads `~/.codex/AGENTS.md` (global) plus the project `AGENTS.md`. Cursor reads only the project-local `AGENTS.md`.
 
 **Recommended pattern:** install `core` skills globally (guardrails apply everywhere), add language and cloud skills per project where relevant.
 
@@ -211,7 +211,7 @@ Create `skills/<name>/SKILL.md` with YAML frontmatter (`name`, `tags`, `descript
 - **Kiro** — guardrails only activate when using the `agentguard` agent. Switch to it in Kiro after install.
 - **Cursor** — guardrails are project-local. `agentguard cursor` installs `.cursor/` into the current directory.
 - **Grok** — native hooks via `~/.grok/hooks/agentguard.json` + shared scripts; global rules via `~/AGENTS.md`. Grok also loads Claude/Cursor locations for compatibility.
-- **Codex** — instruction-only; no hooks, no automated enforcement backstop.
+- **Codex** — hooks in `~/.codex/hooks.json` (merged with your own hooks) + shared scripts in `~/.codex/hooks/`; global rules via `~/.codex/AGENTS.md`. Codex runs new hooks only after you trust them: open Codex and run `/hooks`. File edits through `apply_patch` are checked by the self-edit hook only, since the payload holds patch text, not a file path. An agentguard-created `~/AGENTS.md` from older releases is moved to `~/.codex/AGENTS.md` (left in place while Grok is installed).
 - **`block-env.sh`** — best-effort on the bash surface. `block-env-read.sh` is the primary layer (intercepts Read/Write/Edit tools directly).
 - **Protected branches** — install prompts for which branches to protect from direct commit/push (default: `main,master`). Your answer is saved to `~/.agentguard/config` and applies across all agents. Override per-shell with `export AGENTGUARD_PROTECTED_BRANCHES="main,master,develop"`.
 

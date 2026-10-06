@@ -1,8 +1,5 @@
 # Global Rules — Apply to Every Project
 
-> Codex instruction file. Keep in sync with agents/claude/CLAUDE.md.
-> Enforcement is instruction-only — Codex has no shell hooks.
-
 ---
 
 ## 🔒 Secrets & Environment Variables

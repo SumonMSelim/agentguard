@@ -15,7 +15,7 @@
 | `gh auth token` blocked                                      | `block-env.sh`                                                                     |
 | No AI attribution in commits                                 | `attribution` setting (`commit` and `pr` set to `""`)                              |
 | Conventional Commits, no over-engineering                    | Instruction file                                                                   |
-| Every tool call logged                                       | `audit-log.sh` → `~/.claude/audit.log` / `~/.kiro/audit.log` / `.cursor/audit.log` |
+| Every tool call logged                                       | `audit-log.sh` → `~/.claude/audit.log` / `~/.kiro/audit.log` / `~/.codex/audit.log` / `.cursor/audit.log` |
 
 ## Protect additional branches
 
@@ -88,6 +88,7 @@ Create `skills/<name>/SKILL.md` with YAML front-matter (`name`, `tags`, `descrip
 
 - Claude: `~/.claude/audit.log`
 - Kiro: `~/.kiro/audit.log`
+- Codex: `~/.codex/audit.log`
 - Cursor: `.cursor/audit.log` (project-local)
 - Grok: `~/.grok/audit.log` (if using Grok's native hooks dir)
 

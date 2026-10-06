@@ -620,19 +620,102 @@ install_kiro() {
   track_installed_agent "kiro"
 }
 
-install_codex() {
-  # Codex reads AGENTS.md from the working directory or home directory.
-  # Shell hooks are not supported — AGENTS.md is the only enforcement layer.
-  local dest="$HOME"
+# Codex reads global instructions from its home dir (~/.codex unless CODEX_HOME
+# is set) and lifecycle hooks from ~/.codex/hooks.json, which takes
+# Claude-shaped PreToolUse/PostToolUse entries. Hooks are on by default but run
+# only after the user trusts them with /hooks in Codex.
+# Ref: learn.chatgpt.com/docs/hooks, learn.chatgpt.com/docs/agent-configuration/agents-md
+CODEX_DIR="$HOME/.codex"
 
-  section "Installing Codex guardrails → $dest/AGENTS.md"
+# codex_legacy_owned <file> — returns 0 if <file> (a pre-#69 ~/AGENTS.md) was
+# created by agentguard: created marker, current canonical content, or the old
+# canonical content that carried a 3-line Codex header on lines 3-5.
+codex_legacy_owned() {
+  local f="$1" src="$SCRIPT_DIR/agents/codex/AGENTS.md" n
+  grep -qxF "$AGENTGUARD_CREATED_MARKER" "$f" && return 0
+  n=$(wc -l < "$src")
+  diff -q <(head -n "$n" "$f") "$src" >/dev/null 2>&1 && return 0
+  sed -n '3p' "$f" | grep -q '^> Codex instruction file' \
+    && diff -q <(sed '3,5d' "$f" | head -n "$n") "$src" >/dev/null 2>&1
+}
+
+# migrate_codex_legacy_agents_md — older releases installed Codex rules to
+# ~/AGENTS.md, which Codex does not read globally. Move an agentguard-created
+# copy (with its skills) to ~/.codex/AGENTS.md and remove it. Left alone while
+# grok is installed, since grok still reads ~/AGENTS.md.
+migrate_codex_legacy_agents_md() {
+  local legacy="$HOME/AGENTS.md" dest="$CODEX_DIR/AGENTS.md"
+  [[ -f "$legacy" ]] || return 0
+  if is_agent_tracked "grok"; then
+    log "$legacy still used by grok — leaving in place"
+    return 0
+  fi
+  codex_legacy_owned "$legacy" || return 0
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would migrate $legacy → $dest"
+    return 0
+  fi
+  if [[ ! -f "$dest" ]]; then
+    local skills
+    skills=$(skills_in_file "$legacy")
+    mkdir -p "$CODEX_DIR"
+    cp "$SCRIPT_DIR/agents/codex/AGENTS.md" "$dest"
+    echo "$AGENTGUARD_CREATED_MARKER" >> "$dest"
+    # Carry over exactly the skills the legacy file had (append_skills reads SKILLS_ARG).
+    local SKILLS_ARG="${skills:-none}"
+    append_skills "$dest"
+    ok "Migrated $legacy → $dest"
+  fi
+  remove_file "$legacy"
+}
+
+# merge_codex_hooks <dest> — writes our hooks.json entries into <dest>, keeping
+# any user hooks. Our entries are appended per event, skipping commands that
+# are already registered, so re-runs are idempotent.
+merge_codex_hooks() {
+  local dest="$1" src="$SCRIPT_DIR/agents/codex/hooks.json"
+  require jq
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would register hooks → $dest"
+    return
+  fi
+  if [[ ! -f "$dest" ]]; then
+    cp "$src" "$dest"
+    ok "Codex hooks registered → $dest"
+    return
+  fi
+  jq empty "$dest" || fail "$dest is not valid JSON — fix it and re-run. File left unchanged."
+  backup_if_exists "$dest"
+  jq --slurpfile g "$src" '
+    reduce ($g[0].hooks | to_entries[]) as $e (.;
+      .hooks[$e.key] = ((.hooks[$e.key] // []) as $cur
+        | [$cur[].hooks[]?.command] as $have
+        | $cur + ($e.value
+            | map(.hooks |= map(select(.command as $c | $have | index($c) | not)))
+            | map(select(.hooks | length > 0)))))
+  ' "$dest" > "${dest}.tmp.$$" || { rm -f "${dest}.tmp.$$"; fail "hooks.json merge failed — $dest left unchanged."; }
+  mv "${dest}.tmp.$$" "$dest"
+  ok "Codex hooks merged → $dest"
+}
+
+install_codex() {
+  local dest="$CODEX_DIR"
+
+  section "Installing Codex guardrails → $dest"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
+
+  migrate_codex_legacy_agents_md
+
+  install_hooks "$dest/hooks"
+  merge_codex_hooks "$dest/hooks.json"
 
   # Only write AGENTS.md if it doesn't already exist — same rationale as CLAUDE.md above.
   if [[ ! -f "$dest/AGENTS.md" ]]; then
     if [[ "$DRY_RUN" -eq 1 ]]; then
       dry "Would copy AGENTS.md → $dest/AGENTS.md"
     else
+      mkdir -p "$dest"
       cp "$SCRIPT_DIR/agents/codex/AGENTS.md" "$dest/AGENTS.md"
       echo "$AGENTGUARD_CREATED_MARKER" >> "$dest/AGENTS.md"
       ok "AGENTS.md installed"
@@ -646,7 +729,7 @@ install_codex() {
     fi
     append_skills "$dest/AGENTS.md"
   fi
-  log "Note: Codex does not support shell hooks — instruction file only."
+  log "Note: Codex runs new hooks only after you trust them. Open Codex and run /hooks to review them."
   track_installed_agent "codex"
 }
 
@@ -869,11 +952,19 @@ is_agent_tracked() {
 installed_skills() {
   local f
   case "$1" in
-    claude)     f="$HOME/.claude/CLAUDE.md" ;;
-    kiro)       f="$HOME/.kiro/KIRO.md" ;;
-    codex|grok) f="$HOME/AGENTS.md" ;;
-    *)          return 0 ;;
+    claude) f="$HOME/.claude/CLAUDE.md" ;;
+    kiro)   f="$HOME/.kiro/KIRO.md" ;;
+    # Fall back to the pre-#69 location so an upgrade keeps the skills it migrates.
+    codex)  f="$HOME/.codex/AGENTS.md"; [[ -f "$f" ]] || f="$HOME/AGENTS.md" ;;
+    grok)   f="$HOME/AGENTS.md" ;;
+    *)      return 0 ;;
   esac
+  skills_in_file "$f"
+}
+
+# skills_in_file <file> — prints the comma-separated agentguard skill names in <file>.
+skills_in_file() {
+  local f="$1"
   [[ -f "$f" ]] || return 0
   { grep -oE '^<!-- agentguard:skill:[^ ]+ -->$' "$f" || true; } \
     | sed -E 's/^<!-- agentguard:skill:([^ ]+) -->$/\1/' \
@@ -1309,19 +1400,62 @@ uninstall_kiro() {
   untrack_installed_agent "kiro"
 }
 
-uninstall_codex() {
-  local dest="$HOME"
+# unmerge_codex_hooks <file> — strips our entries from hooks.json; removes the
+# file if nothing of the user is left in it.
+unmerge_codex_hooks() {
+  local f="$1" src="$SCRIPT_DIR/agents/codex/hooks.json"
+  if [[ ! -f "$f" ]]; then
+    log "$(basename "$f") not found (already removed?)"
+    return
+  fi
+  local stripped
+  stripped=$(jq --slurpfile g "$src" '
+    [$g[0].hooks[][].hooks[].command] as $ours
+    | .hooks |= ((. // {})
+        | with_entries(.value |= (map(.hooks |= map(select(.command as $c | $ours | index($c) | not)))
+                                  | map(select(.hooks | length > 0))))
+        | with_entries(select(.value | length > 0)))
+    | if .hooks == {} then del(.hooks) else . end
+  ' "$f") || { warn "$f is not valid JSON — leaving in place"; return; }
+  # Only our entries were in it: nothing of the user's to back up.
+  if [[ "$stripped" == "{}" ]]; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would remove $f"
+    else
+      rm "$f"
+      ok "Removed $f"
+    fi
+    return
+  fi
+  backup_if_exists "$f"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would strip agentguard hooks from $f"
+  else
+    echo "$stripped" > "$f"
+    ok "agentguard hooks stripped from $f (user hooks kept)"
+  fi
+}
 
-  section "Uninstalling Codex guardrails from $dest/AGENTS.md"
+uninstall_codex() {
+  local dest="$CODEX_DIR"
+
+  section "Uninstalling Codex guardrails from $dest"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be changed)"
 
-  # ~/AGENTS.md is shared with grok — leave it while grok still uses it.
-  if is_agent_tracked "grok"; then
-    log "AGENTS.md still used by grok — leaving in place"
-  else
-    remove_instruction_file "$dest/AGENTS.md" "$SCRIPT_DIR/agents/codex/AGENTS.md"
+  remove_hooks "$dest/hooks"
+  unmerge_codex_hooks "$dest/hooks.json"
+  remove_instruction_file "$dest/AGENTS.md" "$SCRIPT_DIR/agents/codex/AGENTS.md"
+
+  # Pre-#69 installs wrote ~/AGENTS.md. Clean it up unless grok still uses it.
+  if [[ -f "$HOME/AGENTS.md" ]] && ! is_agent_tracked "grok"; then
+    if codex_legacy_owned "$HOME/AGENTS.md"; then
+      remove_file "$HOME/AGENTS.md"
+    else
+      remove_instruction_file "$HOME/AGENTS.md" "$SCRIPT_DIR/agents/codex/AGENTS.md"
+    fi
   fi
-  log "Note: no hooks to remove — Codex is instruction-file only."
+
+  [[ "$DRY_RUN" -eq 0 ]] && { rmdir "$dest/hooks" 2>/dev/null || true; }
   untrack_installed_agent "codex"
 }
 
@@ -1540,9 +1674,26 @@ check_kiro() {
 }
 
 check_codex() {
-  local dest="$HOME"
+  local dest="$CODEX_DIR"
   section "Checking Codex installation → $dest"
   check_file "$dest/AGENTS.md" "AGENTS.md"
+  for hook in "${AGENTGUARD_HOOKS[@]}"; do
+    check_exec "$dest/hooks/$hook" "$hook"
+  done
+  check_file "$dest/hooks.json" "hooks.json"
+  if [[ -f "$dest/hooks.json" ]]; then
+    local missing
+    missing=$(jq -r --slurpfile g "$SCRIPT_DIR/agents/codex/hooks.json" '
+      [.hooks // {} | .[][]?.hooks[]?.command] as $have
+      | [$g[0].hooks[][].hooks[].command] - $have | unique | .[]
+    ' "$dest/hooks.json" 2>/dev/null) || missing="(hooks.json is not valid JSON)"
+    if [[ -z "$missing" ]]; then
+      _check_ok "hooks.json: all hook commands registered"
+    else
+      _check_fail "hooks.json: hook command(s) missing"
+      printf '      missing: %s\n' "$missing"
+    fi
+  fi
   echo ""
 }
 
@@ -1871,10 +2022,9 @@ case "$AGENT" in
   *) fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | grok | all" ;;
 esac
 
-# codex is instruction-only (no hooks), so protected-branch config is irrelevant.
 # do_upgrade re-execs child installs with AGENTGUARD_UPGRADE=1, which makes
 # prompt_protected_branches keep the saved value instead of prompting.
-[[ "$AGENT" != "codex" && "$UPGRADE" -eq 0 ]] && prompt_protected_branches
+[[ "$UPGRADE" -eq 0 ]] && prompt_protected_branches
 
 case "$AGENT" in
   claude) install_claude ;;
