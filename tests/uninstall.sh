@@ -115,7 +115,10 @@ jq_false "block-main-branch.sh removed from PreToolUse" '[.hooks.PreToolUse[]?.h
 jq_false "audit-log.sh removed from PostToolUse"        '[.hooks.PostToolUse[]?.hooks[]?.command | test("audit-log.sh")]            | any' "$S"
 jq_false "deny force-push rules removed"                '(.permissions.deny // []) | map(test("force")) | any'                 "$S"
 jq_false "ask git commit removed"                       '(.permissions.ask  // []) | map(test("git commit")) | any'                 "$S"
-jq_false "includeCoAuthoredBy removed"                  'has("includeCoAuthoredBy")'                                                "$S"
+jq_false "attribution removed"                          'has("attribution")'                                                        "$S"
+jq_false "includeGitInstructions removed"               'has("includeGitInstructions")'                                             "$S"
+jq_false "block-env-read.sh removed from PreToolUse"    '[.hooks.PreToolUse[]?.hooks[]?.command | test("block-env-read.sh")]        | any' "$S"
+jq_false "includeCoAuthoredBy removed"                'has("includeCoAuthoredBy")'                                                "$S"
 jq_false "gitAttribution removed"                       'has("gitAttribution")'                                                     "$S"
 jq_false "disableGitWorkflow removed"                   'has("disableGitWorkflow")'                                                 "$S"
 

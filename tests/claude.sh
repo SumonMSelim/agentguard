@@ -135,6 +135,11 @@ run_hook_tests() {
   check "blocks Read credentials"      block '{"tool_input":{"path":"/home/user/.aws/credentials"}}'         block-env-read.sh
   check "blocks Edit .env (file_path)" block '{"tool_input":{"file_path":"/project/.env"}}'                  block-env-read.sh
   check "allows Read normal file"      allow '{"tool_input":{"path":"/project/src/index.js"}}'               block-env-read.sh
+  check "blocks Grep on nested .env"   block '{"tool_name":"Grep","tool_input":{"pattern":".","path":"apps/api/.env"}}' block-env-read.sh
+  check "blocks Grep glob .env"        block '{"tool_name":"Grep","tool_input":{"pattern":".","path":"apps/api","glob":".env"}}' block-env-read.sh
+  check "allows Grep pattern 'credentials'" allow '{"tool_name":"Grep","tool_input":{"pattern":"credentials","path":"src"}}' block-env-read.sh
+  check "blocks Glob pattern **/.env"  block '{"tool_name":"Glob","tool_input":{"pattern":"**/.env"}}'       block-env-read.sh
+  check "blocks NotebookEdit secrets/" block '{"tool_name":"NotebookEdit","tool_input":{"notebook_path":"secrets/x.ipynb"}}' block-env-read.sh
 
   echo ""
   echo "block-main-branch.sh"
@@ -615,9 +620,10 @@ run_install_check() {
   jq_check "block-destructive-ops.sh in PreToolUse" '[.hooks.PreToolUse[].hooks[].command | test("block-destructive-ops.sh")] | any' "$S"
   jq_check "block-env-read.sh in PreToolUse"        '[.hooks.PreToolUse[].hooks[].command | test("block-env-read.sh")]        | any' "$S"
   jq_check "audit-log.sh in PostToolUse"            '[.hooks.PostToolUse[].hooks[].command | test("audit-log.sh")]            | any' "$S"
-  jq_check "includeCoAuthoredBy false"              '.includeCoAuthoredBy == false'                                                  "$S"
-  jq_check "gitAttribution false"                   '.gitAttribution == false'                                                       "$S"
-  jq_check "disableGitWorkflow true"                '.disableGitWorkflow == true'                                                     "$S"
+  jq_check "attribution hidden"                     '.attribution == {commit: "", pr: ""}'                                           "$S"
+  jq_check "includeGitInstructions false"           '.includeGitInstructions == false'                                               "$S"
+  jq_check "legacy attribution keys absent"         '[has("includeCoAuthoredBy", "gitAttribution", "disableGitWorkflow")] | any | not' "$S"
+  jq_check "allow list has no broad rules"          '.permissions.allow | map(IN("Read(**)", "Bash(ssh *)", "Bash(find *)", "Bash(docker *)", "Bash(cat *)", "Bash(curl *)")) | any | not' "$S"
   jq_check "deny list has force-push rules"         '.permissions.deny | map(test("force")) | any'                                   "$S"
   jq_check "ask list has git commit"                '.permissions.ask  | map(test("git commit")) | any'                              "$S"
 
@@ -674,6 +680,48 @@ run_merge_tests() {
   jq_check "stale Write() rule pruned"   '.permissions.deny | index("Write(~/.agentguard/**)") == null' "$merged"
   jq_check "Edit() rule still present"   '.permissions.deny | index("Edit(~/.agentguard/**)") != null'  "$merged"
   jq_check "unrelated user deny kept"    '.permissions.deny | index("/tmp/keep-me") != null'             "$merged"
+
+  # #66/#67/#79: simulate an older install with broad allow rules, per-tool
+  # block-env-read matchers and the legacy attribution keys.
+  jq -n '{
+    includeCoAuthoredBy: false, gitAttribution: false, disableGitWorkflow: true,
+    permissions: {
+      allow: ["Read(**)", "Bash(ssh *)", "Bash(find *)", "Bash(docker *)", "Bash(cat *)", "Bash(curl *)", "MyRule"],
+      deny:  ["Read(./.env)", "Read(./.env.*)"]
+    },
+    hooks: {PreToolUse: [
+      {matcher: "Read",      hooks: [{type: "command", command: "bash ~/.claude/hooks/block-env-read.sh"}]},
+      {matcher: "Write",     hooks: [{type: "command", command: "bash ~/.claude/hooks/block-env-read.sh"}]},
+      {matcher: "Edit",      hooks: [{type: "command", command: "bash ~/.claude/hooks/block-env-read.sh"},
+                                     {type: "command", command: "user-edit.sh"}]},
+      {matcher: "MultiEdit", hooks: [{type: "command", command: "bash ~/.claude/hooks/block-env-read.sh"}]}
+    ]}
+  }' > "$existing"
+  (DRY_RUN=0 merge_settings "$existing" "$SCRIPT_DIR/agents/claude/settings.json" "$merged") >/dev/null 2>&1
+  jq_check "stale allow rules pruned" \
+    '.permissions.allow | map(IN("Read(**)", "Bash(ssh *)", "Bash(find *)", "Bash(docker *)", "Bash(cat *)", "Bash(curl *)")) | any | not' "$merged"
+  jq_check "user allow rule kept"        '.permissions.allow | index("MyRule") != null'                  "$merged"
+  jq_check "cwd-only .env deny replaced" \
+    '(.permissions.deny | index("Read(./.env)") == null) and (.permissions.deny | index("Read(//**/.env)") != null)' "$merged"
+  jq_check "new env-read matcher present once" \
+    '[.hooks.PreToolUse[] | select(.matcher == "Read|Write|Edit|Grep|Glob|NotebookEdit")] | length == 1' "$merged"
+  jq_check "old agentguard-only matcher blocks dropped" \
+    '[.hooks.PreToolUse[].matcher] | map(IN("Read", "Write", "MultiEdit")) | any | not' "$merged"
+  jq_check "old matcher with user hook keeps only user hook" \
+    '[.hooks.PreToolUse[] | select(.matcher == "Edit") | .hooks[].command] == ["user-edit.sh"]' "$merged"
+  jq_check "attribution and includeGitInstructions set" \
+    '.attribution == {commit: "", pr: ""} and .includeGitInstructions == false' "$merged"
+  jq_check "legacy attribution keys removed" \
+    '[has("includeCoAuthoredBy", "gitAttribution", "disableGitWorkflow")] | any | not' "$merged"
+
+  # Legacy keys the user set to other values are theirs: keep them.
+  jq -n '{includeCoAuthoredBy: true}' > "$existing"
+  (DRY_RUN=0 merge_settings "$existing" "$SCRIPT_DIR/agents/claude/settings.json" "$merged") >/dev/null 2>&1
+  jq_check "user-valued legacy key kept"  '.includeCoAuthoredBy == true'                                  "$merged"
+
+  jq_check "shipped allow list has no broad rules" \
+    '.permissions.allow | map(IN("Read(**)", "Bash(ssh *)", "Bash(find *)", "Bash(docker *)", "Bash(cat *)", "Bash(curl *)")) | any | not' \
+    "$SCRIPT_DIR/agents/claude/settings.json"
 
   # #58: a matcher-less PreToolUse block (valid in Claude Code) must survive an
   # in-place install unchanged instead of crashing jq and truncating the file.

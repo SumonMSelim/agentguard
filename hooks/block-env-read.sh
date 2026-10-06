@@ -2,7 +2,7 @@
 # hooks/block-env-read.sh
 #
 # Blocks Read, Write, Edit, fs_read, and fs_write tools on sensitive file paths.
-# Shared hook — used by both Claude (Read/Write/Edit) and Kiro (fs_read/fs_write).
+# Shared hook — used by both Claude (Read/Write/Edit/Grep/Glob/NotebookEdit) and Kiro (fs_read/fs_write).
 #
 # Covers: .env files, direnv (.envrc), private key files, credential stores.
 #
@@ -12,7 +12,8 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_check-disabled.sh"
 
 INPUT=$(cat)
-# Claude:  .tool_input.path (Read/Write), .tool_input.file_path (Edit), .tool_input.file_path (MultiEdit)
+# Claude:  .tool_input.file_path (Read/Write/Edit), .tool_input.path (Grep/Glob),
+#          .tool_input.notebook_path (NotebookEdit), .tool_input.pattern (Glob), .tool_input.glob (Grep)
 # Kiro:    .tool_input.path (fs_write),   .tool_input.operations[].path (fs_read)
 # Grok:    .toolInput.path / .toolInput.target_file (read_file), .toolInput.file_path (search_replace)
 # Collect all candidate paths; trim whitespace via sed (xargs would split paths with spaces).
@@ -20,6 +21,9 @@ PATHS=$(echo "$INPUT" | jq -r '
   (.file_path // ""),
   (.tool_input.file_path // ""),
   (.tool_input.path // ""),
+  (.tool_input.notebook_path // ""),
+  (if .tool_name == "Glob" then .tool_input.pattern // "" else "" end),
+  (if .tool_name == "Grep" then .tool_input.glob // "" else "" end),
   (.toolInput.file_path // ""),
   (.toolInput.path // ""),
   (.toolInput.target_file // ""),

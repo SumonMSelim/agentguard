@@ -13,7 +13,7 @@
 | `rm /`, `rm ~`, `rm $HOME` blocked                           | `block-destructive-ops.sh`                                                         |
 | Pipe-to-shell blocked (`curl \| bash`, `wget \| sh`)         | `block-destructive-ops.sh`                                                         |
 | `gh auth token` blocked                                      | `block-env.sh`                                                                     |
-| No AI attribution in commits                                 | `gitAttribution` / `includeCoAuthoredBy` settings                                  |
+| No AI attribution in commits                                 | `attribution` setting (`commit` and `pr` set to `""`)                              |
 | Conventional Commits, no over-engineering                    | Instruction file                                                                   |
 | Every tool call logged                                       | `audit-log.sh` → `~/.claude/audit.log` / `~/.kiro/audit.log` / `.cursor/audit.log` |
 
@@ -35,7 +35,7 @@ When an existing `~/.claude/settings.json` is found, the installer merges rather
 |---------------------------------------------------------------|----------------------------------------------------------|
 | `permissions.allow/ask/deny`                                  | Union of your entries + agentguard entries, deduplicated |
 | `hooks.PreToolUse/PostToolUse`                                | Merged by matcher; your existing hooks preserved         |
-| `includeCoAuthoredBy`, `gitAttribution`, `disableGitWorkflow` | agentguard always wins — security-critical               |
+| `attribution`, `includeGitInstructions`                       | agentguard always wins — security-critical               |
 | Everything else (`model`, `apiKey`, `env`, etc.)              | Your values preserved untouched                          |
 
 ## defaultMode

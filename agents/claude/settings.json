@@ -5,17 +5,11 @@
       "Glob",
       "Grep",
       "LS",
-      "Read(**)",
-      "Bash(ssh *)",
       "Bash(grep *)",
-      "Bash(find *)",
       "Bash(ls *)",
-      "Bash(docker *)",
-      "Bash(cat *)",
       "Bash(echo *)",
       "Bash(which *)",
       "Bash(hostname *)",
-      "Bash(curl *)",
       "WebFetch",
       "WebSearch"
     ],
@@ -31,8 +25,8 @@
       "Bash(git stash clear*)"
     ],
     "deny": [
-      "Read(./.env)",
-      "Read(./.env.*)",
+      "Read(//**/.env)",
+      "Read(//**/.env.*)",
       "Read(./.env.local)",
       "Read(./.env.production)",
       "Read(./.env.staging)",
@@ -67,9 +61,11 @@
       "Edit(~/.agentguard/**)"
     ]
   },
-  "includeCoAuthoredBy": false,
-  "gitAttribution": false,
-  "disableGitWorkflow": true,
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "includeGitInstructions": false,
   "hooks": {
     "PreToolUse": [
       {
@@ -98,34 +94,7 @@
         ]
       },
       {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude/hooks/block-env-read.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude/hooks/block-env-read.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude/hooks/block-env-read.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "MultiEdit",
+        "matcher": "Read|Write|Edit|Grep|Glob|NotebookEdit",
         "hooks": [
           {
             "type": "command",
