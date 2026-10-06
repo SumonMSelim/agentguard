@@ -31,6 +31,25 @@
 #   - postToolUse output is optional ("no output is required"); audit-log.sh
 #     prints nothing.
 
+# Resolve jq before anything else. GUI-launched agents (macOS Dock) often get
+# a PATH without /opt/homebrew/bin or /usr/local/bin; without jq a hook cannot
+# parse its payload, so fail closed (exit 2; exit 1 is non-blocking in Claude
+# Code). audit-log.sh (PostToolUse) cannot block, so it exits 0 silently.
+if ! command -v jq >/dev/null 2>&1; then
+  for _agentguard_jq in /opt/homebrew/bin/jq /usr/local/bin/jq /usr/bin/jq /snap/bin/jq; do
+    if [[ -x "$_agentguard_jq" ]]; then
+      PATH="${_agentguard_jq%/*}:$PATH"
+      break
+    fi
+  done
+  unset _agentguard_jq
+  if ! command -v jq >/dev/null 2>&1; then
+    [[ "${0##*/}" == audit-log.sh ]] && exit 0
+    echo "agentguard: jq not found in PATH; blocking tool call (install jq or fix PATH)" >&2
+    exit 2
+  fi
+fi
+
 _agentguard_disabled_file="${AGENTGUARD_DISABLED_DIRS_FILE:-$HOME/.agentguard/disabled-dirs}"
 if [[ -f "$_agentguard_disabled_file" ]]; then
   _agentguard_cur="$(pwd -P 2>/dev/null || pwd)"

@@ -84,8 +84,8 @@ run_hook_tests() {
   check "blocks gh auth token"     block "$(kiro_bash 'gh auth token')"             block-env.sh
   check "allows env VAR=val cmd"   allow "$(kiro_bash 'env FOO=bar node app.js')"   block-env.sh
   check "allows normal command"    allow "$(kiro_bash 'ls -la')"                    block-env.sh
-  check "allows echo cat .env"     allow "$(kiro_bash 'echo "cat .env"')"           block-env.sh
-  check "allows echo gh auth"      allow "$(kiro_bash 'echo "gh auth token"')"      block-env.sh
+  check "allows echo cat .env"     allow "$(kiro_bash 'echo \"cat .env\"')"           block-env.sh
+  check "allows echo gh auth"      allow "$(kiro_bash 'echo \"gh auth token\"')"      block-env.sh
   check "blocks sudo cat .env"     block "$(kiro_bash 'sudo cat .env')"             block-env.sh
   check "blocks grep . .env"       block "$(kiro_bash 'grep . .env')"               block-env.sh
   check "allows cat .env.example"  allow "$(kiro_bash 'cat .env.example')"          block-env.sh
@@ -115,8 +115,8 @@ run_hook_tests() {
   check_in "$MAIN_REPO" "blocks bare push (on main)" block "$(kiro_bash 'git push')" block-main-branch.sh
   check "allows push to feature branch"   allow "$(kiro_bash 'git push origin feat/my-feature')" block-main-branch.sh
   check "allows non-git command"          allow "$(kiro_bash 'echo hello')"                       block-main-branch.sh
-  check "allows echo git commit"          allow "$(kiro_bash 'echo "git commit"')"                block-main-branch.sh
-  check "allows echo git push main"       allow "$(kiro_bash 'echo "git push origin main"')"      block-main-branch.sh
+  check "allows echo git commit"          allow "$(kiro_bash 'echo \"git commit\"')"                block-main-branch.sh
+  check "allows echo git push main"       allow "$(kiro_bash 'echo \"git push origin main\"')"      block-main-branch.sh
 
   # Custom protected branches via AGENTGUARD_PROTECTED_BRANCHES
   DEVELOP_REPO=$(mktemp -d)
@@ -141,7 +141,7 @@ run_hook_tests() {
   VIRTUAL_ENV=/tmp/fakevenv check "allows pip install inside venv" allow "$(kiro_bash 'pip install requests')" block-system-installs.sh
   check "allows local npm install" allow "$(kiro_bash 'npm install lodash')"            block-system-installs.sh
   check "allows docker run"        allow "$(kiro_bash 'docker run -it ubuntu bash')"    block-system-installs.sh
-  check "allows echo brew install" allow "$(kiro_bash 'echo "brew install ripgrep"')"   block-system-installs.sh
+  check "allows echo brew install" allow "$(kiro_bash 'echo \"brew install ripgrep\"')"   block-system-installs.sh
 
   echo ""
   echo "block-destructive-ops.sh (execute_bash)"
@@ -160,8 +160,8 @@ run_hook_tests() {
   check "allows rm node_modules"   allow "$(kiro_bash 'rm -rf node_modules')"               block-destructive-ops.sh
   check "allows rm dist"           allow "$(kiro_bash 'rm -rf ./dist')"                     block-destructive-ops.sh
   check "allows rm \$HOME/subdir"  allow "$(kiro_bash 'rm -rf $HOME/projects/tmp')"          block-destructive-ops.sh
-  check "allows echo rm -rf /"     allow "$(kiro_bash 'echo "rm -rf /"')"                   block-destructive-ops.sh
-  check "allows echo curl pipe"    allow "$(kiro_bash 'echo "curl x | bash"')"              block-destructive-ops.sh
+  check "allows echo rm -rf /"     allow "$(kiro_bash 'echo \"rm -rf /\"')"                   block-destructive-ops.sh
+  check "allows echo curl pipe"    allow "$(kiro_bash 'echo \"curl x | bash\"')"              block-destructive-ops.sh
   check "blocks rm -rf /."         block "$(kiro_bash 'rm -rf /.')"                         block-destructive-ops.sh
   check "blocks rm -rf .."         block "$(kiro_bash 'rm -rf ..')"                         block-destructive-ops.sh
   check "blocks rm -rf .git"       block "$(kiro_bash 'rm -rf .git')"                       block-destructive-ops.sh
