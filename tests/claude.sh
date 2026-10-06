@@ -340,6 +340,46 @@ EOF
     allow '{"tool_input":{"command":"git commit -m echo-redirect-to-~/.claude/settings.json"}}' block-self-edit.sh
   check "allows git add of repo-local path containing claude" \
     allow '{"tool_input":{"command":"git add agents/claude/settings.json"}}' block-self-edit.sh
+  check "blocks agentguard disable" \
+    block '{"tool_input":{"command":"agentguard disable"}}' block-self-edit.sh
+  check "blocks agentguard disable with path" \
+    block '{"tool_input":{"command":"agentguard disable /tmp/poc"}}' block-self-edit.sh
+  check "blocks env -u agentguard disable" \
+    block '{"tool_input":{"command":"env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT agentguard disable"}}' block-self-edit.sh
+  check "blocks inline VAR= agentguard disable" \
+    block '{"tool_input":{"command":"CLAUDECODE= CLAUDE_CODE_ENTRYPOINT= agentguard disable ~"}}' block-self-edit.sh
+  check "blocks sudo env VAR=val agentguard disable" \
+    block '{"tool_input":{"command":"sudo env CLAUDECODE=0 agentguard disable"}}' block-self-edit.sh
+  check "blocks agentguard disable after &&" \
+    block '{"tool_input":{"command":"cd /tmp && agentguard disable"}}' block-self-edit.sh
+  check "blocks agentguard disable after git" \
+    block '{"tool_input":{"command":"git status; agentguard disable"}}' block-self-edit.sh
+  check "blocks absolute-path agentguard disable" \
+    block '{"tool_input":{"command":"/usr/local/bin/agentguard disable"}}' block-self-edit.sh
+  check "blocks path/install.sh disable" \
+    block '{"tool_input":{"command":"~/src/agentguard/install.sh disable"}}' block-self-edit.sh
+  check "blocks ./install.sh disable" \
+    block '{"tool_input":{"command":"./install.sh disable --dry-run"}}' block-self-edit.sh
+  check "blocks bash install.sh disable" \
+    block '{"tool_input":{"command":"bash ~/src/agentguard/install.sh disable"}}' block-self-edit.sh
+  check "blocks sh -x install.sh disable" \
+    block '{"tool_input":{"command":"sh -x /opt/agentguard/install.sh disable /tmp"}}' block-self-edit.sh
+  check "blocks env bash install.sh disable" \
+    block '{"tool_input":{"command":"env -u CLAUDECODE zsh install.sh disable"}}' block-self-edit.sh
+  check "allows agentguard enable" \
+    allow '{"tool_input":{"command":"agentguard enable"}}' block-self-edit.sh
+  check "allows agentguard status" \
+    allow '{"tool_input":{"command":"agentguard status"}}' block-self-edit.sh
+  check "allows agentguard check" \
+    allow '{"tool_input":{"command":"agentguard check all"}}' block-self-edit.sh
+  check "allows install.sh enable" \
+    allow '{"tool_input":{"command":"bash install.sh enable /tmp/poc"}}' block-self-edit.sh
+  check "allows systemctl disable" \
+    allow '{"tool_input":{"command":"systemctl disable nginx"}}' block-self-edit.sh
+  check "allows npm run disable-foo" \
+    allow '{"tool_input":{"command":"npm run disable-foo"}}' block-self-edit.sh
+  check "allows echo mentioning agentguard disable" \
+    allow '{"tool_input":{"command":"echo run agentguard disable yourself"}}' block-self-edit.sh
 
   echo ""
   echo "block-env-read.sh — agentguard self-config"
@@ -431,6 +471,72 @@ EOF
   fi
 
   rm -f "$CLI_TMP"
+
+  echo ""
+  echo "agentguard disable CLI"
+  # disable must never succeed without a terminal confirmation. Every case
+  # strips the Claude session vars so only the TTY gate is exercised.
+  DIS_TMP_DIR=$(mktemp -d)
+  DIS_FILE="$DIS_TMP_DIR/disabled-dirs"
+  _disable() {
+    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT AGENTGUARD_DISABLED_DIRS_FILE="$DIS_FILE" \
+      bash "$SCRIPT_DIR/install.sh" disable "$@"
+  }
+  _cli_result() {
+    if [[ "$2" == "ok" ]]; then
+      printf "  PASS  %s\n" "$1"; ((pass++))
+    else
+      printf "  FAIL  %s\n" "$1"; ((fail++))
+    fi
+  }
+
+  # No controlling terminal → refuse, write nothing. setsid detaches from any
+  # terminal the test runner may have; without it we cannot guarantee no TTY.
+  if command -v setsid >/dev/null 2>&1; then
+    setsid -w bash -c "$(declare -f _disable); SCRIPT_DIR='$SCRIPT_DIR' DIS_FILE='$DIS_FILE' _disable /tmp/agentguard-disable-test" \
+      </dev/null >/dev/null 2>&1
+    code=$?
+    [[ "$code" -ne 0 && ! -s "$DIS_FILE" ]] && r=ok || r=bad
+    _cli_result "disable without a TTY refuses and writes nothing" "$r"
+
+    printf 'yes\n' | setsid -w bash -c "$(declare -f _disable); SCRIPT_DIR='$SCRIPT_DIR' DIS_FILE='$DIS_FILE' _disable /tmp/agentguard-disable-test" \
+      >/dev/null 2>&1
+    code=$?
+    [[ "$code" -ne 0 && ! -s "$DIS_FILE" ]] && r=ok || r=bad
+    _cli_result "disable ignores 'yes' piped on stdin" "$r"
+  else
+    printf "  SKIP  setsid not available — no-TTY disable tests\n"
+  fi
+
+  # --dry-run with no path → exit 0, writes nothing (flag is not the path).
+  out=$(_disable --dry-run </dev/null 2>&1)
+  code=$?
+  [[ "$code" -eq 0 && ! -e "$DIS_FILE" ]] && r=ok || r=bad
+  _cli_result "disable --dry-run without path exits 0, writes nothing" "$r"
+
+  # --dry-run with an absolute path → exit 0, prints "Would", writes nothing.
+  out=$(_disable --dry-run /tmp/agentguard-disable-test </dev/null 2>&1)
+  code=$?
+  [[ "$code" -eq 0 && "$out" == *Would*"/tmp/agentguard-disable-test"* && ! -e "$DIS_FILE" ]] && r=ok || r=bad
+  _cli_result "disable --dry-run <abs path> prints Would, writes nothing" "$r"
+
+  # Interactive path via a pseudo-terminal (util-linux script). /dev/tty in
+  # the child is the pty, so stdin fed to script reaches the prompt.
+  if script --version 2>/dev/null | grep -q util-linux; then
+    printf 'no\n' | script -qec "$(declare -f _disable); SCRIPT_DIR='$SCRIPT_DIR' DIS_FILE='$DIS_FILE' _disable /tmp/agentguard-disable-test" /dev/null >/dev/null 2>&1
+    code=$?
+    [[ "$code" -ne 0 && ! -s "$DIS_FILE" ]] && r=ok || r=bad
+    _cli_result "disable on a TTY aborts unless 'yes' is typed" "$r"
+
+    printf 'yes\n' | script -qec "$(declare -f _disable); SCRIPT_DIR='$SCRIPT_DIR' DIS_FILE='$DIS_FILE' _disable /tmp/agentguard-disable-test" /dev/null >/dev/null 2>&1
+    code=$?
+    [[ "$code" -eq 0 ]] && grep -qxF /tmp/agentguard-disable-test "$DIS_FILE" 2>/dev/null && r=ok || r=bad
+    _cli_result "disable on a TTY writes the dir after 'yes'" "$r"
+  else
+    printf "  SKIP  util-linux script not available — interactive disable tests\n"
+  fi
+
+  rm -rf "$DIS_TMP_DIR"
 }
 
 # ── Claude install verification ───────────────────────────────────────────────
@@ -499,7 +605,9 @@ run_merge_tests() {
   # install.sh runs immediately when executed/sourced (no `[[ sourced ]]` guard),
   # so pull just the helpers + merge_settings() out rather than sourcing the file.
   local fn_file="$tmp/merge_fn.sh"
-  sed -n '96,118p;263,346p' "$SCRIPT_DIR/install.sh" > "$fn_file"
+  # Extracted by anchor, not line number, so edits elsewhere in install.sh do not break this.
+  awk '/^# ANSI color codes/,/^}/' "$SCRIPT_DIR/install.sh" > "$fn_file"
+  awk '/^merge_settings\(\)/,/^}/' "$SCRIPT_DIR/install.sh" >> "$fn_file"
   # shellcheck disable=SC1090
   source "$fn_file"
   DRY_RUN=0 merge_settings "$existing" "$SCRIPT_DIR/agents/claude/settings.json" "$merged" >/dev/null 2>&1

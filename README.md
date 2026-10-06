@@ -123,7 +123,7 @@ agentguard enable  /path/to/poc
 
 Disabling adds the absolute path to `~/.agentguard/disabled-dirs`. Every hook reads that file on each tool call and short-circuits (no-op) when the active directory matches an entry or sits below one. Other directories keep their guardrails.
 
-**Gated:** `agentguard disable` refuses to run inside a Claude Code session (`CLAUDECODE=1`), and the Claude `Bash(agentguard disable*)` permission is denied. The AI cannot disable itself — only you can, from your own shell. Re-enabling is open.
+**Gated:** `agentguard disable` requires an interactive terminal and asks you to type `yes`, read from `/dev/tty` rather than stdin, so no agent can run it. It also refuses inside a Claude Code session (`CLAUDECODE=1`), and the `block-self-edit` hook blocks `agentguard disable` / `install.sh disable` for every agent. Only you can disable, from your own shell. `agentguard disable --dry-run` previews without asking. Re-enabling is open.
 
 ## Upgrade
 
