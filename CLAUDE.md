@@ -50,7 +50,7 @@ Six shell scripts enforcing rules at tool-call level. Each reads JSON from stdin
 |------|---------------|
 | `block-env.sh` | `cat .env`, `printenv`, `env`, `gh auth token` (bash surface) |
 | `block-env-read.sh` | Read/Write/Edit on `.env*`, `.pem`, `.key`, `credentials`, `~/.aws/`, `~/.ssh/` |
-| `block-main-branch.sh` | `git push` to `main`/`master`, force push, `git commit` on protected branch. Respects `AGENTGUARD_PROTECTED_BRANCHES` env var |
+| `block-main-branch.sh` | `git push` to `main`/`master`, force push (incl. `+refspec`, `--mirror`, `--all`), `git commit`/`merge`/`rebase`/`cherry-pick`/`revert`/`am` on protected branch. Respects `AGENTGUARD_PROTECTED_BRANCHES` env var |
 | `block-system-installs.sh` | `brew`, `apt`, `yum`, `npm -g`, `yarn global`, `pip install` outside virtualenv (checks `$VIRTUAL_ENV`) |
 | `block-destructive-ops.sh` | `rm -rf /`, `rm ~`, pipe-to-shell (`curl \| bash`, `wget \| sh`) |
 | `audit-log.sh` | Logs every tool call (PostToolUse) — writes to `dirname($0)/../audit.log` |
