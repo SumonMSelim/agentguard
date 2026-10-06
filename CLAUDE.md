@@ -16,6 +16,7 @@ agentguard claude                          # Claude Code (global)
 agentguard kiro                            # Kiro (global)
 agentguard grok                            # Grok
 agentguard cursor                          # Cursor (project-local, run from CWD)
+agentguard cursor --user                   # Cursor user-level hooks (~/.cursor, all projects)
 agentguard all                             # All agents
 agentguard claude --dry-run                # Preview without writing
 agentguard claude --skills go,aws          # With specific skill packs
@@ -57,16 +58,16 @@ Six shell scripts enforcing rules at tool-call level. Each reads JSON from stdin
 
 Hooks handle two payload shapes:
 - Claude/Kiro: `{ "tool_input": { "command": "..." } }` (nested)
-- Cursor: `{ "command": "..." }` (flat, top-level)
+- Cursor: `{ "command": "..." }` (flat, top-level) for `beforeShellExecution`/`beforeReadFile`; `preToolUse` and `beforeMCPExecution` carry `tool_name`/`tool_input` and are told apart by `hook_event_name` (`beforeMCPExecution` `tool_input` is a JSON string)
 
-All command-reading hooks use `.command // .tool_input.command` for both.
+All command-reading hooks use `.command // .tool_input.command` for both. User-level Cursor hooks run from `~/.cursor`; `_check-disabled.sh` moves to `$CURSOR_PROJECT_DIR` so branch and disabled-dir checks see the project.
 
 ### Agents (`agents/`)
 Per-agent config installed to agent's home dir:
 - `agents/claude/` → `~/.claude/` (CLAUDE.md + settings.json)
 - `agents/kiro/` → `~/.kiro/` (KIRO.md + agent.json for `agentguard` agent)
 - `agents/codex/` → `~/.codex/` (AGENTS.md + hooks.json merged with any user hooks; hooks/ copied from `hooks/`). A legacy agentguard-created `~/AGENTS.md` is migrated unless grok is installed
-- `agents/cursor/` → `<CWD>/.cursor/` (hooks.json + hooks/ copied from `hooks/`)
+- `agents/cursor/` → `<CWD>/.cursor/`, or `~/.cursor/` with `--user` (hooks.json merged with any user hooks, ours refreshed on re-run; hooks/ copied from `hooks/`). `--user` writes no AGENTS.md and is tracked as `cursor-user` for upgrade
 
 **Instruction file sync rule**: `agents/claude/CLAUDE.md` is canonical source. `agents/kiro/KIRO.md`, `agents/codex/AGENTS.md` and `agents/cursor/AGENTS.md` must be byte-for-byte identical. `tests/check-sync.sh` enforces all four.
 
@@ -97,6 +98,6 @@ Duplication prevented by sentinel comment: `<!-- agentguard:skill:<name> -->`.
 - `block-env-read.sh` is primary `.env` guard (intercepts Read/Write/Edit tools). `block-env.sh` is best-effort on bash surface only.
 - Kiro guardrails only activate under `agentguard` agent — user must switch after install.
 - Codex hooks run only after the user trusts them with `/hooks` in Codex. Codex `apply_patch` payloads carry patch text in `tool_input.command`, not a file path, so `block-env-read.sh` is not registered for it; only `block-self-edit.sh` is.
-- Cursor (and Grok project) installs are project-local (CWD). Run `agentguard cursor` from the target project root (after the CLI wrapper is installed). For the initial bootstrap you may run the `install.sh` script directly.
+- Cursor (and Grok project) installs are project-local (CWD) unless `agentguard cursor --user`. Run `agentguard cursor` from the target project root (after the CLI wrapper is installed). For the initial bootstrap you may run the `install.sh` script directly.
 - Upgrade path: use `agentguard upgrade` (or uninstall then reinstall). Re-running skips existing files.
-- Adding new hook: add to `AGENTGUARD_HOOKS` array in `install.sh` and `CURSOR_AGENTGUARD_FILES` for Cursor uninstall tracking.
+- Adding new hook: add to `AGENTGUARD_HOOKS` array in `install.sh` and `CURSOR_AGENTGUARD_FILES` for Cursor uninstall tracking. Register it in `agents/cursor/hooks.json` with project-relative `.cursor/hooks/` paths (`--user` rewrites them to absolute `~/.cursor/hooks/`).

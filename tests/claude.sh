@@ -560,6 +560,37 @@ EOF
     check_stdout "claude $h allow prints nothing" allow '{"tool_input":{"command":"ls -la"}}' "$h" empty
   done
   check_stdout "claude block-env-read allow prints nothing" allow '{"tool_input":{"file_path":"/w/README.md"}}' block-env-read.sh empty
+  check_stdout "claude PreToolUse event allow prints nothing" allow '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"/w/README.md"}}' block-env-read.sh empty
+
+  # Cursor preToolUse (Write/Delete) and beforeMCPExecution carry tool_input, so
+  # they are detected by hook_event_name and must still print permission JSON.
+  echo ""
+  echo "cursor preToolUse / beforeMCPExecution payloads"
+  local CUR_PRE='"conversation_id":"c1","generation_id":"g1","hook_event_name":"preToolUse","workspace_roots":["/w"],"cwd":"/w","tool_use_id":"t1"'
+  local CUR_MCP='"conversation_id":"c1","generation_id":"g1","hook_event_name":"beforeMCPExecution","workspace_roots":["/w"],"mcp_server_name":"fs","command":"npx -y fs-server"'
+  check_stdout "cursor preToolUse Write README allowed"    allow "{$CUR_PRE,\"tool_name\":\"Write\",\"tool_input\":{\"path\":\"/w/README.md\",\"contents\":\"x\"}}" block-env-read.sh "$ALLOW"
+  check_stdout "cursor preToolUse Write .env denied (path)" block "{$CUR_PRE,\"tool_name\":\"Write\",\"tool_input\":{\"path\":\"/w/.env\"}}" block-env-read.sh "$DENY"
+  check_stdout "cursor preToolUse Write .env denied (file_path)" block "{$CUR_PRE,\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"/w/.env\"}}" block-env-read.sh "$DENY"
+  check_stdout "cursor preToolUse Delete hook script denied" block "{$CUR_PRE,\"tool_name\":\"Delete\",\"tool_input\":{\"path\":\"/Users/u/.cursor/hooks/block-env.sh\"}}" block-env-read.sh "$DENY"
+  check_stdout "cursor preToolUse Write hooks.json denied" block "{$CUR_PRE,\"tool_name\":\"Write\",\"tool_input\":{\"path\":\"/Users/u/.cursor/hooks.json\"}}" block-env-read.sh "$DENY"
+  check_stdout "cursor MCP string params .env denied"      block "{$CUR_MCP,\"tool_name\":\"read_file\",\"tool_input\":\"{\\\"path\\\":\\\"/w/.env\\\"}\"}" block-env-read.sh "$DENY"
+  check_stdout "cursor MCP object params .env denied"      block "{$CUR_MCP,\"tool_name\":\"read_file\",\"tool_input\":{\"path\":\"/w/.env\"}}" block-env-read.sh "$DENY"
+  check_stdout "cursor MCP README allowed"                 allow "{$CUR_MCP,\"tool_name\":\"read_file\",\"tool_input\":\"{\\\"path\\\":\\\"/w/README.md\\\"}\"}" block-env-read.sh "$ALLOW"
+  check_stdout "cursor MCP non-JSON params allowed"        allow "{$CUR_MCP,\"tool_name\":\"x\",\"tool_input\":\"not json\"}" block-env-read.sh "$ALLOW"
+  check_stdout "cursor preToolUse Shell allow JSON (self-edit)" allow "{$CUR_PRE,\"tool_name\":\"Shell\",\"tool_input\":{\"command\":\"ls\"}}" block-self-edit.sh "$ALLOW"
+
+  # User-level hooks run from ~/.cursor; the hook must check the project in
+  # CURSOR_PROJECT_DIR, not ~/.cursor (not a repo, so nothing would be blocked).
+  local CUR_HOME
+  CUR_HOME=$(mktemp -d)
+  mkdir -p "$CUR_HOME/.cursor"
+  HOME="$CUR_HOME" CURSOR_PROJECT_DIR="$MAIN_REPO" \
+    check_in "$CUR_HOME/.cursor" "cursor user-level hook checks CURSOR_PROJECT_DIR branch" \
+    block "{$CUR,\"command\":\"git commit -m x\"}" block-main-branch.sh
+  HOME="$CUR_HOME" \
+    check_in "$CUR_HOME/.cursor" "cursor user-level hook without CURSOR_PROJECT_DIR stays put" \
+    allow "{$CUR,\"command\":\"git commit -m x\"}" block-main-branch.sh
+  rm -rf "$CUR_HOME"
   check_stdout "claude block-env block prints nothing"      block '{"tool_input":{"command":"cat .env"}}'      block-env.sh empty
   check_stdout "grok block-env block prints decision JSON"  block '{"toolName":"run_terminal_command","toolInput":{"command":"cat .env"}}' block-env.sh '.decision == "deny"'
   check_stdout "grok force push prints decision JSON"       block '{"toolName":"run_terminal_command","toolInput":{"command":"git push -f origin feat"}}' block-main-branch.sh '.decision == "deny"'

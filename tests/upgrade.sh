@@ -206,6 +206,10 @@ git clone -q "$UP_ORIGIN" "$UP_CLONE"
 for agent in claude codex kiro grok; do
   (cd "$FAKE_PROJECT" && HOME="$UP_HOME" bash "$UP_CLONE/install.sh" "$agent" </dev/null) >/dev/null 2>&1
 done
+(cd "$FAKE_PROJECT" && HOME="$UP_HOME" bash "$UP_CLONE/install.sh" cursor --user </dev/null) >/dev/null 2>&1
+# Simulate an older user-level hooks.json: a user hook, and no agentguard preToolUse entry.
+jq '.hooks.preToolUse = [{"command":"./hooks/mine.sh"}]' "$UP_HOME/.cursor/hooks.json" > "$UP_HOME/hj.tmp" \
+  && mv "$UP_HOME/hj.tmp" "$UP_HOME/.cursor/hooks.json"
 # A previous install saved a custom value; non-TTY installs reuse it as default.
 sed -i.bak 's/^AGENTGUARD_PROTECTED_BRANCHES=.*/AGENTGUARD_PROTECTED_BRANCHES="main,master,release"/' \
   "$UP_HOME/.agentguard/config" && rm -f "$UP_HOME/.agentguard/config.bak"
@@ -213,7 +217,7 @@ before_tracked=$(tracked_agents "$UP_HOME/.agentguard/config")
 up_out=$(cd "$FAKE_PROJECT" && HOME="$UP_HOME" bash "$UP_CLONE/install.sh" upgrade </dev/null 2>&1) || true
 after_tracked=$(tracked_agents "$UP_HOME/.agentguard/config")
 after_branches=$(protected_branches "$UP_HOME/.agentguard/config")
-if [[ "$before_tracked" == "claude codex kiro grok" && "$after_tracked" == "$before_tracked" ]]; then
+if [[ "$before_tracked" == "claude codex kiro grok cursor-user" &&"$after_tracked" == "$before_tracked" ]]; then
   printf "  PASS  upgrade keeps all tracked agents\n"
   ((pass++))
 else
@@ -239,6 +243,14 @@ if [[ -f "$UP_HOME/.codex/AGENTS.md" && -f "$UP_HOME/.codex/hooks.json" ]]; then
   ((pass++))
 else
   printf "  FAIL  codex AGENTS.md or hooks.json missing under ~/.codex after upgrade\n"
+  ((fail++))
+fi
+if jq -e --arg h "$UP_HOME" '[.hooks.preToolUse[].command] == ["./hooks/mine.sh", ($h + "/.cursor/hooks/block-env-read.sh")]' \
+     "$UP_HOME/.cursor/hooks.json" >/dev/null 2>&1; then
+  printf "  PASS  upgrade refreshes user-level cursor hooks.json, keeps user hook\n"
+  ((pass++))
+else
+  printf "  FAIL  user-level cursor hooks.json not refreshed by upgrade\n"
   ((fail++))
 fi
 rm -rf "$UP_HOME" "$UP_ORIGIN" "$(dirname "$UP_CLONE")"

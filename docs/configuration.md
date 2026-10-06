@@ -89,7 +89,7 @@ Create `skills/<name>/SKILL.md` with YAML front-matter (`name`, `tags`, `descrip
 - Claude: `~/.claude/audit.log`
 - Kiro: `~/.kiro/audit.log`
 - Codex: `~/.codex/audit.log`
-- Cursor: `.cursor/audit.log` (project-local)
+- Cursor: `.cursor/audit.log` (project-local) or `~/.cursor/audit.log` (`--user`)
 - Grok: `~/.grok/audit.log` (if using Grok's native hooks dir)
 
 To keep more history than the built-in rotation, add a `logrotate` config:
