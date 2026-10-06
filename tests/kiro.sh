@@ -86,6 +86,9 @@ run_hook_tests() {
   check "allows normal command"    allow "$(kiro_bash 'ls -la')"                    block-env.sh
   check "allows echo cat .env"     allow "$(kiro_bash 'echo "cat .env"')"           block-env.sh
   check "allows echo gh auth"      allow "$(kiro_bash 'echo "gh auth token"')"      block-env.sh
+  check "blocks sudo cat .env"     block "$(kiro_bash 'sudo cat .env')"             block-env.sh
+  check "blocks grep . .env"       block "$(kiro_bash 'grep . .env')"               block-env.sh
+  check "allows cat .env.example"  allow "$(kiro_bash 'cat .env.example')"          block-env.sh
 
   echo ""
   echo "block-env-read.sh (fs_read / fs_write)"
