@@ -278,6 +278,31 @@ for f in "${CURSOR_FILES[@]}"; do
   check_false "cursor file $f removed" test -f "$FAKE_PROJECT/$f"
 done
 
+# ── CLI wrapper ───────────────────────────────────────────────────────────────
+
+WRAPPER="$FAKE_HOME/.local/bin/agentguard"
+
+echo ""
+echo "CLI wrapper — survives single-agent uninstall (#87)"
+run_install claude
+run_install kiro
+run_uninstall claude
+check_true  "wrapper kept after uninstall claude"  test -x "$WRAPPER"
+run_uninstall kiro
+check_true  "wrapper kept after uninstall kiro"    test -x "$WRAPPER"
+
+echo ""
+echo "CLI wrapper — Homebrew Cellar path rewritten to opt (#87)"
+BREW_PREFIX=$(mktemp -d)
+CELLAR="$BREW_PREFIX/Cellar/agentguard/9.9.9/libexec"
+mkdir -p "$CELLAR"
+cp -R "$SCRIPT_DIR/hooks" "$SCRIPT_DIR/agents" "$SCRIPT_DIR/skills" "$SCRIPT_DIR/install.sh" "$SCRIPT_DIR/VERSION" "$CELLAR/"
+(cd "$FAKE_PROJECT" && HOME="$FAKE_HOME" bash "$CELLAR/install.sh" claude) >/dev/null 2>&1
+check_true  "wrapper points at opt path"   grep -qF "$BREW_PREFIX/opt/agentguard/libexec/install.sh" "$WRAPPER"
+check_false "wrapper has no Cellar path"   grep -qF "/Cellar/" "$WRAPPER"
+(cd "$FAKE_PROJECT" && HOME="$FAKE_HOME" bash "$CELLAR/install.sh" uninstall claude) >/dev/null 2>&1
+rm -rf "$BREW_PREFIX"
+
 # ── all ───────────────────────────────────────────────────────────────────────
 
 echo ""
@@ -285,6 +310,7 @@ echo "uninstall all — removes everything"
 run_install all
 run_uninstall all
 
+check_false "CLI wrapper removed (all)"           test -f "$WRAPPER"
 check_false "CLAUDE.md removed (all)"             test -f "$FAKE_HOME/.claude/CLAUDE.md"
 check_false "KIRO.md removed (all)"               test -f "$FAKE_HOME/.kiro/KIRO.md"
 check_false "agentguard.json removed (all)"       test -f "$FAKE_HOME/.kiro/agents/agentguard.json"

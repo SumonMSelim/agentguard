@@ -51,9 +51,10 @@ Or via GitHub UI: Actions → release → Run workflow → enter version.
 2. Runs full test suite — aborts if any test fails
 3. Bumps `VERSION`, commits and pushes to main
 4. Creates annotated tag `v1.5.0`
-5. Builds `agentguard_1.5.0_all.deb`, creates GitHub Release, attaches artifact
+5. Builds `agentguard_1.5.0_all.deb` and `SHA256SUMS`, creates GitHub Release, attaches both (`agentguard upgrade` on a .deb install refuses to install without a matching checksum)
 6. Computes tarball SHA256, updates `homebrew/Formula/agentguard.rb`, commits to main
 7. Pushes updated formula to `homebrew-agentguard` tap repo
+8. Runs the package tests (apt/deb on Ubuntu 24.04 and 22.04, Homebrew on macOS and Linux) as one matrix job
 
 ### Monitor progress
 
