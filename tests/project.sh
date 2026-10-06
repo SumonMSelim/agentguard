@@ -155,6 +155,16 @@ check_true  "creates .github/copilot-instructions.md" test -f "$PROJECT_CODEX/.g
 check_true  "skill sentinel present"       grep -qF "agentguard:skill:go" "$PROJECT_CODEX/.github/copilot-instructions.md"
 check_false "global copilot not written"   test -e "$FAKE_HOME/.copilot"
 
+# ── Windsurf: root AGENTS.md (always-on workspace rule) ──────────────────────
+
+echo ""
+echo "windsurf --project: appends skill to AGENTS.md, no global files"
+run_project_in "$PROJECT_CODEX" windsurf --project --skills go,aws >/dev/null
+
+check_true  "skill sentinel present"       grep -qF "agentguard:skill:aws" "$PROJECT_CODEX/AGENTS.md"
+check_true  "go skill not duplicated"      test "$(grep -c 'agentguard:skill:go -->' "$PROJECT_CODEX/AGENTS.md")" -eq 1
+check_false "no windsurf global files"     test -e "$FAKE_HOME/.codeium"
+
 # ── Kiro: prints warning, no files written ────────────────────────────────────
 
 echo ""
@@ -191,6 +201,7 @@ check_true  "all: GEMINI.md created"          grep -qF "agentguard:skill:go" "$P
 check_false "all: no gemini settings written" test -e "$FAKE_HOME/.gemini"
 check_true  "all: copilot instructions created" grep -qF "agentguard:skill:go" "$PROJECT_ALL/.github/copilot-instructions.md"
 check_false "all: no copilot hooks written"   test -e "$FAKE_HOME/.copilot"
+check_false "all: no windsurf files written"  test -e "$FAKE_HOME/.codeium"
 check_false "all: no hooks written"           test -d "$FAKE_HOME/.claude/hooks"
 check_false "all: no cursor hooks written"    test -d "$PROJECT_ALL/.cursor/hooks"  # cursor excluded from all --project
 

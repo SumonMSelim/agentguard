@@ -47,9 +47,9 @@ COMMAND=$(_agentguard_command) || _agentguard_invalid_payload
 [[ "$COMMAND" == *git* ]] || _allow
 
 # Detect the branch where the agent's shell is: the payload .cwd follows the
-# agent's `cd` (Claude Code, Codex, Cursor). Missing or not a directory: keep
-# the hook's own working directory.
-_cwd=$(echo "$INPUT" | jq -r '.cwd // .tool_input.cwd // empty' 2>/dev/null)
+# agent's `cd` (Claude Code, Codex, Cursor; Windsurf sends .tool_info.cwd).
+# Missing or not a directory: keep the hook's own working directory.
+_cwd=$(echo "$INPUT" | jq -r '.cwd // .tool_input.cwd // .tool_info.cwd // empty' 2>/dev/null)
 if [[ -n "$_cwd" && -d "$_cwd" ]]; then cd "$_cwd" 2>/dev/null || true; fi
 unset _cwd
 

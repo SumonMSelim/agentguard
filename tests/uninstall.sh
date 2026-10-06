@@ -300,6 +300,31 @@ check_false "copilot instructions removed"     test -f "$FAKE_HOME/.copilot/copi
 check_false "copilot hooks dir removed"        test -d "$FAKE_HOME/.copilot/hooks"
 rm -rf "$FAKE_HOME/.copilot"
 
+# ── Windsurf ──────────────────────────────────────────────────────────────────
+
+WS_DIR="$FAKE_HOME/.codeium/windsurf"
+echo ""
+echo "uninstall windsurf — dry-run leaves files intact"
+run_install windsurf
+run_uninstall windsurf --dry-run
+check_true "global_rules.md still present after dry-run" test -f "$WS_DIR/memories/global_rules.md"
+check_true "hooks.json still present after dry-run"      test -f "$WS_DIR/hooks.json"
+for h in "${HOOKS[@]}"; do
+  check_true "windsurf hook $h still present after dry-run" test -f "$WS_DIR/hooks/$h"
+done
+
+echo ""
+echo "uninstall windsurf — removes files, keeps user hooks.json entries"
+run_uninstall windsurf
+check_false "global_rules.md removed" test -f "$WS_DIR/memories/global_rules.md"
+check_false "hooks.json removed"      test -f "$WS_DIR/hooks.json"
+check_false "hooks dir removed"       test -d "$WS_DIR/hooks"
+echo '{"hooks":{"post_cascade_response":[{"command":"log.sh"}]}}' > "$WS_DIR/hooks.json"
+run_install windsurf
+run_uninstall windsurf
+jq_true "user hooks.json entry kept" '. == {"hooks":{"post_cascade_response":[{"command":"log.sh"}]}}' "$WS_DIR/hooks.json"
+rm -rf "$FAKE_HOME/.codeium"
+
 # ── Cursor ────────────────────────────────────────────────────────────────────
 
 echo ""
@@ -411,6 +436,9 @@ check_false "gemini settings.json removed (all)"  test -f "$FAKE_HOME/.gemini/se
 check_false "gemini hooks dir removed (all)"      test -d "$FAKE_HOME/.gemini/hooks"
 check_false "copilot instructions removed (all)"  test -f "$FAKE_HOME/.copilot/copilot-instructions.md"
 check_false "copilot hooks dir removed (all)"     test -d "$FAKE_HOME/.copilot/hooks"
+check_false "windsurf global_rules.md removed (all)" test -f "$FAKE_HOME/.codeium/windsurf/memories/global_rules.md"
+check_false "windsurf hooks.json removed (all)"   test -f "$FAKE_HOME/.codeium/windsurf/hooks.json"
+check_false "windsurf hooks dir removed (all)"    test -d "$FAKE_HOME/.codeium/windsurf/hooks"
 check_false "~/.agentguard/config removed (all)"  test -f "$FAKE_HOME/.agentguard/config"
 check_false "~/.agentguard/ dir removed (all)"    test -d "$FAKE_HOME/.agentguard"
 for h in "${HOOKS[@]}"; do

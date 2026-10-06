@@ -86,6 +86,7 @@ check_true  "codex installed"                     test -f "$FAKE_HOME/.codex/hoo
 check_true  "cursor installed in project"         test -f "$FAKE_PROJECT/.cursor/hooks.json"
 check_true  "gemini installed"                    test -f "$FAKE_HOME/.gemini/settings.json"
 check_true  "copilot installed"                   test -f "$FAKE_HOME/.copilot/hooks/agentguard.json"
+check_true  "windsurf installed"                  test -f "$FAKE_HOME/.codeium/windsurf/hooks.json"
 check_true  "claude still tracked" \
   grep -qE '^AGENTGUARD_INSTALLED_AGENTS=.*claude' "$FAKE_HOME/.agentguard/config"
 
@@ -272,6 +273,69 @@ run_uninstall copilot
 check_false "instructions removed"                test -e "$FAKE_HOME/.copilot/copilot-instructions.md"
 check_false "hooks dir removed"                   test -e "$FAKE_HOME/.copilot/hooks"
 
+# ── Windsurf hooks.json + global_rules.md ─────────────────────────────────────
+
+echo ""
+echo "windsurf — merge into user hooks.json"
+fresh
+W="$FAKE_HOME/.codeium/windsurf/hooks.json"
+WR="$FAKE_HOME/.codeium/windsurf/memories/global_rules.md"
+mkdir -p "$FAKE_HOME/.codeium/windsurf"
+printf '%s\n' '{"hooks":{"pre_run_command":[{"command":"python3 /me/check.py","show_output":true}],"pre_user_prompt":[{"command":"mine.sh"}]}}' > "$W"
+cp "$W" "$TMP/windsurf.before"
+check_true  "install windsurf succeeds"           run_install windsurf
+check_true  "hooks.json is valid JSON"            jq empty "$W"
+jq_true     "user hooks kept"                     '(.hooks.pre_run_command[0] == {"command":"python3 /me/check.py","show_output":true}) and .hooks.pre_user_prompt == [{"command":"mine.sh"}]' "$W"
+jq_true     "our run_command hooks added"         '[.hooks.pre_run_command[].command] | any(test("/\\.codeium/windsurf/hooks/block-env\\.sh$"))' "$W"
+jq_true     "block-env-read on read/write/mcp"    '[.hooks.pre_read_code, .hooks.pre_write_code, .hooks.pre_mcp_tool_use | .[].command] | all(test("block-env-read\\.sh$"))' "$W"
+jq_true     "no version key added"                'has("version") | not' "$W"
+check_true  "hook scripts installed"              test -x "$FAKE_HOME/.codeium/windsurf/hooks/block-env-read.sh"
+check_true  "global_rules.md installed"           grep -qF '<!-- agentguard:created -->' "$WR"
+check_true  "global_rules.md within 6000 chars"   test "$(wc -c < "$WR")" -le 6000
+check_false "karpathy skipped (over the limit)"   grep -qF '<!-- agentguard:skill:karpathy-guidelines -->' "$WR"
+check_true  "windsurf tracked" \
+  grep -qE '^AGENTGUARD_INSTALLED_AGENTS=.*windsurf' "$FAKE_HOME/.agentguard/config"
+cp "$W" "$TMP/windsurf.1"
+run_install windsurf
+check_true  "hooks.json unchanged by second install" same_json "$TMP/windsurf.1" "$W"
+jq_true     "no duplicate commands per event"     '[.hooks[] | map(.command) | length == (unique | length)] | all' "$W"
+check_true  "uninstall windsurf succeeds"         run_uninstall windsurf
+check_true  "uninstall restores hooks.json"       same_json "$TMP/windsurf.before" "$W"
+check_false "global_rules.md removed"             test -e "$WR"
+check_false "hooks dir removed"                   test -e "$FAKE_HOME/.codeium/windsurf/hooks"
+
+echo ""
+echo "windsurf — no hooks.json: created, then removed on uninstall"
+fresh
+run_install windsurf
+jq_true     "hooks.json created"                  '.hooks.pre_run_command | length == 5' "$W"
+run_uninstall windsurf
+check_false "hooks.json removed"                  test -e "$W"
+
+echo ""
+echo "windsurf — user global_rules.md kept, skills fit the limit or are skipped"
+fresh
+mkdir -p "$(dirname "$WR")"
+printf 'MY RULES\n' > "$WR"
+run_install windsurf --skills karpathy-guidelines
+check_true  "user rules kept"                     grep -qx 'MY RULES' "$WR"
+check_true  "small skill appended"                grep -qF '<!-- agentguard:skill:karpathy-guidelines -->' "$WR"
+run_install windsurf --skills go
+check_false "skill over the limit skipped"        grep -qF '<!-- agentguard:skill:go -->' "$WR"
+run_uninstall windsurf
+check_true  "uninstall strips only skills"        test "$(command cat "$WR")" = 'MY RULES'
+
+echo ""
+echo "windsurf — invalid hooks.json is refused and left unchanged"
+fresh
+mkdir -p "$(dirname "$W")"
+printf '{"hooks":{},}\n' > "$W"
+cp "$W" "$TMP/invalid.json"
+check_false "install fails"                       run_install windsurf
+check_true  "file byte-identical"                 cmp "$TMP/invalid.json" "$W"
+run_uninstall windsurf
+check_true  "file still byte-identical"           cmp "$TMP/invalid.json" "$W"
+
 # ── file mode kept ────────────────────────────────────────────────────────────
 
 # mode_of <file> — permission bits (GNU stat, else BSD stat).
@@ -293,6 +357,15 @@ check_true  "gemini settings.json 600 after install"    test "$(mode_of "$G")" =
 run_uninstall gemini
 check_true  "gemini settings.json kept on uninstall"    test -f "$G"
 check_true  "gemini settings.json 600 after uninstall"  test "$(mode_of "$G")" = 600
+W="$FAKE_HOME/.codeium/windsurf/hooks.json"
+mkdir -p "$(dirname "$W")"
+printf '%s\n' '{"hooks":{"pre_user_prompt":[{"command":"mine.sh"}]}}' > "$W"
+chmod 600 "$W"
+run_install windsurf
+check_true  "windsurf hooks.json 600 after install"     test "$(mode_of "$W")" = 600
+run_uninstall windsurf
+check_true  "windsurf hooks.json kept on uninstall"     test -f "$W"
+check_true  "windsurf hooks.json 600 after uninstall"   test "$(mode_of "$W")" = 600
 
 # ── full round trip ───────────────────────────────────────────────────────────
 
@@ -303,6 +376,10 @@ printf 'MY OWN RULES\n' > "$FAKE_HOME/.claude/CLAUDE.md"
 mkdir -p "$FAKE_HOME/.gemini"
 printf '%s\n' '{"general":{"vimMode":true}}' > "$FAKE_HOME/.gemini/settings.json"
 cp "$FAKE_HOME/.gemini/settings.json" "$TMP/gemini.before"
+mkdir -p "$FAKE_HOME/.codeium/windsurf"
+# jq-formatted, as uninstall writes it back, so the byte-level tree_sig matches.
+jq . <<< '{"hooks":{"pre_user_prompt":[{"command":"mine.sh"}]}}' > "$FAKE_HOME/.codeium/windsurf/hooks.json"
+cp "$FAKE_HOME/.codeium/windsurf/hooks.json" "$TMP/windsurf.before"
 tree_sig "$FAKE_HOME" > "$TMP/sig.before"
 run_install claude
 run_install all
@@ -311,6 +388,7 @@ tree_sig "$FAKE_HOME" > "$TMP/sig.after"
 check_true  "same files and contents after uninstall all" diff "$TMP/sig.before" "$TMP/sig.after"
 check_true  "settings.json restored"              same_json "$TMP/before.json" "$S"
 check_true  "gemini settings.json restored"       same_json "$TMP/gemini.before" "$FAKE_HOME/.gemini/settings.json"
+check_true  "windsurf hooks.json restored"        same_json "$TMP/windsurf.before" "$FAKE_HOME/.codeium/windsurf/hooks.json"
 check_false "cursor hooks.json removed"           test -e "$FAKE_PROJECT/.cursor/hooks.json"
 
 # ── results ───────────────────────────────────────────────────────────────────

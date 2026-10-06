@@ -2,7 +2,8 @@
 # tests/check-sync.sh — assert instruction files are in sync
 #
 # CLAUDE.md, KIRO.md, agents/codex/AGENTS.md, agents/cursor/AGENTS.md,
-# agents/gemini/GEMINI.md and agents/copilot/copilot-instructions.md must be
+# agents/gemini/GEMINI.md, agents/copilot/copilot-instructions.md and
+# agents/windsurf/global_rules.md must be
 # byte-for-byte identical.
 #
 # Exit 0 = in sync. Exit 1 = drift detected (prints diff).
@@ -16,6 +17,7 @@ AGENTS="$SCRIPT_DIR/agents/codex/AGENTS.md"
 CURSOR_AGENTS="$SCRIPT_DIR/agents/cursor/AGENTS.md"
 GEMINI="$SCRIPT_DIR/agents/gemini/GEMINI.md"
 COPILOT="$SCRIPT_DIR/agents/copilot/copilot-instructions.md"
+WINDSURF="$SCRIPT_DIR/agents/windsurf/global_rules.md"
 
 fail=0
 
@@ -74,6 +76,25 @@ else
   echo "PASS  CLAUDE.md == agents/copilot/copilot-instructions.md"
 fi
 
+# ── Claude vs Windsurf (byte-for-byte identical, within the rules limit) ─────
+
+if ! diff -u "$CLAUDE" "$WINDSURF" >/dev/null 2>&1; then
+  echo "FAIL  agents/claude/CLAUDE.md and agents/windsurf/global_rules.md have drifted:"
+  echo ""
+  diff -u "$CLAUDE" "$WINDSURF" || true
+  fail=1
+else
+  echo "PASS  CLAUDE.md == agents/windsurf/global_rules.md"
+fi
+# Windsurf limits global_rules.md to 6,000 characters; leave room for the
+# created marker the installer appends.
+if [[ "$(wc -c < "$WINDSURF")" -gt 5900 ]]; then
+  echo "FAIL  agents/windsurf/global_rules.md is over 5900 bytes (Windsurf global rules limit: 6000 characters)"
+  fail=1
+else
+  echo "PASS  agents/windsurf/global_rules.md fits the Windsurf global rules limit"
+fi
+
 # ── result ────────────────────────────────────────────────────────────────────
 
 echo ""
@@ -82,6 +103,6 @@ if [[ "$fail" -eq 0 ]]; then
   exit 0
 else
   echo "Instruction file drift detected. Edit the files to re-sync, then re-run."
-  echo "Canonical source: agents/claude/CLAUDE.md — copy to kiro/KIRO.md, codex/AGENTS.md, cursor/AGENTS.md, gemini/GEMINI.md and copilot/copilot-instructions.md"
+  echo "Canonical source: agents/claude/CLAUDE.md — copy to kiro/KIRO.md, codex/AGENTS.md, cursor/AGENTS.md, gemini/GEMINI.md, copilot/copilot-instructions.md and windsurf/global_rules.md"
   exit 1
 fi

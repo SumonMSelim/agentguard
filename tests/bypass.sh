@@ -4,9 +4,10 @@
 # Runs each command through the whole Bash hook chain, the way an agent
 # runs it: blocked if any hook blocks. Known bypass forms must stay blocked
 # and everyday commands must stay allowed. Each case runs in the Claude,
-# Cursor, Gemini CLI and Copilot CLI payload shapes; for Cursor every hook must
-# also print its permission JSON on stdout, for Gemini stdout must stay empty,
-# for Copilot a block prints permissionDecision JSON and an allow prints nothing.
+# Cursor, Gemini CLI, Copilot CLI and Windsurf payload shapes; for Cursor every
+# hook must also print its permission JSON on stdout, for Gemini and Windsurf
+# stdout must stay empty, for Copilot a block prints permissionDecision JSON and
+# an allow prints nothing.
 #
 # Usage: bash tests/bypass.sh
 # Requirements: bash, jq, git
@@ -46,13 +47,15 @@ chain() {
     payload=$(jq -n --arg c "$cmd" --arg d "$dir" '{hook_event_name:"BeforeTool",tool_name:"run_shell_command",tool_input:{command:$c},cwd:$d}')
   elif [[ "$shape" == copilot ]]; then
     payload=$(jq -n --arg c "$cmd" --arg d "$dir" '{timestamp:1704614600000,cwd:$d,toolName:"bash",toolArgs:({command:$c} | tojson)}')
+  elif [[ "$shape" == windsurf ]]; then
+    payload=$(jq -n --arg c "$cmd" --arg d "$dir" '{agent_action_name:"pre_run_command",tool_info:{command_line:$c,cwd:$d}}')
   else
     payload=$(jq -n --arg c "$cmd" '{tool_name:"Bash",tool_input:{command:$c}}')
   fi
   for h in "${BASH_HOOKS[@]}"; do
     out=$(cd "$dir" && printf '%s' "$payload" | bash "$HOOKS_DIR/$h" 2>/dev/null)
     code=$?
-    if [[ "$shape" == gemini && -n "$out" ]]; then echo badjson; return; fi
+    if [[ ( "$shape" == gemini || "$shape" == windsurf ) && -n "$out" ]]; then echo badjson; return; fi
     if [[ "$shape" == copilot ]]; then
       if [[ "$code" -eq 0 && -n "$out" ]]; then echo badjson; return; fi
       if [[ "$code" -eq 2 ]] && ! jq -e '.permissionDecision == "deny"' <<<"$out" >/dev/null 2>&1; then echo badjson; return; fi
@@ -72,7 +75,7 @@ chain() {
 # expect <block|allow> <dir> <cmd>
 expect() {
   local want="$1" dir="$2" cmd="$3" shape got
-  for shape in claude cursor gemini copilot; do
+  for shape in claude cursor gemini copilot windsurf; do
     got=$(chain "$dir" "$shape" "$cmd")
     if [[ "$got" == "$want" ]]; then
       printf "  PASS  %-6s %s: %s\n" "$shape" "$want" "$cmd"
@@ -94,6 +97,9 @@ expect block "$FEAT" 'cat ~/.gemini/oauth_creds.json'
 expect block "$FEAT" 'git status; rm -rf ~/.copilot/hooks'
 expect block "$FEAT" 'cat ~/.copilot/config.json'
 expect block "$FEAT" 'echo {"disableAllHooks":true} > .github/copilot/settings.local.json'
+expect block "$FEAT" 'git status; rm -rf ~/.codeium/windsurf/hooks'
+expect block "$FEAT" 'cd ~/.codeium/windsurf && echo {} > hooks.json'
+expect block "$FEAT" 'cat ~/.codeium/windsurf/mcp_config.json'
 expect block "$FEAT" 'git log -1 && echo "{}" > ~/.claude/settings.json'
 expect block "$FEAT" 'cd ~/.claude && rm -r hooks'
 expect block "$FEAT" 'find ~/.claude -name "*.sh" -delete'
@@ -220,11 +226,13 @@ expect allow "$FEAT" 'ls ~ | grep .ssh'
 # expect_file <block|allow> <tool> <path>
 expect_file() {
   local want="$1" tool="$2" path="$3" shape payload out code got
-  for shape in claude cursor copilot; do
+  for shape in claude cursor copilot windsurf; do
     if [[ "$shape" == cursor ]]; then
       payload=$(jq -n --arg p "$path" '{file_path:$p}')
     elif [[ "$shape" == copilot ]]; then
       payload=$(jq -n --arg t "$tool" --arg p "$path" '{cwd:"/proj",toolName:$t,toolArgs:({path:$p} | tojson)}')
+    elif [[ "$shape" == windsurf ]]; then
+      payload=$(jq -n --arg p "$path" '{agent_action_name:"pre_read_code",tool_info:{file_path:$p}}')
     else
       payload=$(jq -n --arg t "$tool" --arg p "$path" '{tool_name:$t,tool_input:{file_path:$p}}')
     fi
@@ -240,6 +248,7 @@ expect_file() {
         got=badjson
       fi
     fi
+    [[ "$shape" == windsurf && -n "$out" ]] && got=badjson
     if [[ "$got" == "$want" ]]; then
       printf "  PASS  %-6s %s: %s %s\n" "$shape" "$want" "$tool" "$path"
       ((pass++))
@@ -275,6 +284,11 @@ expect_file block read_file  "$HOME/.gemini/oauth_creds.json"
 expect_file block create /proj/.github/copilot/settings.json
 expect_file block edit   "$HOME/.copilot/hooks/agentguard.json"
 expect_file block view   "$HOME/.copilot/config.json"
+expect_file block pre_write_code "$HOME/.codeium/windsurf/hooks.json"
+expect_file block pre_write_code "$HOME/.codeium/windsurf/hooks/block-env.sh"
+expect_file block pre_write_code "$HOME/.codeium/windsurf/memories/global_rules.md"
+expect_file block pre_write_code /proj/.devin/hooks.json
+expect_file block pre_read_code  "$HOME/.codeium/windsurf/mcp_config.json"
 expect_file block Read  /proj/.ENV
 expect_file block Read  /proj/.Env.Production
 expect_file allow Read  /proj/.env.example

@@ -1,0 +1,32 @@
+{
+  "hooks": {
+    "pre_run_command": [
+      { "command": "bash ~/.codeium/windsurf/hooks/block-env.sh" },
+      { "command": "bash ~/.codeium/windsurf/hooks/block-main-branch.sh" },
+      { "command": "bash ~/.codeium/windsurf/hooks/block-system-installs.sh" },
+      { "command": "bash ~/.codeium/windsurf/hooks/block-destructive-ops.sh" },
+      { "command": "bash ~/.codeium/windsurf/hooks/block-self-edit.sh" }
+    ],
+    "pre_read_code": [
+      { "command": "bash ~/.codeium/windsurf/hooks/block-env-read.sh" }
+    ],
+    "pre_write_code": [
+      { "command": "bash ~/.codeium/windsurf/hooks/block-env-read.sh" }
+    ],
+    "pre_mcp_tool_use": [
+      { "command": "bash ~/.codeium/windsurf/hooks/block-env-read.sh" }
+    ],
+    "post_run_command": [
+      { "command": "bash ~/.codeium/windsurf/hooks/audit-log.sh" }
+    ],
+    "post_read_code": [
+      { "command": "bash ~/.codeium/windsurf/hooks/audit-log.sh" }
+    ],
+    "post_write_code": [
+      { "command": "bash ~/.codeium/windsurf/hooks/audit-log.sh" }
+    ],
+    "post_mcp_tool_use": [
+      { "command": "bash ~/.codeium/windsurf/hooks/audit-log.sh" }
+    ]
+  }
+}
