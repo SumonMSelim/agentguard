@@ -15,7 +15,8 @@
 #   ./install.sh claude   # then use `agentguard` for all future commands
 #
 #   --skills <list>        — comma-separated skill names to append (e.g. karpathy-guidelines)
-#                            Skills tagged [core] are always appended unless --skills none
+#                            Without --skills, skills tagged [core] are appended; an explicit
+#                            list appends only the named skills; --skills none appends none
 #   --dry-run              — show what would be changed without writing anything
 #   --project              — append skills to the project-level instruction file in CWD
 #                            Claude: .claude/CLAUDE.md  Codex: AGENTS.md  Kiro: not supported

@@ -4,7 +4,8 @@
 # Blocks system-level package manager invocations.
 # The agent should use Docker instead, or ask the user for permission first.
 #
-# Shared hook — used by both Claude (Bash tool) and Kiro (execute_bash tool).
+# Shared hook — used by Claude (Bash), Kiro (execute_bash), Codex (Bash),
+# Cursor (beforeShellExecution) and Grok (run_terminal_command / Bash).
 # Catches: apt, apt-get, brew, yum, dnf, zypper, pacman, apk, snap, port, nix,
 # conda, system gem/cargo installs, global npm/yarn/pnpm/bun, sudo pip installs,
 # and pip / python -m pip / uv pip installs outside an active virtualenv.

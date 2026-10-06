@@ -2,7 +2,8 @@
 # hooks/audit-log.sh
 #
 # PostToolUse audit log — appends one line per tool call to the agent's audit.log.
-# Shared hook — used by both Claude (→ ~/.claude/audit.log) and Kiro (→ ~/.kiro/audit.log).
+# Shared hook — used by Claude (→ ~/.claude/audit.log), Kiro (→ ~/.kiro/audit.log),
+# Codex (→ ~/.codex/audit.log), Cursor (→ .cursor/audit.log) and Grok (→ ~/.grok/audit.log).
 #
 # Provides a forensic record that survives hook failures and helps detect
 # unexpected behaviour or bypasses. Each entry records the UTC timestamp,

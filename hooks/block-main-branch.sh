@@ -16,7 +16,8 @@
 # Both accept a comma-separated list, e.g.:
 #   export AGENTGUARD_PROTECTED_BRANCHES="main,master,develop,trunk"
 #
-# Shared hook — used by both Claude (Bash tool) and Kiro (execute_bash tool).
+# Shared hook — used by Claude (Bash), Kiro (execute_bash), Codex (Bash),
+# Cursor (beforeShellExecution) and Grok (run_terminal_command / Bash).
 # Static deny rules cannot inspect git state — this hook runs in the actual
 # working directory (the payload .cwd when present) so it can call git at runtime.
 #
