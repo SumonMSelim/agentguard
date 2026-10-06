@@ -254,9 +254,14 @@ install_hooks() {
 #     User value wins (it's a UX preference, not security-critical). Falls back
 #     to "acceptEdits" if neither side sets it.
 #
-#   Security-critical scalars
-#     (includeCoAuthoredBy, gitAttribution, disableGitWorkflow)
-#     Guardrails value always wins.
+#   Security-critical keys
+#     (attribution, includeGitInstructions)
+#     Guardrails value always wins. Verified against
+#     code.claude.com/docs/en/settings-reference: attribution.commit/.pr are
+#     strings ("" hides them); includeCoAuthoredBy is "Deprecated since
+#     v2.0.62, when attribution replaced it"; gitAttribution and
+#     disableGitWorkflow are not settings keys. Our old values of those three
+#     are removed on merge.
 #
 #   All other user keys (env, model, apiKey, Bedrock config, etc.)
 #     Preserved exactly as you have them.
@@ -296,8 +301,26 @@ merge_settings() {
     # Known-stale entries removed from guardrails over time. Pruned from the
     # user deny array before unioning so upgrades self-heal instead of
     # carrying dead/broken rules forward forever.
-    def stale_deny: ["Write(~/.agentguard/**)"];
+    def stale_deny: ["Write(~/.agentguard/**)", "Read(./.env)", "Read(./.env.*)"];
     def prune_stale(a): (a // []) - stale_deny;
+    # Over-broad allow rules shipped before #66.
+    def stale_allow: ["Read(**)", "Bash(ssh *)", "Bash(find *)", "Bash(docker *)", "Bash(cat *)", "Bash(curl *)"];
+    def prune_stale_allow(a): (a // []) - stale_allow;
+
+    # Per-tool matchers for block-env-read.sh shipped before #67. Strip our
+    # command from them (the combined matcher replaces them); drop the block
+    # only if nothing of the user is left in it.
+    def stale_matchers: ["Read", "Write", "Edit", "MultiEdit"];
+    def prune_stale_hooks(arr):
+      arr | map(
+        if ((.matcher // "") as $m | stale_matchers | index($m)) != null then
+          .hooks = ((.hooks // []) | map(select(.command != "bash ~/.claude/hooks/block-env-read.sh")))
+          | select(.hooks | length > 0)
+        else . end
+      );
+
+    # Remove a legacy key only if it still holds the value we wrote.
+    def drop_if(k; v): if .[k] == v then del(.[k]) else . end;
 
     # Merge PreToolUse hook arrays.
     # For each guardrail matcher block:
@@ -322,21 +345,23 @@ merge_settings() {
     # Start from the user object so all personal keys are preserved,
     # then apply targeted guardrail overrides.
     $user
-    | .permissions.allow       = union_arr($user.permissions.allow;       $guard.permissions.allow)
+    | .permissions.allow       = union_arr(prune_stale_allow($user.permissions.allow); $guard.permissions.allow)
     | .permissions.ask         = union_arr($user.permissions.ask;         $guard.permissions.ask)
     | .permissions.deny        = union_arr(prune_stale($user.permissions.deny); $guard.permissions.deny)
     | .permissions.defaultMode = ($user.permissions.defaultMode // $guard.permissions.defaultMode // "acceptEdits")
     | .hooks.PreToolUse        = merge_hooks(
-                                   ($user.hooks.PreToolUse  // []);
+                                   prune_stale_hooks($user.hooks.PreToolUse // []);
                                    ($guard.hooks.PreToolUse // [])
                                  )
     | .hooks.PostToolUse       = merge_hooks(
                                    ($user.hooks.PostToolUse  // []);
                                    ($guard.hooks.PostToolUse // [])
                                  )
-    | .includeCoAuthoredBy     = $guard.includeCoAuthoredBy
-    | .gitAttribution          = $guard.gitAttribution
-    | .disableGitWorkflow      = $guard.disableGitWorkflow
+    | .attribution             = $guard.attribution
+    | .includeGitInstructions  = $guard.includeGitInstructions
+    | drop_if("includeCoAuthoredBy"; false)
+    | drop_if("gitAttribution"; false)
+    | drop_if("disableGitWorkflow"; true)
     ' > "${output}.tmp.$$" || {
       rm -f "${output}.tmp.$$"
       fail "settings.json merge failed — $output left unchanged."
@@ -1059,8 +1084,11 @@ do_upgrade() {
 #   - Removes our hook commands from PreToolUse / PostToolUse.
 #     Matcher blocks that become empty after removal are dropped entirely.
 #   - Removes our permission entries from allow / ask / deny arrays.
-#   - Removes the security-critical scalars we set
+#   - Removes the security-critical keys we set (attribution,
+#     includeGitInstructions) and the legacy keys older versions set
 #     (includeCoAuthoredBy, gitAttribution, disableGitWorkflow).
+#   - Old per-tool block-env-read.sh matcher blocks are covered by the
+#     command-string strip above.
 #
 # All other user keys are preserved untouched.
 unmerge_settings() {
@@ -1137,6 +1165,8 @@ unmerge_settings() {
     | clean_permissions
     | .hooks.PreToolUse  = strip_hooks(.hooks.PreToolUse  // [])
     | .hooks.PostToolUse = strip_hooks(.hooks.PostToolUse // [])
+    | del(.attribution)
+    | del(.includeGitInstructions)
     | del(.includeCoAuthoredBy)
     | del(.gitAttribution)
     | del(.disableGitWorkflow)
@@ -1365,7 +1395,7 @@ check_settings() {
     [[ "$actual" == "$expected" ]] || scalar_issues+=("$key: expected $expected, got $actual")
   done < <(echo "$guard_json" | jq -r '
     to_entries
-    | map(select(.key | IN("includeCoAuthoredBy","gitAttribution","disableGitWorkflow")))
+    | map(select(.key | IN("attribution","includeGitInstructions")))
     | .[]
     | [.key, (.value | tostring)]
     | @tsv
