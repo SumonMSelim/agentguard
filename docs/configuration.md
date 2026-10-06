@@ -84,7 +84,7 @@ Create `skills/<name>/SKILL.md` with YAML front-matter (`name`, `tags`, `descrip
 
 ## Audit log rotation
 
-`audit-log.sh` appends one line per tool call with no rotation. Log paths:
+`audit-log.sh` appends one line per completed tool call. Blocked calls never reach PostToolUse, so the hook that blocks them appends a `BLOCKED hook=<name>` line instead. Values after `token=`, `key=`, `secret=`, `password=`, `Bearer ` and `Authorization:` are replaced with `***` (case-insensitive). The file is created with mode 600 and agents may not read or edit it. When it grows past 1 MB it is moved to `audit.log.1` (one generation kept). Log paths:
 
 - Claude: `~/.claude/audit.log`
 - Kiro: `~/.kiro/audit.log`
@@ -92,7 +92,7 @@ Create `skills/<name>/SKILL.md` with YAML front-matter (`name`, `tags`, `descrip
 - Cursor: `.cursor/audit.log` (project-local)
 - Grok: `~/.grok/audit.log` (if using Grok's native hooks dir)
 
-To cap growth, add a `logrotate` config:
+To keep more history than the built-in rotation, add a `logrotate` config:
 
 ```conf
 /Users/<you>/.claude/audit.log {

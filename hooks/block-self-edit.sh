@@ -25,12 +25,12 @@ INPUT=$(cat)
 
 # Skip all checks if the current directory is in the agentguard disabled list.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_check-disabled.sh"
-COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // .toolInput.command // ""') || { echo "agentguard: invalid hook payload; blocking tool call" >&2; exit 2; }
+COMMAND=$(echo "$INPUT" | jq -r '.command // .tool_input.command // .toolInput.command // ""') || { echo "agentguard: invalid hook payload; blocking tool call" >&2; _agentguard_log_block; exit 2; }
 # Cursor: flat .command/.file_path payload must get permission JSON on stdout (see _check-disabled.sh)
 _is_cursor() { echo "$INPUT" | jq -e '(has("command") or has("file_path")) and ((has("tool_input") or has("toolInput")) | not)' >/dev/null 2>&1; }
 _allow() { if _is_cursor; then echo '{"permission":"allow"}'; fi; exit 0; }
 # Grok: emit JSON decision on stdout for blocks (in addition to exit 2 + stderr)
-_grok_block() { echo "$1" >&2; if _is_cursor; then jq -cn --arg m "$1" '{permission:"deny",user_message:$m,agent_message:$m}'; elif echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
+_grok_block() { echo "$1" >&2; _agentguard_log_block; if _is_cursor; then jq -cn --arg m "$1" '{permission:"deny",user_message:$m,agent_message:$m}'; elif echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
 
 # `agentguard disable` (or install.sh disable) turns every guardrail off for a
 # directory. Block it at any statement position, including behind sudo, env
@@ -62,7 +62,7 @@ fi
 # shellcheck disable=SC2016 # literal $HOME is matched as text, not expanded
 _HOME_ROOT='(~|\$HOME|\$\{HOME\}|/Users/[^/[:space:]"'"'"']+|/home/[^/[:space:]"'"'"']+|/root)'
 _HOME_CORE="${_HOME_ROOT}/(\.claude|\.agentguard|\.kiro|\.grok|\.cursor/hooks|\.codex)([^a-zA-Z0-9_-]|\$)"
-_REL_CORE='(\.claude/(settings(\.local)?\.json|hooks([^a-zA-Z0-9_-]|$)|CLAUDE\.md)|\.claude\.json|\.kiro/(settings\.json|hooks([^a-zA-Z0-9_-]|$)|agents([^a-zA-Z0-9_-]|$)|KIRO\.md)|\.cursor/(hooks\.json|hooks([^a-zA-Z0-9_-]|$))|\.agentguard([^a-zA-Z0-9_-]|$)|\.grok/(hooks([^a-zA-Z0-9_-]|$)|config\.toml|AGENTS\.md|skills([^a-zA-Z0-9_-]|$)|memory([^a-zA-Z0-9_-]|$)))'
+_REL_CORE='(\.claude/(settings(\.local)?\.json|hooks([^a-zA-Z0-9_-]|$)|CLAUDE\.md)|\.claude\.json|\.kiro/(settings\.json|hooks([^a-zA-Z0-9_-]|$)|agents([^a-zA-Z0-9_-]|$)|KIRO\.md)|\.cursor/(hooks\.json|hooks([^a-zA-Z0-9_-]|$))|\.agentguard([^a-zA-Z0-9_-]|$)|\.grok/(hooks([^a-zA-Z0-9_-]|$)|config\.toml|AGENTS\.md|skills([^a-zA-Z0-9_-]|$)|memory([^a-zA-Z0-9_-]|$))|\.(claude|kiro|grok|cursor|codex)/audit\.log)'
 _SELF_CORE="(${_HOME_CORE}|${_REL_CORE})"
 # Anchored so "myclaude/..." doesn't false-match.
 _SELF_PATH="(^|[^a-zA-Z0-9_-])${_SELF_CORE}"

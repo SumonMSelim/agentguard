@@ -53,7 +53,7 @@ Six shell scripts enforcing rules at tool-call level. Each reads JSON from stdin
 | `block-main-branch.sh` | `git push` to `main`/`master`, force push (incl. `+refspec`, `--mirror`, `--all`), `git commit`/`merge`/`rebase`/`cherry-pick`/`revert`/`am` on protected branch. Respects `AGENTGUARD_PROTECTED_BRANCHES` env var |
 | `block-system-installs.sh` | `brew`, `apt`, `yum`, `npm -g`, `yarn global`, `pip install` outside virtualenv (checks `$VIRTUAL_ENV`) |
 | `block-destructive-ops.sh` | `rm -rf /`, `rm ~`, pipe-to-shell (`curl \| bash`, `wget \| sh`) |
-| `audit-log.sh` | Logs every tool call (PostToolUse) — writes to `dirname($0)/../audit.log` |
+| `audit-log.sh` | Logs every tool call (PostToolUse) — writes to `dirname($0)/../audit.log`. Block paths in every hook add a `BLOCKED hook=<name>` line via `_agentguard_log_block` (`_check-disabled.sh`). Secrets redacted, mode 600, rotated to `audit.log.1` above 1 MB. `AGENTGUARD_AUDIT_LOG` overrides the path (tests) |
 
 Hooks handle two payload shapes:
 - Claude/Kiro: `{ "tool_input": { "command": "..." } }` (nested)
