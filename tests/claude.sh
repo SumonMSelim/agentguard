@@ -272,6 +272,68 @@ run_hook_tests() {
   check "blocks NotebookEdit secrets/" block '{"tool_name":"NotebookEdit","tool_input":{"notebook_path":"secrets/x.ipynb"}}' block-env-read.sh
 
   echo ""
+  echo "block-env-read.sh — credential stores (#74)"
+  check "blocks Glob .env*"            block '{"tool_name":"Glob","tool_input":{"pattern":"**/.env*"}}'      block-env-read.sh
+  check "blocks Read .env.test"        block '{"tool_input":{"file_path":"/p/.env.test"}}'                   block-env-read.sh
+  check "blocks Read id_ed25519"       block '{"tool_input":{"file_path":"/p/keys/id_ed25519"}}'             block-env-read.sh
+  check "blocks Read id_rsa"           block '{"tool_input":{"file_path":"id_rsa"}}'                         block-env-read.sh
+  check "blocks Read deploy_key"       block '{"tool_input":{"file_path":"/p/deploy_key"}}'                  block-env-read.sh
+  check "blocks Read .ppk"             block '{"tool_input":{"file_path":"/p/server.ppk"}}'                  block-env-read.sh
+  check "blocks Read .jks"             block '{"tool_input":{"file_path":"/p/release.jks"}}'                 block-env-read.sh
+  check "blocks Read .keystore"        block '{"tool_input":{"file_path":"/p/app.keystore"}}'                block-env-read.sh
+  check "blocks Read .kdbx"            block '{"tool_input":{"file_path":"/p/vault.kdbx"}}'                  block-env-read.sh
+  check "blocks Read ~/.kube/config"   block '{"tool_input":{"file_path":"~/.kube/config"}}'                 block-env-read.sh
+  check "blocks Grep path ~/.ssh"      block '{"tool_name":"Grep","tool_input":{"pattern":".","path":"~/.ssh"}}' block-env-read.sh
+  check "blocks Read \$HOME/.npmrc"    block '{"tool_input":{"file_path":"$HOME/.npmrc"}}'                   block-env-read.sh
+  check "blocks Read .npmrc"           block '{"tool_input":{"file_path":".npmrc"}}'                         block-env-read.sh
+  check "blocks Read .pypirc"          block '{"tool_input":{"file_path":"/h/u/.pypirc"}}'                   block-env-read.sh
+  check "blocks Read .gem/credentials" block '{"tool_input":{"file_path":"/h/u/.gem/credentials"}}'          block-env-read.sh
+  check "blocks Read .docker/config.json" block '{"tool_input":{"file_path":"/h/u/.docker/config.json"}}'    block-env-read.sh
+  check "blocks Read gh hosts.yml"     block '{"tool_input":{"file_path":"/h/u/.config/gh/hosts.yml"}}'      block-env-read.sh
+  check "blocks Read gcloud dir"       block '{"tool_input":{"file_path":"/h/u/.config/gcloud/credentials.db"}}' block-env-read.sh
+  check "blocks Read .azure"           block '{"tool_input":{"file_path":"/h/u/.azure/msal_token_cache.json"}}' block-env-read.sh
+  check "blocks Read terraform.tfstate" block '{"tool_input":{"file_path":"/p/infra/terraform.tfstate"}}'    block-env-read.sh
+  check "blocks Read tfstate.backup"   block '{"tool_input":{"file_path":"/p/terraform.tfstate.backup"}}'    block-env-read.sh
+  check "blocks Read terraform.d creds" block '{"tool_input":{"file_path":"/h/u/.terraform.d/credentials.tfrc.json"}}' block-env-read.sh
+  check "blocks Read .git-credentials" block '{"tool_input":{"file_path":"/h/u/.git-credentials"}}'          block-env-read.sh
+  check "blocks Read .pgpass"          block '{"tool_input":{"file_path":"/h/u/.pgpass"}}'                   block-env-read.sh
+  check "blocks Read .zsh_history"     block '{"tool_input":{"file_path":"/h/u/.zsh_history"}}'              block-env-read.sh
+  check "blocks Read .bash_history"    block '{"tool_input":{"file_path":"~/.bash_history"}}'                block-env-read.sh
+  check "blocks Read .authinfo.gpg"    block '{"tool_input":{"file_path":"/h/u/.authinfo.gpg"}}'             block-env-read.sh
+  check "blocks Read .gnupg"           block '{"tool_input":{"file_path":"/h/u/.gnupg/private-keys-v1.d/x.key"}}' block-env-read.sh
+  check "blocks Read .vault-token"     block '{"tool_input":{"file_path":"/h/u/.vault-token"}}'              block-env-read.sh
+  check "blocks Read wp-config.php"    block '{"tool_input":{"file_path":"/p/wp-config.php"}}'               block-env-read.sh
+  check "blocks Read secrets.yaml"     block '{"tool_input":{"file_path":"/p/config/secrets.yaml"}}'         block-env-read.sh
+  check "blocks Read .secrets/ dir"    block '{"tool_input":{"file_path":"/p/.secrets/token"}}'              block-env-read.sh
+  check "blocks Read credentials.json" block '{"tool_input":{"file_path":"/p/credentials.json"}}'            block-env-read.sh
+  check "blocks Read .codex/auth.json" block '{"tool_input":{"file_path":"/h/u/.codex/auth.json"}}'          block-env-read.sh
+  check "blocks Read .gemini oauth"    block '{"tool_input":{"file_path":"/h/u/.gemini/oauth_creds.json"}}'  block-env-read.sh
+  check "blocks Read .copilot"         block '{"tool_input":{"file_path":"/h/u/.copilot/config.json"}}'      block-env-read.sh
+  check "blocks Read .cursor/mcp.json" block '{"tool_input":{"file_path":"/p/.cursor/mcp.json"}}'            block-env-read.sh
+  check "blocks Read ~/.agentguard/audit.log" block '{"tool_input":{"file_path":"~/.agentguard/audit.log"}}' block-env-read.sh
+
+  echo ""
+  echo "block-env-read.sh — false positives (#75)"
+  check "allows Read .env.example"     allow '{"tool_input":{"file_path":"/p/.env.example"}}'                block-env-read.sh
+  check "allows Read .env.sample"      allow '{"tool_input":{"file_path":".env.sample"}}'                    block-env-read.sh
+  check "allows Read .env.template"    allow '{"tool_input":{"file_path":"/p/.env.template"}}'               block-env-read.sh
+  check "allows Read .env.dist"        allow '{"tool_input":{"file_path":"/p/.env.dist"}}'                   block-env-read.sh
+  check "allows Read .env.schema"      allow '{"tool_input":{"file_path":"/p/.env.schema"}}'                 block-env-read.sh
+  check "allows Read .env.local.example" allow '{"tool_input":{"file_path":"/p/.env.local.example"}}'        block-env-read.sh
+  check "allows Read credentialsService.ts" allow '{"tool_input":{"file_path":"src/credentialsService.ts"}}' block-env-read.sh
+  check "allows Read credentials-rotation.md" allow '{"tool_input":{"file_path":"docs/credentials-rotation.md"}}' block-env-read.sh
+  check "allows Read CredentialsProvider.java" allow '{"tool_input":{"file_path":"src/CredentialsProvider.java"}}' block-env-read.sh
+  check "allows Read credentials_helper.py" allow '{"tool_input":{"file_path":"lib/credentials_helper.py"}}' block-env-read.sh
+  check "allows Read sealed-secret.yaml" allow '{"tool_input":{"file_path":"k8s/sealed-secret.yaml"}}'       block-env-read.sh
+  check "allows Read mysecrets/x"      allow '{"tool_input":{"file_path":"mysecrets/x"}}'                    block-env-read.sh
+  check "allows Read .environment.ts"  allow '{"tool_input":{"file_path":"src/.environment.ts"}}'            block-env-read.sh
+  check "allows Read environment.ts"   allow '{"tool_input":{"file_path":"src/environment.ts"}}'             block-env-read.sh
+  check "allows Read .envoy"           allow '{"tool_input":{"file_path":"/p/.envoy"}}'                      block-env-read.sh
+  check "allows Read env.d.ts"         allow '{"tool_input":{"file_path":"src/env.d.ts"}}'                   block-env-read.sh
+  check "allows Read config/env.js"    allow '{"tool_input":{"file_path":"config/env.js"}}'                  block-env-read.sh
+  check "allows Read id_ed25519.pub"   allow '{"tool_input":{"file_path":"/p/keys/id_ed25519.pub"}}'         block-env-read.sh
+
+  echo ""
   echo "block-main-branch.sh"
   # Use variables so the literal strings don't trigger the installed hook on this Bash call
   FORCE_CMD='git push origin feat --force'

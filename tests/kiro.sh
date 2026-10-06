@@ -101,6 +101,8 @@ run_hook_tests() {
   check "blocks fs_write .env"           block "$(kiro_fs_write '.env')"                 block-env-read.sh
   check "allows fs_read normal file"     allow "$(kiro_fs_read 'src/index.ts')"          block-env-read.sh
   check "allows fs_write normal file"    allow "$(kiro_fs_write 'src/main.ts')"          block-env-read.sh
+  check "blocks fs_read .npmrc"          block "$(kiro_fs_read '.npmrc')"                block-env-read.sh
+  check "allows fs_read .env.example"    allow "$(kiro_fs_read '.env.example')"          block-env-read.sh
 
   echo ""
   echo "block-main-branch.sh (execute_bash)"
