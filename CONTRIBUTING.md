@@ -29,10 +29,10 @@ bash tests/run_all.sh   # all suites must pass before you start
 Hooks live in `hooks/`. Each hook:
 - Reads a JSON payload from stdin
 - Exits `2` to block, `0` to allow; also exits `2` on internal errors (Claude Code treats `1` as non-blocking)
-- Handles every payload shape: Claude/Kiro/Codex (`tool_input.command`), Grok (`toolInput.command`) and Cursor (flat `command`)
+- Sources `_check-disabled.sh`, the shared library: `_agentguard_command` reads the command from every payload shape (Claude/Kiro/Codex `tool_input.command`, Grok `toolInput.command`, Cursor flat `command`), `_grok_block` blocks and `_allow` allows
 - Must have corresponding tests in `tests/claude.sh` and `tests/kiro.sh`
 
-See existing hooks for the pattern. Add the new hook name to `AGENTGUARD_HOOKS` in `install.sh`.
+See existing hooks for the pattern. `install.sh` picks up every `hooks/*.sh` file; register the hook in each agent config under `agents/`.
 
 ### New skills
 
@@ -81,7 +81,7 @@ All suites must pass before opening a PR. CI runs `tests/run_all.sh` on every pu
 - [ ] `bash tests/run_all.sh` passes locally
 - [ ] New behaviour has test coverage
 - [ ] `CLAUDE.md`, `KIRO.md`, `agents/codex/AGENTS.md`, `agents/cursor/AGENTS.md` are in sync if you changed the instruction file (run `tests/check-sync.sh`)
-- [ ] `AGENTGUARD_HOOKS` array updated in `install.sh` if you added a hook
+- [ ] New hook registered in each agent config under `agents/`
 - [ ] No secrets, credentials, or `.env` files committed
 - [ ] Commit messages follow [Conventional Commits](https://www.conventionalcommits.org)
 

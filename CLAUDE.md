@@ -48,7 +48,7 @@ Requirements: `bash`, `jq`.
 ## Architecture
 
 ### Hooks (`hooks/`)
-Seven shell scripts enforcing rules at tool-call level, plus `_check-disabled.sh`, a helper every hook sources (never registered on its own): it skips all checks when the payload's `cwd` is listed in `~/.agentguard/disabled-dirs`, and provides `_agentguard_log_block` and the audit-log path, redaction and rotation. Each reads JSON from stdin, exits `2` to block or `0` to allow. Exit codes: `0` = allow, `2` = block (agent sees stderr as feedback), `1` = hook error, which Claude Code treats as non-blocking (stderr shown, action proceeds); hooks therefore exit `2` on internal errors such as missing `jq` or an unparseable payload.
+Seven shell scripts enforcing rules at tool-call level, plus `_check-disabled.sh`, the shared library every hook sources right after reading stdin into `INPUT` (never registered on its own). It resolves `jq` (fail closed without it), skips all checks when the payload's `cwd` is listed in `~/.agentguard/disabled-dirs`, and defines the shared helpers: `_agentguard_command` (command from any payload shape), `_agentguard_invalid_payload`, `_is_cursor`, `_allow` (exit 0, Cursor allow JSON), `_grok_block` (stderr + `BLOCKED` audit line + Cursor/Grok deny JSON + exit 2), `_agentguard_log_block` and the audit-log path, redaction and rotation. Hooks hold only their own checks. Each reads JSON from stdin, exits `2` to block or `0` to allow. Exit codes: `0` = allow, `2` = block (agent sees stderr as feedback), `1` = hook error, which Claude Code treats as non-blocking (stderr shown, action proceeds); hooks therefore exit `2` on internal errors such as missing `jq` or an unparseable payload.
 
 | Hook | What it blocks |
 |------|---------------|
@@ -65,7 +65,7 @@ Hooks handle three payload shapes:
 - Grok: `{ "toolInput": { "command": "..." } }` (nested, camelCase)
 - Cursor: `{ "command": "..." }` (flat, top-level) for `beforeShellExecution`/`beforeReadFile`; `preToolUse` and `beforeMCPExecution` carry `tool_name`/`tool_input` and are told apart by `hook_event_name` (`beforeMCPExecution` `tool_input` is a JSON string)
 
-All command-reading hooks use `.command // .tool_input.command // .toolInput.command`. User-level Cursor hooks run from `~/.cursor`; `_check-disabled.sh` moves to `$CURSOR_PROJECT_DIR` so branch and disabled-dir checks see the project.
+All command-reading hooks use `_agentguard_command` (`.command // .tool_input.command // .toolInput.command`). User-level Cursor hooks run from `~/.cursor`; `_check-disabled.sh` moves to `$CURSOR_PROJECT_DIR` so branch and disabled-dir checks see the project.
 
 ### Agents (`agents/`)
 Per-agent config installed to agent's home dir:
@@ -76,6 +76,10 @@ Per-agent config installed to agent's home dir:
 - `agents/grok/` → `~/.grok/hooks/` (hooks.json installed as `agentguard.json` + hooks copied from `hooks/`); instructions go to `~/AGENTS.md`, copied from `agents/codex/AGENTS.md`
 
 **Instruction file sync rule**: `agents/claude/CLAUDE.md` is canonical source. `agents/kiro/KIRO.md`, `agents/codex/AGENTS.md` and `agents/cursor/AGENTS.md` must be byte-for-byte identical. `tests/check-sync.sh` enforces all four.
+
+### Agent registry and hook list (`install.sh`)
+- `AGENTS=(claude codex kiro cursor grok)` is the single agent list. It drives agent validation (the "Valid options" error), `all` for install / check / uninstall / `--project`, and dispatch by naming convention: each agent has `install_<agent>`, `uninstall_<agent>`, `check_<agent>` and `install_project_<agent>`. Agent-specific bodies stay in those functions.
+- `AGENTGUARD_HOOKS` is generated from `hooks/*.sh` at startup. Install copies, `check_*` verifies (all hooks for every agent), uninstall removes (incl. Cursor) from that one list. The release workflow globs `hooks/*.sh` too.
 
 ### Settings merge (`install.sh`: merge_settings)
 When `~/.claude/settings.json` exists, installer merges rather than overwrites:
@@ -111,4 +115,5 @@ CI (`.github/workflows/test.yml`) runs `run_all.sh` on ubuntu and macOS (BSD too
 - Codex hooks run only after the user trusts them with `/hooks` in Codex. Codex `apply_patch` payloads carry patch text in `tool_input.command`, not a file path, so `block-env-read.sh` is not registered for it; only `block-self-edit.sh` is.
 - Cursor (and Grok project) installs are project-local (CWD) unless `agentguard cursor --user`. Run `agentguard cursor` from the target project root (after the CLI wrapper is installed). For the initial bootstrap you may run the `install.sh` script directly.
 - Upgrade path: use `agentguard upgrade` (or uninstall then reinstall). Re-running skips existing files.
-- Adding new hook: add to `AGENTGUARD_HOOKS` array in `install.sh` and `CURSOR_AGENTGUARD_FILES` for Cursor uninstall tracking. Register it in `agents/cursor/hooks.json` with project-relative `.cursor/hooks/` paths (`--user` rewrites them to absolute `~/.cursor/hooks/`).
+- Adding new hook: drop it in `hooks/` (install, check, uninstall and release pick it up from `hooks/*.sh`). Start it with `INPUT=$(cat)`, source `_check-disabled.sh`, parse with `_agentguard_command` (or validate JSON and call `_agentguard_invalid_payload`), block with `_grok_block "<msg>"` and end with `_allow`. Register it per agent: `agents/claude/settings.json`, `agents/kiro/agent.json` + `hooks.json`, `agents/codex/hooks.json`, `agents/grok/hooks.json`, and `agents/cursor/hooks.json` with project-relative `.cursor/hooks/` paths (`--user` rewrites them to absolute `~/.cursor/hooks/`).
+- Adding new agent: add its name to `AGENTS` in `install.sh`, then write `install_<agent>`, `uninstall_<agent>`, `check_<agent>` and `install_project_<agent>` (plus an `installed_skills` case if upgrade should keep its skills).

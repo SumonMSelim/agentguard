@@ -44,6 +44,17 @@ STATUS_CMD=0
 TARGET_DIR=""
 CURSOR_USER=0
 
+# Agent registry, in install / check / uninstall order. Each agent has
+# install_<agent>, uninstall_<agent>, check_<agent> and install_project_<agent>
+# functions; "all" runs them for every agent in this list.
+AGENTS=(claude codex kiro cursor grok)
+
+# Our hook filenames, generated from hooks/*.sh. Installed, checked and
+# removed by name; the release workflow globs the same directory.
+AGENTGUARD_HOOKS=()
+for _hook in "$SCRIPT_DIR/hooks/"*.sh; do AGENTGUARD_HOOKS+=("${_hook##*/}"); done
+unset _hook
+
 # Detect subcommands (can be invoked as `agentguard` or directly as ./install.sh for bootstrap)
 if [[ "$AGENT" == "version" || "$AGENT" == "--version" || "$AGENT" == "-v" ]]; then
   echo "agentguard ${AGENTGUARD_VERSION}"
@@ -536,6 +547,32 @@ append_skills() {
   [[ "$appended" -eq 0 ]] && log "No skills appended" || true
 }
 
+# install_instruction_file <src> <dest> <installed_msg> — writes <dest> from
+# <src> (with the created marker) only if it doesn't already exist, then
+# appends skills. Skills are appended once: the sentinel check in append_skills
+# prevents duplicates on re-runs. If the file is missing (first install or
+# after uninstall), it is written fresh.
+install_instruction_file() {
+  local src="$1" dest="$2" msg="$3" name="${2##*/}"
+  if [[ ! -f "$dest" ]]; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would copy $name → $dest"
+    else
+      mkdir -p "$(dirname "$dest")"
+      cp "$src" "$dest"
+      echo "$AGENTGUARD_CREATED_MARKER" >> "$dest"
+      ok "$msg"
+    fi
+  else
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "$name already present — skipping base copy, checking skills"
+    else
+      log "$name already present — skipping base copy"
+    fi
+  fi
+  append_skills "$dest"
+}
+
 install_claude() {
   local dest="$HOME/.claude"
 
@@ -543,28 +580,7 @@ install_claude() {
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
 
   install_hooks "$dest/hooks"
-
-  # Only write CLAUDE.md if it doesn't already exist — skills are appended once
-  # and the sentinel check in append_skills prevents duplicates on re-runs.
-  # If the file is missing (first install or after uninstall), write it fresh.
-  if [[ ! -f "$dest/CLAUDE.md" ]]; then
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-      dry "Would copy CLAUDE.md → $dest/CLAUDE.md"
-    else
-      mkdir -p "$dest"
-      cp "$SCRIPT_DIR/agents/claude/CLAUDE.md" "$dest/CLAUDE.md"
-      echo "$AGENTGUARD_CREATED_MARKER" >> "$dest/CLAUDE.md"
-      ok "CLAUDE.md installed"
-    fi
-    append_skills "$dest/CLAUDE.md"
-  else
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-      dry "CLAUDE.md already present — skipping base copy, checking skills"
-    else
-      log "CLAUDE.md already present — skipping base copy"
-    fi
-    append_skills "$dest/CLAUDE.md"
-  fi
+  install_instruction_file "$SCRIPT_DIR/agents/claude/CLAUDE.md" "$dest/CLAUDE.md" "CLAUDE.md installed"
 
   backup_if_exists "$dest/settings.json"
   record_claude_added "$dest/settings.json" "$SCRIPT_DIR/agents/claude/settings.json"
@@ -611,26 +627,7 @@ install_kiro() {
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
 
   install_hooks "$dest/hooks"
-
-  # Only write KIRO.md if it doesn't already exist — same rationale as CLAUDE.md above.
-  if [[ ! -f "$dest/KIRO.md" ]]; then
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-      dry "Would copy KIRO.md → $dest/KIRO.md"
-    else
-      mkdir -p "$dest"
-      cp "$SCRIPT_DIR/agents/kiro/KIRO.md" "$dest/KIRO.md"
-      echo "$AGENTGUARD_CREATED_MARKER" >> "$dest/KIRO.md"
-      ok "KIRO.md installed"
-    fi
-    append_skills "$dest/KIRO.md"
-  else
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-      dry "KIRO.md already present — skipping base copy, checking skills"
-    else
-      log "KIRO.md already present — skipping base copy"
-    fi
-    append_skills "$dest/KIRO.md"
-  fi
+  install_instruction_file "$SCRIPT_DIR/agents/kiro/KIRO.md" "$dest/KIRO.md" "KIRO.md installed"
 
   local agent_dest="$dest/agents"
   backup_if_exists "$agent_dest/agentguard.json"
@@ -743,26 +740,7 @@ install_codex() {
 
   install_hooks "$dest/hooks"
   merge_codex_hooks "$dest/hooks.json"
-
-  # Only write AGENTS.md if it doesn't already exist — same rationale as CLAUDE.md above.
-  if [[ ! -f "$dest/AGENTS.md" ]]; then
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-      dry "Would copy AGENTS.md → $dest/AGENTS.md"
-    else
-      mkdir -p "$dest"
-      cp "$SCRIPT_DIR/agents/codex/AGENTS.md" "$dest/AGENTS.md"
-      echo "$AGENTGUARD_CREATED_MARKER" >> "$dest/AGENTS.md"
-      ok "AGENTS.md installed"
-    fi
-    append_skills "$dest/AGENTS.md"
-  else
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-      dry "AGENTS.md already present — skipping base copy, checking skills"
-    else
-      log "AGENTS.md already present — skipping base copy"
-    fi
-    append_skills "$dest/AGENTS.md"
-  fi
+  install_instruction_file "$SCRIPT_DIR/agents/codex/AGENTS.md" "$dest/AGENTS.md" "AGENTS.md installed"
   log "Note: Codex runs new hooks only after you trust them. Open Codex and run /hooks to review them."
   track_installed_agent "codex"
 }
@@ -926,24 +904,7 @@ install_grok() {
   fi
 
   # Grok uses AGENTS.md (and variants) for global rules. Reuse the canonical content.
-  # Only write if missing (skills append handles re-runs via sentinel).
-  if [[ ! -f "$HOME/AGENTS.md" ]]; then
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-      dry "Would copy AGENTS.md → $HOME/AGENTS.md"
-    else
-      cp "$SCRIPT_DIR/agents/codex/AGENTS.md" "$HOME/AGENTS.md"
-      echo "$AGENTGUARD_CREATED_MARKER" >> "$HOME/AGENTS.md"
-      ok "AGENTS.md installed → $HOME/AGENTS.md"
-    fi
-    append_skills "$HOME/AGENTS.md"
-  else
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-      dry "AGENTS.md already present — skipping base copy, checking skills"
-    else
-      log "AGENTS.md already present — skipping base copy"
-    fi
-    append_skills "$HOME/AGENTS.md"
-  fi
+  install_instruction_file "$SCRIPT_DIR/agents/codex/AGENTS.md" "$HOME/AGENTS.md" "AGENTS.md installed → $HOME/AGENTS.md"
 
   track_installed_agent "grok"
 }
@@ -959,18 +920,6 @@ install_grok() {
 #
 # Every destructive write is preceded by a backup, same as install.
 # --dry-run is fully supported.
-
-# Our hook filenames — used to identify which files to remove
-AGENTGUARD_HOOKS=(
-  _check-disabled.sh
-  audit-log.sh
-  block-destructive-ops.sh
-  block-env-read.sh
-  block-env.sh
-  block-main-branch.sh
-  block-self-edit.sh
-  block-system-installs.sh
-)
 
 # remove_hooks <hooks_dir> — removes agentguard hook files from the given directory
 remove_hooks() {
@@ -1051,13 +1000,18 @@ remove_instruction_file() {
   ok "agentguard skill sections stripped from $f (user content kept)"
 }
 
-# is_agent_tracked <agent> — returns 0 if the agent is in AGENTGUARD_INSTALLED_AGENTS.
-is_agent_tracked() {
-  [[ -f "$AGENTGUARD_CONFIG_FILE" ]] || return 1
+# tracked_agents — prints the space-separated AGENTGUARD_INSTALLED_AGENTS list
+# from the config file (empty if none).
+tracked_agents() {
+  [[ -f "$AGENTGUARD_CONFIG_FILE" ]] || return 0
   grep -E '^AGENTGUARD_INSTALLED_AGENTS=' "$AGENTGUARD_CONFIG_FILE" \
     | tail -n1 \
-    | sed -E 's/^AGENTGUARD_INSTALLED_AGENTS=//; s/^"//; s/"$//' \
-    | tr ' ' '\n' | grep -qx "$1"
+    | sed -E 's/^AGENTGUARD_INSTALLED_AGENTS=//; s/^"//; s/"$//' || true
+}
+
+# is_agent_tracked <agent> — returns 0 if the agent is in AGENTGUARD_INSTALLED_AGENTS.
+is_agent_tracked() {
+  tracked_agents | tr ' ' '\n' | grep -qx "$1"
 }
 
 # installed_skills <agent> — prints the comma-separated skill names found in the
@@ -1160,12 +1114,8 @@ track_installed_agent() {
   [[ "$DRY_RUN" -eq 1 ]] && return 0
   mkdir -p "$AGENTGUARD_CONFIG_DIR"
 
-  local current=""
-  if [[ -f "$AGENTGUARD_CONFIG_FILE" ]]; then
-    current=$(grep -E '^AGENTGUARD_INSTALLED_AGENTS=' "$AGENTGUARD_CONFIG_FILE" \
-              | tail -n1 \
-              | sed -E 's/^AGENTGUARD_INSTALLED_AGENTS=//; s/^"//; s/"$//') || true
-  fi
+  local current
+  current=$(tracked_agents)
 
   # Add agent if not already listed.
   if ! echo " $current " | grep -qF " $agent "; then
@@ -1191,9 +1141,7 @@ untrack_installed_agent() {
   [[ -f "$AGENTGUARD_CONFIG_FILE" ]] || return 0
 
   local current
-  current=$(grep -E '^AGENTGUARD_INSTALLED_AGENTS=' "$AGENTGUARD_CONFIG_FILE" \
-            | tail -n1 \
-            | sed -E 's/^AGENTGUARD_INSTALLED_AGENTS=//; s/^"//; s/"$//') || true
+  current=$(tracked_agents)
 
   local updated
   # grep -v exits 1 when no lines pass (last agent removed) — suppress with ||true.
@@ -1222,6 +1170,34 @@ verify_sha256() {
   ok "Checksum verified for $name"
 }
 
+# reinstall_tracked <hint> <installer...> — uninstalls, then reinstalls every
+# tracked agent with <installer> (e.g. `bash /path/install.sh`), keeping its
+# skills. With nothing tracked it warns, logs <hint> if set, and exits 0.
+reinstall_tracked() {
+  local hint="$1" tracked agent skills
+  shift
+  tracked=$(tracked_agents)
+  if [[ -z "$tracked" ]]; then
+    warn "No tracked agent installations found in $AGENTGUARD_CONFIG_FILE."
+    [[ -n "$hint" ]] && log "$hint"
+    exit 0
+  fi
+  echo ""
+  log "Reinstalling tracked agents: $tracked"
+  for agent in $tracked; do
+    section "── $agent ──"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would uninstall $agent then reinstall $agent"
+    else
+      skills=$(installed_skills "$agent")
+      "$@" uninstall "$agent"
+      echo ""
+      AGENTGUARD_UPGRADE=1 "$@" "$agent" ${skills:+--skills "$skills"}
+    fi
+  done
+  echo ""
+}
+
 # do_upgrade — pulls latest agentguard from git, then reinstalls all
 # previously tracked agents.
 do_upgrade() {
@@ -1242,35 +1218,12 @@ do_upgrade() {
       ok "Homebrew package upgraded"
     fi
 
-    local brew_prefix new_script_dir new_version tracked=""
+    local brew_prefix new_script_dir new_version
     brew_prefix=$(brew --prefix agentguard 2>/dev/null) || fail "Could not resolve brew --prefix agentguard."
     new_script_dir="$brew_prefix/libexec"
     new_version=$(cat "$new_script_dir/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "unknown")
 
-    if [[ -f "$AGENTGUARD_CONFIG_FILE" ]]; then
-      tracked=$(grep -E '^AGENTGUARD_INSTALLED_AGENTS=' "$AGENTGUARD_CONFIG_FILE" \
-                | tail -n1 \
-                | sed -E 's/^AGENTGUARD_INSTALLED_AGENTS=//; s/^"//; s/"$//') || true
-    fi
-    if [[ -z "$tracked" ]]; then
-      warn "No tracked agent installations found in $AGENTGUARD_CONFIG_FILE."
-      exit 0
-    fi
-    echo ""
-    log "Reinstalling tracked agents: $tracked"
-    for agent in $tracked; do
-      section "── $agent ──"
-      if [[ "$DRY_RUN" -eq 1 ]]; then
-        dry "Would uninstall $agent then reinstall $agent"
-      else
-        local skills
-        skills=$(installed_skills "$agent")
-        bash "$new_script_dir/install.sh" uninstall "$agent"
-        echo ""
-        AGENTGUARD_UPGRADE=1 bash "$new_script_dir/install.sh" "$agent" ${skills:+--skills "$skills"}
-      fi
-    done
-    echo ""
+    reinstall_tracked "" bash "$new_script_dir/install.sh"
     ok "Upgrade complete → agentguard v$new_version"
     return
   fi
@@ -1298,32 +1251,9 @@ do_upgrade() {
       ok "Debian package upgraded"
     fi
 
-    local new_version tracked=""
+    local new_version
     new_version=$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "unknown")
-    if [[ -f "$AGENTGUARD_CONFIG_FILE" ]]; then
-      tracked=$(grep -E '^AGENTGUARD_INSTALLED_AGENTS=' "$AGENTGUARD_CONFIG_FILE" \
-                | tail -n1 \
-                | sed -E 's/^AGENTGUARD_INSTALLED_AGENTS=//; s/^"//; s/"$//') || true
-    fi
-    if [[ -z "$tracked" ]]; then
-      warn "No tracked agent installations found in $AGENTGUARD_CONFIG_FILE."
-      exit 0
-    fi
-    echo ""
-    log "Reinstalling tracked agents: $tracked"
-    for agent in $tracked; do
-      section "── $agent ──"
-      if [[ "$DRY_RUN" -eq 1 ]]; then
-        dry "Would uninstall $agent then reinstall $agent"
-      else
-        local skills
-        skills=$(installed_skills "$agent")
-        agentguard uninstall "$agent"
-        echo ""
-        AGENTGUARD_UPGRADE=1 agentguard "$agent" ${skills:+--skills "$skills"}
-      fi
-    done
-    echo ""
+    reinstall_tracked "" agentguard
     ok "Upgrade complete → agentguard v$new_version"
     return
   fi
@@ -1345,36 +1275,9 @@ do_upgrade() {
   local new_version
   new_version=$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "unknown")
 
-  # Read tracked agents from config.
-  local tracked=""
-  if [[ -f "$AGENTGUARD_CONFIG_FILE" ]]; then
-    tracked=$(grep -E '^AGENTGUARD_INSTALLED_AGENTS=' "$AGENTGUARD_CONFIG_FILE" \
-              | tail -n1 \
-              | sed -E 's/^AGENTGUARD_INSTALLED_AGENTS=//; s/^"//; s/"$//') || true
-  fi
-
-  if [[ -z "$tracked" ]]; then
-    warn "No tracked agent installations found in $AGENTGUARD_CONFIG_FILE."
-    log "Run 'agentguard <agent>' (or './install.sh <agent>' for initial bootstrap) to install and start tracking."
-    exit 0
-  fi
-
-  echo ""
-  log "Reinstalling tracked agents: $tracked"
-  for agent in $tracked; do
-    section "── $agent ──"
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-      dry "Would uninstall $agent then reinstall $agent"
-    else
-      local skills
-      skills=$(installed_skills "$agent")
-      bash "$SCRIPT_DIR/install.sh" uninstall "$agent"
-      echo ""
-      AGENTGUARD_UPGRADE=1 bash "$SCRIPT_DIR/install.sh" "$agent" ${skills:+--skills "$skills"}
-    fi
-  done
-
-  echo ""
+  reinstall_tracked \
+    "Run 'agentguard <agent>' (or './install.sh <agent>' for initial bootstrap) to install and start tracking." \
+    bash "$SCRIPT_DIR/install.sh"
   ok "Upgrade complete → agentguard v$new_version"
 }
 
@@ -1594,18 +1497,6 @@ uninstall_codex() {
   untrack_installed_agent "codex"
 }
 
-# Relative to cursor_root. hooks.json is unmerged separately (it may hold user hooks).
-CURSOR_AGENTGUARD_FILES=(
-  ".cursor/hooks/_check-disabled.sh"
-  ".cursor/hooks/audit-log.sh"
-  ".cursor/hooks/block-destructive-ops.sh"
-  ".cursor/hooks/block-env-read.sh"
-  ".cursor/hooks/block-env.sh"
-  ".cursor/hooks/block-main-branch.sh"
-  ".cursor/hooks/block-self-edit.sh"
-  ".cursor/hooks/block-system-installs.sh"
-)
-
 uninstall_cursor() {
   local dest
   dest="$(cursor_root)"
@@ -1634,9 +1525,10 @@ uninstall_cursor() {
     fi
   fi
 
+  # hooks.json is unmerged separately (it may hold user hooks).
   local removed=0
-  for rel in "${CURSOR_AGENTGUARD_FILES[@]}"; do
-    local f="$dest/$rel"
+  for hook in "${AGENTGUARD_HOOKS[@]}"; do
+    local f="$dest/.cursor/hooks/$hook"
     if [[ -f "$f" ]]; then
       backup_if_exists "$f"
       if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -1813,9 +1705,7 @@ check_codex() {
   local dest="$CODEX_DIR"
   section "Checking Codex installation → $dest"
   check_file "$dest/AGENTS.md" "AGENTS.md"
-  for hook in "${AGENTGUARD_HOOKS[@]}"; do
-    check_exec "$dest/hooks/$hook" "$hook"
-  done
+  check_hook_execs "$dest/hooks"
   check_file "$dest/hooks.json" "hooks.json"
   if [[ -f "$dest/hooks.json" ]]; then
     local missing
@@ -1844,14 +1734,20 @@ check_exec() {
   fi
 }
 
+# check_hook_execs <hooks_dir> — every hook in <hooks_dir> is executable.
+check_hook_execs() {
+  local hook
+  for hook in "${AGENTGUARD_HOOKS[@]}"; do
+    check_exec "$1/$hook" "$hook"
+  done
+}
+
 check_cursor() {
   local dest
   dest="$(cursor_root)/.cursor"
   section "Checking Cursor installation → $dest"
   [[ "$CURSOR_USER" -eq 0 ]] && check_file "$(pwd)/AGENTS.md" "AGENTS.md"
-  for hook in "${AGENTGUARD_HOOKS[@]}"; do
-    check_exec "$dest/hooks/$hook" "$hook"
-  done
+  check_hook_execs "$dest/hooks"
   check_file "$dest/hooks.json" "hooks.json"
   if [[ -f "$dest/hooks.json" ]]; then
     local missing
@@ -1875,8 +1771,7 @@ check_grok() {
   local dest="$HOME/.grok"
   section "Checking Grok installation → $dest"
   check_file "$dest/hooks/agentguard.json" "agentguard.json (grok hooks)"
-  check_exec "$dest/hooks/audit-log.sh" "audit-log.sh"
-  check_exec "$dest/hooks/block-env-read.sh" "block-env-read.sh"
+  check_hook_execs "$dest/hooks"
   check_file "$HOME/AGENTS.md" "AGENTS.md"
   echo ""
 }
@@ -1892,19 +1787,19 @@ check_grok() {
 #   Kiro:   not supported      (prints warning, exits 0)
 #   Grok:   AGENTS.md          (created if absent; Grok also supports .grok/ for project)
 
-install_project_claude() {
-  local dest
-  dest="$(pwd)/.claude"
-  local file="$dest/CLAUDE.md"
+# install_project_file <label> <file> — creates <file> (empty) if absent, then
+# appends skills to it.
+install_project_file() {
+  local label="$1" file="$2"
 
-  section "Installing Claude Code project skills → $file"
+  section "Installing $label project skills → $file"
   [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
 
   if [[ ! -f "$file" ]]; then
     if [[ "$DRY_RUN" -eq 1 ]]; then
       dry "Would create $file (empty)"
     else
-      mkdir -p "$dest"
+      mkdir -p "$(dirname "$file")"
       touch "$file"
       ok "Created $file"
     fi
@@ -1915,52 +1810,19 @@ install_project_claude() {
   append_skills "$file"
 }
 
-install_project_codex() {
-  local file
-  file="$(pwd)/AGENTS.md"
+install_project_claude() { install_project_file "Claude Code" "$(pwd)/.claude/CLAUDE.md"; }
+install_project_codex()  { install_project_file "Codex" "$(pwd)/AGENTS.md"; }
+install_project_grok()   { install_project_file "Grok" "$(pwd)/AGENTS.md"; }
 
-  section "Installing Codex project skills → $file"
-  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
-
-  if [[ ! -f "$file" ]]; then
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-      dry "Would create $file (empty)"
-    else
-      touch "$file"
-      ok "Created $file"
-    fi
-  else
-    log "$file already exists — appending skills only"
-  fi
-
-  append_skills "$file"
+install_project_cursor() {
+  log "Cursor is always project-local — running full install instead"
+  install_cursor
 }
 
 install_project_kiro() {
   warn "Kiro does not support per-project instruction files." >&2
   log  "Kiro's agent.json references a single global file (~/.kiro/KIRO.md)." >&2
   log  "Install skills globally instead: agentguard kiro --skills <list> (or ./install.sh for bootstrap)" >&2
-}
-
-install_project_grok() {
-  local file
-  file="$(pwd)/AGENTS.md"
-
-  section "Installing Grok project skills → $file"
-  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
-
-  if [[ ! -f "$file" ]]; then
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-      dry "Would create $file (empty)"
-    else
-      touch "$file"
-      ok "Created $file"
-    fi
-  else
-    log "$file already exists — appending skills only"
-  fi
-
-  append_skills "$file"
 }
 
 # ── disable / enable / status ────────────────────────────────────────────────
@@ -2111,16 +1973,19 @@ if [[ "$UPGRADE" -eq 1 ]]; then
   exit 0
 fi
 
+# Reject unknown agents before any action or interactive prompt.
+_valid=0
+for _a in "${AGENTS[@]}" all; do
+  if [[ "$AGENT" == "$_a" ]]; then _valid=1; fi
+done
+[[ "$_valid" -eq 1 ]] || fail "Unknown agent '$AGENT'. Valid options: $(printf '%s | ' "${AGENTS[@]}")all"
+unset _valid _a
+
+# The agents this run acts on: $AGENT, or every registered agent for "all".
+if [[ "$AGENT" == "all" ]]; then TARGETS=("${AGENTS[@]}"); else TARGETS=("$AGENT"); fi
+
 if [[ "$CHECK" -eq 1 ]]; then
-  case "$AGENT" in
-    claude) check_claude ;;
-    codex)  check_codex  ;;
-    kiro)   check_kiro   ;;
-    cursor) check_cursor ;;
-    grok)   check_grok   ;;
-    all)    check_claude; check_codex; check_kiro; check_cursor; check_grok ;;
-    *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | grok | all" ;;
-  esac
+  for a in "${TARGETS[@]}"; do "check_$a"; done
   if [[ "$_check_issues" -eq 0 ]]; then
     ok "All checks passed."
     check_for_update
@@ -2133,19 +1998,20 @@ if [[ "$CHECK" -eq 1 ]]; then
 fi
 
 if [[ "$UNINSTALL" -eq 1 ]]; then
-  case "$AGENT" in
-    claude) uninstall_claude ;;
-    codex)  uninstall_codex  ;;
-    kiro)   uninstall_kiro   ;;
-    cursor) uninstall_cursor ;;
-    grok)   uninstall_grok   ;;
-    all)    uninstall_claude; echo; uninstall_codex; echo; uninstall_kiro; echo
-            CURSOR_USER=0; uninstall_cursor; echo
-            # A tracked user-level Cursor install goes too, before the config holding the tracking is removed.
-            if is_agent_tracked "cursor-user"; then CURSOR_USER=1; uninstall_cursor; echo; fi
-            uninstall_grok; echo; remove_agentguard_config; remove_file "$HOME/.local/bin/agentguard" ;;
-    *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | grok | all" ;;
-  esac
+  if [[ "$AGENT" == "all" ]]; then
+    for a in "${TARGETS[@]}"; do
+      if [[ "$a" == "cursor" ]]; then
+        CURSOR_USER=0; uninstall_cursor; echo
+        # A tracked user-level Cursor install goes too, before the config holding the tracking is removed.
+        if is_agent_tracked "cursor-user"; then CURSOR_USER=1; uninstall_cursor; echo; fi
+      else
+        "uninstall_$a"; echo
+      fi
+    done
+    remove_agentguard_config; remove_file "$HOME/.local/bin/agentguard"
+  else
+    "uninstall_$AGENT"
+  fi
   echo ""
   ok "Done."
   [[ "$DRY_RUN" -eq 1 ]] && dry "no files were changed"
@@ -2153,39 +2019,30 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
 fi
 
 if [[ "$PROJECT" -eq 1 ]]; then
-  case "$AGENT" in
-    claude) install_project_claude ;;
-    codex)  install_project_codex  ;;
-    cursor) log "Cursor is always project-local — running full install instead"; install_cursor ;;
-    kiro)   install_project_kiro   ;;
-    grok)   install_project_grok   ;;
-    all)    install_project_claude; echo; install_project_codex; echo; install_project_kiro; echo; install_project_grok ;;
-    *)      fail "Unknown agent '$AGENT'. Valid options: claude | codex | cursor | kiro | grok | all" ;;
-  esac
+  _first=1
+  for a in "${TARGETS[@]}"; do
+    # Cursor is project-local already; "all" skips it.
+    if [[ "$AGENT" == "all" && "$a" == "cursor" ]]; then continue; fi
+    [[ "$_first" -eq 1 ]] || echo
+    _first=0
+    "install_project_$a"
+  done
   echo ""
   ok "Done."
   [[ "$DRY_RUN" -eq 1 ]] && dry "no files were written"
   exit 0
 fi
 
-# Reject unknown agents before any interactive prompt.
-case "$AGENT" in
-  claude|codex|kiro|cursor|grok|all) ;;
-  *) fail "Unknown agent '$AGENT'. Valid options: claude | codex | kiro | cursor | grok | all" ;;
-esac
-
 # do_upgrade re-execs child installs with AGENTGUARD_UPGRADE=1, which makes
 # prompt_protected_branches keep the saved value instead of prompting.
 [[ "$UPGRADE" -eq 0 ]] && prompt_protected_branches
 
-case "$AGENT" in
-  claude) install_claude ;;
-  codex)  install_codex  ;;
-  kiro)   install_kiro   ;;
-  cursor) install_cursor ;;
-  grok)   install_grok   ;;
-  all)    install_claude; echo; install_codex; echo; install_kiro; echo; install_cursor; echo; install_grok ;;
-esac
+_first=1
+for a in "${TARGETS[@]}"; do
+  [[ "$_first" -eq 1 ]] || echo
+  _first=0
+  "install_$a"
+done
 
 install_cli_wrapper
 
