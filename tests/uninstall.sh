@@ -143,6 +143,27 @@ run_uninstall claude
 jq_false "permissions key absent after unmerge" 'has("permissions")' "$S"
 jq_true  "model key still present"              '.model == "claude-sonnet"' "$S"
 
+# #76: install + uninstall restores the user file exactly.
+# round_trip <label> <json>
+round_trip() {
+  local label="$1" before="$2"
+  printf '%s\n' "$before" > "$S"
+  run_install claude
+  run_uninstall claude
+  check_true "$label: file restored" diff <(jq -S . <<<"$before") <(jq -S . "$S")
+}
+
+echo ""
+echo "uninstall claude — removes only what install added (#76)"
+round_trip "pre-existing allow entry and legacy key" \
+  '{"permissions":{"allow":["WebSearch","Bash(make *)"]},"includeCoAuthoredBy":true}'
+round_trip "user Bash hook, no empty arrays added" \
+  '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"my-hook.sh"}]}]}}'
+round_trip "no permissions key" '{"model":"claude-sonnet"}'
+round_trip "user defaultMode plan" '{"permissions":{"defaultMode":"plan"}}'
+round_trip "user attribution" '{"attribution":{"commit":"x","pr":"y"},"includeGitInstructions":true}'
+check_false "install record removed after uninstall" test -f "$FAKE_HOME/.agentguard/claude-added.json"
+
 # ── Kiro ──────────────────────────────────────────────────────────────────────
 
 echo ""

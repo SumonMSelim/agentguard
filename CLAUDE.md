@@ -72,12 +72,12 @@ Per-agent config installed to agent's home dir:
 
 ### Settings merge (`install.sh`: merge_settings)
 When `~/.claude/settings.json` exists, installer merges rather than overwrites:
-- `permissions.allow/ask/deny` → union + deduplicate (known-stale entries pruned first)
+- `permissions.allow/ask/deny` → union + deduplicate, user order kept (known-stale entries pruned first)
 - `hooks.PreToolUse/PostToolUse` → merge by matcher key, append hooks (dedup by command string); old per-tool `block-env-read.sh` blocks (`Read`, `Write`, `Edit`, `MultiEdit`) are replaced by `Read|Write|Edit|Grep|Glob|NotebookEdit`
 - `permissions.defaultMode` → user value wins
 - `attribution`, `includeGitInstructions` → guardrails value always wins. Legacy `includeCoAuthoredBy`, `gitAttribution`, `disableGitWorkflow` are removed when they still hold our old value
 
-Uninstall uses `unmerge_settings` to surgically strip only agentguard entries.
+Install first writes `~/.agentguard/claude-added.json` (`record_claude_added`): the permission entries it adds, whether it set `defaultMode`, the previous `attribution`/`includeGitInstructions` values, and whether the user had `hooks`. Uninstall uses `unmerge_settings` to remove only those entries, restore those values, and drop empty containers; without a record (older install) it strips every matching entry and leaves `defaultMode` alone.
 
 ### Skills (`skills/`)
 Markdown files appended to instruction file at install. Each `SKILL.md` has YAML frontmatter: `name`, `tags`, `description`, `license`. Skills tagged `core` (`karpathy-guidelines`, `docker`) auto-included. Others require `--skills <name>`.

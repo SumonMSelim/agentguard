@@ -1209,6 +1209,27 @@ run_merge_tests() {
   check_true "invalid JSON: install exits non-zero"  test "$rc" -ne 0
   check_true "invalid JSON: file byte-identical"     cmp -s "$S" "$tmp/before.json"
 
+  # #76: invalid JSON aborts uninstall too, with no temp file left behind.
+  (cd "$tmp" && HOME="$fake_home" bash "$SCRIPT_DIR/install.sh" uninstall claude) >/dev/null 2>&1
+  rc=$?
+  check_true  "invalid JSON: uninstall exits non-zero" test "$rc" -ne 0
+  check_true  "invalid JSON: uninstall leaves file"    cmp -s "$S" "$tmp/before.json"
+  check_true  "invalid JSON: no .tmp left"             test -z "$(compgen -G "$S.tmp*")"
+
+  # #76: install records the entries it added, not those the user already had.
+  local R="$fake_home/.agentguard/claude-added.json"
+  rm -f "$R"
+  jq -n '{permissions: {allow: ["WebSearch", "MyRule"], defaultMode: "plan"}}' > "$S"
+  (cd "$tmp" && HOME="$fake_home" bash "$SCRIPT_DIR/install.sh" claude) >/dev/null 2>&1
+  check_true "install record written" test -f "$R"
+  local ours
+  ours=$(jq -c '.permissions.allow' "$SCRIPT_DIR/agents/claude/settings.json")
+  jq_check "record allow = ours minus user's" \
+    ".allow == ($ours - [\"WebSearch\"] | unique) and (.allow | index(\"Glob\") != null)" "$R"
+  jq_check "record: defaultMode not ours, no prior scalars or hooks" \
+    '.defaultMode == false and .scalars == {attribution: null, includeGitInstructions: null} and .hadHooks == false' "$R"
+  jq_check "record not written into settings.json" 'has("allow") or has("scalars") | not' "$S"
+
   # #77: user hooks keep their order and come before ours.
   jq -n '{hooks: {PreToolUse: [{matcher: "Bash", hooks: [
     {type: "command", command: "z-first.sh"},
