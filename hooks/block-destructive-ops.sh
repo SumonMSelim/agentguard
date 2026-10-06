@@ -3,7 +3,11 @@
 #
 # Blocks shell patterns that can cause catastrophic or irreversible damage:
 #   - rm targeting filesystem root or bare home directory
-#   - pipe-to-shell (curl|bash, wget|sh, etc.) — supply chain risk
+#   - recursive rm of the cwd, its parent, .git, * or a top-level system dir
+#   - find / -delete, recursive chmod/chown on root or home
+#   - filesystem/raw-device writes (mkfs, wipefs, dd of=/dev/sda, > /dev/sda)
+#   - overwriting /etc/passwd, shadow, sudoers or hosts; the :(){ :|:& };: fork bomb
+#   - pipe-to-shell (curl|bash, wget|sh, bash <(curl), sh -c "$(curl)") — supply chain risk
 #
 # Shared hook — used by both Claude (Bash tool) and Kiro (execute_bash tool).
 # Note: general `rm -rf <path>` is NOT blocked — legitimate uses like
@@ -42,18 +46,77 @@ _STMT_START='(^|[;&|]|\$\()[[:space:]]*(sudo[[:space:]]+)?'
 # exactly as written.
 _QUOTE="[\"']?"
 # shellcheck disable=SC2016
-_RM_TARGET='(/\*?|~/?\*?|\$(HOME|\{HOME\})/?\*?)'
+_RM_TARGET='(/[/.]*\*?|~/?\*?|\$(HOME|\{HOME\})/?\*?)'
 if echo "$COMMAND" | grep -qE \
   "${_STMT_START}"'rm[[:space:]]([^[:space:]]+[[:space:]]+)*'"${_QUOTE}${_RM_TARGET}${_QUOTE}"'([[:space:]]|$)'; then
   _grok_block "Blocked: rm on root or home directory is not permitted. If you need to remove specific files, use an explicit path."
 fi
 
-# Block pipe-to-shell patterns (supply chain risk).
-# curl/wget must be at a statement boundary.
-# Catches: curl url | bash, wget -O- url | sh, curl url | sudo bash, etc.
+# Recursive-flag argument (-r, -rf, -fR, --recursive) anywhere in the same statement.
+_RFLAG='[[:space:]]([^;&|]*[[:space:]])?(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)[[:space:]]([^;&|]*[[:space:]])?'
+_END='([[:space:];&|)]|$)'
+
+# Block recursive rm of the cwd, its parent, .git, a bare * or a top-level system dir.
+# rm -rf ./build, rm -rf build/ and rm -rf /tmp/x stay allowed.
+_RM_RTARGET='((\.\./)*\.\.?/?|(\./)?\*|(\./|\*/)?\.git/?|/(usr|etc|var|bin|sbin|boot|lib[0-9]*|opt|root|home|Users|System|Library|Applications)/?)'
+if echo "$COMMAND" | grep -qE "${_STMT_START}rm${_RFLAG}${_QUOTE}${_RM_RTARGET}${_QUOTE}${_END}"; then
+  _grok_block "Blocked: recursive rm of the current directory, its parent, .git or a system directory is not permitted. Use an explicit subdirectory path."
+fi
+
+# Block find starting at root or home with -delete or -exec rm.
+# shellcheck disable=SC2016
+_FIND_ROOT='(/[/.]*|~/?|\$(HOME|\{HOME\})/?)'
 if echo "$COMMAND" | grep -qE \
-  "${_STMT_START}(curl|wget)[[:space:]].*\|[[:space:]]*(sudo[[:space:]]+)?(bash|sh|zsh|fish|dash|ash|ksh)([[:space:]]|\$)"; then
+  "${_STMT_START}find[[:space:]]+(-[HLP][[:space:]]+)*${_QUOTE}${_FIND_ROOT}${_QUOTE}[[:space:]][^;&|]*(-delete|-exec(dir)?[[:space:]]+(sudo[[:space:]]+)?rm[[:space:]])"; then
+  _grok_block "Blocked: find on root or home with -delete or -exec rm is not permitted. Start find from a specific subdirectory."
+fi
+
+# Block recursive chmod/chown/chgrp on root or home. chmod -R 755 ./build stays allowed.
+if echo "$COMMAND" | grep -qE "${_STMT_START}(chmod|chown|chgrp)${_RFLAG}${_QUOTE}${_RM_TARGET}${_QUOTE}${_END}"; then
+  _grok_block "Blocked: recursive chmod/chown on root or home is not permitted. Use an explicit subdirectory path."
+fi
+
+# Block filesystem creation, partition edits and raw writes to disk devices.
+# dd of=/dev/null and dd of=./img stay allowed.
+_DISK='/dev/(sd|hd|vd|xvd|nvme|mmcblk|disk|rdisk)'
+if echo "$COMMAND" | grep -qE "${_STMT_START}(mkfs(\.[a-zA-Z0-9]+)?|mke2fs|wipefs)([[:space:]]|\$)" \
+  || echo "$COMMAND" | grep -qE "${_STMT_START}(fdisk|parted|sgdisk|shred)[[:space:]][^;&|]*/dev/" \
+  || echo "$COMMAND" | grep -qE "${_STMT_START}dd[[:space:]][^;&|]*of=${_QUOTE}${_DISK}" \
+  || echo "$COMMAND" | grep -qE ">[[:space:]]*${_QUOTE}${_DISK}"; then
+  _grok_block "Blocked: formatting, partitioning or writing raw disk devices is not permitted."
+fi
+
+# Block overwriting, moving over or removing core account/host files.
+_ETC='/etc/(passwd|shadow|sudoers|hosts)'
+if echo "$COMMAND" | grep -qE "(^|[^>])>[[:space:]]*${_QUOTE}${_ETC}${_QUOTE}${_END}" \
+  || echo "$COMMAND" | grep -qE "${_STMT_START}rm[[:space:]][^;&|]*${_ETC}${_QUOTE}${_END}" \
+  || echo "$COMMAND" | grep -qE "${_STMT_START}(mv|cp)[[:space:]][^;&|]*[[:space:]]${_QUOTE}${_ETC}${_QUOTE}[[:space:]]*([;&|)]|\$)"; then
+  _grok_block "Blocked: overwriting or removing /etc/passwd, shadow, sudoers or hosts is not permitted."
+fi
+
+# Block the classic :(){ :|:& };: fork bomb.
+if echo "$COMMAND" | grep -qE ':\(\)[[:space:]]*\{[[:space:]]*:[[:space:]]*\|[[:space:]]*:[[:space:]]*&'; then
+  _grok_block "Blocked: fork bomb is not permitted."
+fi
+
+# Block pipe-to-shell patterns (supply chain risk).
+# curl/wget/fetch must be at a statement boundary.
+# Catches: curl url | bash, wget -O- url | sh, curl url | sudo -E bash, curl url | python3.
+# Interpreters (python, node, perl, ruby) only block when reading the script from
+# stdin, so curl url | python3 -m json.tool stays allowed.
+_SUDO='(sudo([[:space:]]+-[a-zA-Z]+)*[[:space:]]+)?'
+_SHELLS='(bash|sh|zsh|fish|dash|ash|ksh)'
+if echo "$COMMAND" | grep -qE \
+  "${_STMT_START}(curl|wget|fetch)[[:space:]].*\|[[:space:]]*${_SUDO}(${_SHELLS}([[:space:]]|\$)|(python[0-9.]*|node|perl|ruby)[[:space:]]*(-[[:space:]]*)?([;&|)]|\$))"; then
   _grok_block "Blocked: pipe-to-shell (curl|bash, wget|sh, etc.) is not permitted. Download the script first, inspect it, then run it explicitly."
+fi
+
+# Same risk via substitution: bash <(curl ...), sh -c "$(curl ...)", eval "$(curl ...)".
+# shellcheck disable=SC2016
+_SUBST='(<\(|\$\(|`)'
+if echo "$COMMAND" | grep -qE \
+  "${_STMT_START}(${_SHELLS}([[:space:]]+-[a-zA-Z]+)*|eval|source|\.)[[:space:]]+${_QUOTE}${_SUBST}[[:space:]]*(curl|wget|fetch)[[:space:]]"; then
+  _grok_block "Blocked: running a downloaded script via bash <(curl ...) or sh -c \"\$(curl ...)\" is not permitted. Download the script first, inspect it, then run it explicitly."
 fi
 
 _allow
