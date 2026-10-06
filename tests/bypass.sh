@@ -3,9 +3,9 @@
 #
 # Runs each command through the whole Bash hook chain, the way an agent
 # runs it: blocked if any hook blocks. Known bypass forms must stay blocked
-# and everyday commands must stay allowed. Each case runs in the Claude
-# payload shape and in the Cursor shape; for Cursor every hook must also print
-# its permission JSON on stdout.
+# and everyday commands must stay allowed. Each case runs in the Claude,
+# Cursor and Gemini CLI payload shapes; for Cursor every hook must also print
+# its permission JSON on stdout, for Gemini stdout must stay empty.
 #
 # Usage: bash tests/bypass.sh
 # Requirements: bash, jq, git
@@ -35,17 +35,21 @@ mkrepo "$FEAT" feat
 mkrepo "$MAIN" main
 
 # chain <dir> <shape> <cmd> — prints "block" or "allow"; for the cursor shape
-# prints "badjson" when a hook's stdout does not match its exit code.
+# prints "badjson" when a hook's stdout does not match its exit code (gemini:
+# when a hook prints anything on stdout).
 chain() {
   local dir="$1" shape="$2" cmd="$3" payload h out code verdict=allow
   if [[ "$shape" == cursor ]]; then
     payload=$(jq -n --arg c "$cmd" --arg d "$dir" '{command:$c,cwd:$d}')
+  elif [[ "$shape" == gemini ]]; then
+    payload=$(jq -n --arg c "$cmd" --arg d "$dir" '{hook_event_name:"BeforeTool",tool_name:"run_shell_command",tool_input:{command:$c},cwd:$d}')
   else
     payload=$(jq -n --arg c "$cmd" '{tool_name:"Bash",tool_input:{command:$c}}')
   fi
   for h in "${BASH_HOOKS[@]}"; do
     out=$(cd "$dir" && printf '%s' "$payload" | bash "$HOOKS_DIR/$h" 2>/dev/null)
     code=$?
+    if [[ "$shape" == gemini && -n "$out" ]]; then echo badjson; return; fi
     if [[ "$shape" == cursor ]]; then
       if [[ "$code" -eq 0 ]]; then
         jq -e '.permission == "allow"' <<<"$out" >/dev/null 2>&1 || { echo badjson; return; }
@@ -61,7 +65,7 @@ chain() {
 # expect <block|allow> <dir> <cmd>
 expect() {
   local want="$1" dir="$2" cmd="$3" shape got
-  for shape in claude cursor; do
+  for shape in claude cursor gemini; do
     got=$(chain "$dir" "$shape" "$cmd")
     if [[ "$got" == "$want" ]]; then
       printf "  PASS  %-6s %s: %s\n" "$shape" "$want" "$cmd"
@@ -78,6 +82,8 @@ expect() {
 
 echo "self-edit: chained and indirect writes to agent config"
 expect block "$FEAT" 'git status; rm -rf ~/.claude/hooks'
+expect block "$FEAT" 'git status; rm -rf ~/.gemini/hooks'
+expect block "$FEAT" 'cat ~/.gemini/oauth_creds.json'
 expect block "$FEAT" 'git log -1 && echo "{}" > ~/.claude/settings.json'
 expect block "$FEAT" 'cd ~/.claude && rm -r hooks'
 expect block "$FEAT" 'find ~/.claude -name "*.sh" -delete'
@@ -245,6 +251,10 @@ expect_file block Write /proj/.claude/settings.local.json
 expect_file block Write /proj/.claude/settings.json
 expect_file block Write "$HOME/.claude/settings.local.json"
 expect_file block Edit  "$HOME/.claude/hooks/block-env.sh"
+expect_file block write_file "$HOME/.gemini/settings.json"
+expect_file block replace    /proj/.gemini/settings.json
+expect_file block write_file "$HOME/.gemini/hooks/block-env.sh"
+expect_file block read_file  "$HOME/.gemini/oauth_creds.json"
 expect_file block Read  /proj/.ENV
 expect_file block Read  /proj/.Env.Production
 expect_file allow Read  /proj/.env.example

@@ -262,6 +262,32 @@ check_true  "~/AGENTS.md kept after codex uninstall" test -f "$FAKE_HOME/AGENTS.
 run_uninstall grok
 check_false "~/AGENTS.md removed after grok uninstall" test -f "$FAKE_HOME/AGENTS.md"
 
+# ── Gemini ────────────────────────────────────────────────────────────────────
+
+echo ""
+echo "uninstall gemini — dry-run leaves files intact"
+run_install gemini
+run_uninstall gemini --dry-run
+check_true "GEMINI.md still present after dry-run"     test -f "$FAKE_HOME/.gemini/GEMINI.md"
+check_true "settings.json still present after dry-run" test -f "$FAKE_HOME/.gemini/settings.json"
+for h in "${HOOKS[@]}"; do
+  check_true "gemini hook $h still present after dry-run" test -f "$FAKE_HOME/.gemini/hooks/$h"
+done
+
+echo ""
+echo "uninstall gemini — removes files, keeps user GEMINI.md content"
+run_uninstall gemini
+check_false "GEMINI.md removed"      test -f "$FAKE_HOME/.gemini/GEMINI.md"
+check_false "settings.json removed"  test -f "$FAKE_HOME/.gemini/settings.json"
+check_false "hooks dir removed"      test -d "$FAKE_HOME/.gemini/hooks"
+printf 'MY GEMINI RULES\n' > "$FAKE_HOME/.gemini/GEMINI.md"
+run_install gemini --skills go
+check_true  "skill appended to user GEMINI.md" grep -qF '<!-- agentguard:skill:go -->' "$FAKE_HOME/.gemini/GEMINI.md"
+run_uninstall gemini
+check_true  "user GEMINI.md kept"     grep -qx 'MY GEMINI RULES' "$FAKE_HOME/.gemini/GEMINI.md"
+check_false "skill section stripped"  grep -qF 'agentguard:skill' "$FAKE_HOME/.gemini/GEMINI.md"
+rm -rf "$FAKE_HOME/.gemini"
+
 # ── Cursor ────────────────────────────────────────────────────────────────────
 
 echo ""
@@ -368,12 +394,16 @@ check_false "kiro 3.x hooks json removed (all)"   test -f "$FAKE_HOME/.kiro/hook
 check_false "AGENTS.md removed (all)"             test -f "$FAKE_HOME/AGENTS.md"
 check_false "codex AGENTS.md removed (all)"       test -f "$FAKE_HOME/.codex/AGENTS.md"
 check_false "codex hooks.json removed (all)"      test -f "$FAKE_HOME/.codex/hooks.json"
+check_false "GEMINI.md removed (all)"             test -f "$FAKE_HOME/.gemini/GEMINI.md"
+check_false "gemini settings.json removed (all)"  test -f "$FAKE_HOME/.gemini/settings.json"
+check_false "gemini hooks dir removed (all)"      test -d "$FAKE_HOME/.gemini/hooks"
 check_false "~/.agentguard/config removed (all)"  test -f "$FAKE_HOME/.agentguard/config"
 check_false "~/.agentguard/ dir removed (all)"    test -d "$FAKE_HOME/.agentguard"
 for h in "${HOOKS[@]}"; do
   check_false "claude hook $h removed (all)" test -f "$FAKE_HOME/.claude/hooks/$h"
   check_false "kiro hook $h removed (all)"   test -f "$FAKE_HOME/.kiro/hooks/$h"
   check_false "codex hook $h removed (all)"  test -f "$FAKE_HOME/.codex/hooks/$h"
+  check_false "gemini hook $h removed (all)" test -f "$FAKE_HOME/.gemini/hooks/$h"
 done
 
 for f in "${CURSOR_FILES[@]}"; do

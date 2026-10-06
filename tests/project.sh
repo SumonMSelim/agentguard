@@ -135,6 +135,16 @@ check_true  "creates AGENTS.md"            test -f "$PROJECT_CODEX/AGENTS.md"
 check_true  "skill sentinel present"       grep -qF "agentguard:skill:go" "$PROJECT_CODEX/AGENTS.md"
 check_false "global AGENTS.md not written" test -f "$FAKE_HOME/AGENTS.md"
 
+# ── Gemini: creates GEMINI.md ─────────────────────────────────────────────────
+
+echo ""
+echo "gemini --project: creates GEMINI.md with skill"
+run_project_in "$PROJECT_CODEX" gemini --project --skills go >/dev/null
+
+check_true  "creates GEMINI.md"            test -f "$PROJECT_CODEX/GEMINI.md"
+check_true  "skill sentinel present"       grep -qF "agentguard:skill:go" "$PROJECT_CODEX/GEMINI.md"
+check_false "global GEMINI.md not written" test -f "$FAKE_HOME/.gemini/GEMINI.md"
+
 # ── Kiro: prints warning, no files written ────────────────────────────────────
 
 echo ""
@@ -167,6 +177,8 @@ run_project_in "$PROJECT_ALL" all --project --skills go >/dev/null
 
 check_true  "all: .claude/CLAUDE.md created"  test -f "$PROJECT_ALL/.claude/CLAUDE.md"
 check_true  "all: AGENTS.md created"          test -f "$PROJECT_ALL/AGENTS.md"
+check_true  "all: GEMINI.md created"          grep -qF "agentguard:skill:go" "$PROJECT_ALL/GEMINI.md"
+check_false "all: no gemini settings written" test -e "$FAKE_HOME/.gemini"
 check_false "all: no hooks written"           test -d "$FAKE_HOME/.claude/hooks"
 check_false "all: no cursor hooks written"    test -d "$PROJECT_ALL/.cursor/hooks"  # cursor excluded from all --project
 

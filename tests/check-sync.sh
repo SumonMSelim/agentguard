@@ -1,7 +1,8 @@
 #!/bin/bash
 # tests/check-sync.sh — assert instruction files are in sync
 #
-# CLAUDE.md, KIRO.md, agents/codex/AGENTS.md and agents/cursor/AGENTS.md must be
+# CLAUDE.md, KIRO.md, agents/codex/AGENTS.md, agents/cursor/AGENTS.md and
+# agents/gemini/GEMINI.md must be
 # byte-for-byte identical.
 #
 # Exit 0 = in sync. Exit 1 = drift detected (prints diff).
@@ -13,6 +14,7 @@ CLAUDE="$SCRIPT_DIR/agents/claude/CLAUDE.md"
 KIRO="$SCRIPT_DIR/agents/kiro/KIRO.md"
 AGENTS="$SCRIPT_DIR/agents/codex/AGENTS.md"
 CURSOR_AGENTS="$SCRIPT_DIR/agents/cursor/AGENTS.md"
+GEMINI="$SCRIPT_DIR/agents/gemini/GEMINI.md"
 
 fail=0
 
@@ -49,6 +51,17 @@ else
   echo "PASS  CLAUDE.md == agents/cursor/AGENTS.md"
 fi
 
+# ── Claude vs Gemini (byte-for-byte identical) ───────────────────────────────
+
+if ! diff -u "$CLAUDE" "$GEMINI" >/dev/null 2>&1; then
+  echo "FAIL  agents/claude/CLAUDE.md and agents/gemini/GEMINI.md have drifted:"
+  echo ""
+  diff -u "$CLAUDE" "$GEMINI" || true
+  fail=1
+else
+  echo "PASS  CLAUDE.md == agents/gemini/GEMINI.md"
+fi
+
 # ── result ────────────────────────────────────────────────────────────────────
 
 echo ""
@@ -57,6 +70,6 @@ if [[ "$fail" -eq 0 ]]; then
   exit 0
 else
   echo "Instruction file drift detected. Edit the files to re-sync, then re-run."
-  echo "Canonical source: agents/claude/CLAUDE.md — copy to kiro/KIRO.md, codex/AGENTS.md and cursor/AGENTS.md"
+  echo "Canonical source: agents/claude/CLAUDE.md — copy to kiro/KIRO.md, codex/AGENTS.md, cursor/AGENTS.md and gemini/GEMINI.md"
   exit 1
 fi

@@ -49,6 +49,7 @@ check_false "kiro check fails when not installed"   run_check kiro
 check_false "codex check fails when not installed"  run_check codex
 check_false "cursor check fails when not installed" run_check cursor
 check_false "grok check fails when not installed"   run_check grok
+check_false "gemini check fails when not installed" run_check gemini
 check_false "all check fails when not installed"    run_check all
 
 # ── fully installed → check passes ───────────────────────────────────────────
@@ -65,6 +66,7 @@ mv "$FAKE_HOME/.kiro/hooks/agentguard.json.bak" "$FAKE_HOME/.kiro/hooks/agentgua
 check_true "codex check passes after install"  run_check codex
 check_true "cursor check passes after install" run_check cursor
 check_true "grok check passes after install"   run_check grok
+check_true "gemini check passes after install" run_check gemini
 check_true "all check passes after install"    run_check all
 
 # ── partial install → check fails ────────────────────────────────────────────
@@ -96,6 +98,22 @@ rm "$FAKE_HOME/.codex/hooks.json"
 check_false "codex check fails with missing hooks.json" run_check codex
 mv "$FAKE_HOME/.codex/hooks.json.keep" "$FAKE_HOME/.codex/hooks.json"
 check_true  "codex check passes once restored" run_check codex
+
+echo ""
+echo "check — gemini → exits 1 when broken"
+G="$FAKE_HOME/.gemini/settings.json"
+cp "$G" "$G.keep"
+jq '.hooks.BeforeTool[0].hooks |= .[1:]' "$G.keep" > "$G"
+check_false "gemini check fails with unregistered hook" run_check gemini
+jq '.hooksConfig.enabled = false' "$G.keep" > "$G"
+check_false "gemini check fails with hooksConfig.enabled false" run_check gemini
+rm "$G"
+check_false "gemini check fails with missing settings.json" run_check gemini
+mv "$G.keep" "$G"
+chmod -x "$FAKE_HOME/.gemini/hooks/block-env-read.sh"
+check_false "gemini check fails with non-executable hook" run_check gemini
+chmod +x "$FAKE_HOME/.gemini/hooks/block-env-read.sh"
+check_true  "gemini check passes once restored" run_check gemini
 
 echo ""
 echo "check — cursor hooks → exits 1 when broken"

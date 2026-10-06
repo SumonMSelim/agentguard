@@ -17,7 +17,8 @@
 #   export AGENTGUARD_PROTECTED_BRANCHES="main,master,develop,trunk"
 #
 # Shared hook — used by Claude (Bash), Kiro (execute_bash), Codex (Bash),
-# Cursor (beforeShellExecution) and Grok (run_terminal_command / Bash).
+# Cursor (beforeShellExecution), Grok (run_terminal_command / Bash) and
+# Gemini CLI (run_shell_command).
 # Static deny rules cannot inspect git state — this hook runs in the actual
 # working directory (the payload .cwd when present) so it can call git at runtime.
 #

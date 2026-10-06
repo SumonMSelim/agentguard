@@ -74,7 +74,8 @@ agentguard claude --skills none               # skip all skills
 agentguard claude --project --skills go,aws    # → .claude/CLAUDE.md
 agentguard codex  --project --skills go,aws    # → AGENTS.md
 agentguard grok   --project --skills go,aws    # → AGENTS.md
-agentguard all    --project --skills go,aws    # → claude + codex + grok (kiro warns)
+agentguard gemini --project --skills go,aws    # → GEMINI.md
+agentguard all    --project --skills go,aws    # → claude + codex + grok + gemini (kiro warns)
 agentguard kiro   --project --skills go,aws    # prints warning — not supported
 ```
 
@@ -93,6 +94,7 @@ Create `skills/<name>/SKILL.md` with YAML front-matter (`name`, `tags`, `descrip
 - Codex: `~/.codex/audit.log`
 - Cursor: `.cursor/audit.log` (project-local) or `~/.cursor/audit.log` (`--user`)
 - Grok: `~/.grok/audit.log` (if using Grok's native hooks dir)
+- Gemini CLI: `~/.gemini/audit.log`
 
 To keep more history than the built-in rotation, add a `logrotate` config:
 

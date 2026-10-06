@@ -3,7 +3,8 @@
 #
 # Blocks Read, Write, Edit, fs_read, and fs_write tools on sensitive file paths.
 # Shared hook — used by Claude (Read/Write/Edit/Grep/Glob/NotebookEdit), Kiro (fs_read/fs_write),
-# Cursor (beforeReadFile) and Grok (read_file/search_replace and friends). Not
+# Cursor (beforeReadFile), Grok (read_file/search_replace and friends) and
+# Gemini CLI (read_file/write_file/replace and friends). Not
 # registered for Codex: its apply_patch payload holds patch text, not a path.
 #
 # Covers: .env files (not .env.example and other templates), direnv (.envrc),
@@ -23,6 +24,9 @@ echo "$INPUT" | jq empty >/dev/null 2>&1 || _agentguard_invalid_payload
 # Grok:    .toolInput.path / .toolInput.target_file (read_file), .toolInput.file_path (search_replace)
 # Cursor:  .file_path (beforeReadFile), .tool_input.path or .tool_input.file_path (preToolUse Write/Delete),
 #          .tool_input as a JSON string of the MCP tool's params (beforeMCPExecution)
+# Gemini:  .tool_input.file_path (read_file/write_file/replace), .tool_input.dir_path
+#          (list_directory/glob/grep_search), .tool_input.pattern (glob),
+#          .tool_input.include_pattern (grep_search), .tool_input.include[] (read_many_files)
 # Collect all candidate paths; trim whitespace via sed (xargs would split paths with spaces).
 PATHS=$(echo "$INPUT" | jq -r '
   (if (.tool_input | type) == "string" then .tool_input = ((.tool_input | fromjson? | objects) // {}) else . end) | (.file_path // ""),
@@ -36,7 +40,11 @@ PATHS=$(echo "$INPUT" | jq -r '
   (.toolInput.target_file // ""),
   (.tool_input.operations // [] | .[].path // ""),
   (.toolInput.operations // [] | .[].path // ""),
-  (.tool_input.edits // [] | .[].file_path // "")
+  (.tool_input.edits // [] | .[].file_path // ""),
+  (.tool_input.dir_path // ""),
+  (if .tool_name == "glob" then .tool_input.pattern // "" else "" end),
+  (if .tool_name == "grep_search" or .tool_name == "search_file_content" then .tool_input.include_pattern // "" else "" end),
+  (if .tool_name == "read_many_files" then (.tool_input.include // [] | .[]? | strings) else "" end)
 ' 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)
 
 # .env and .env.<suffix> (also Glob forms like .env*), but not committed templates.
@@ -49,7 +57,7 @@ KEY_RE='\.(pem|key|p12|pfx|ppk|jks|keystore|p8|gpg|kdbx|ovpn)$|(^|/)id_(rsa|dsa|
 STORE_RE='\.envrc$|(^|/)\.?secrets?/|(^|/)secrets?\.(ya?ml|json|env)$|(^|/)credentials(\.(json|ya?ml|xml|ini|txt|csv))?$|(^|/)\.(aws|ssh|kube|azure|gnupg|password-store)(/|$)|(^|/)\.config/gcloud(/|$)|(^|/)\.config/gh/hosts\.yml$|(^|/)\.docker/config\.json$|(^|/)\.terraform\.d/credentials|(^|/)terraform\.tfstate(\.backup)?$|(^|/)\.(netrc|npmrc|pypirc|terraformrc|git-credentials|boto|s3cfg|pgpass|my\.cnf|vault-token|bash_history|zsh_history)$|(^|/)\.authinfo(\.gpg)?$|(^|/)wp-config\.php$'
 # Agent config and auth files (agentguard's own and other agents'), and the
 # agentguard audit logs (they hold command history).
-AGENT_RE='/\.agentguard($|/)|/\.claude/(settings\.json|hooks/|CLAUDE\.md$)|/\.kiro/(settings\.json|hooks/|agents/|KIRO\.md$)|(^|/)\.cursor/(hooks\.json$|hooks/|mcp\.json$)|/\.grok/(hooks/|config\.toml|AGENTS\.md$|skills/|memory/)|(^|/)\.grok/(hooks/|config\.toml|AGENTS\.md$)|(^|/)\.codex/(config\.toml|auth\.json|hooks\.json)$|(^|/)\.gemini/(settings\.json|oauth_creds\.json|GEMINI\.md)$|(^|/)\.copilot(/|$)|(^|/)\.(claude|kiro|codex|grok|cursor)/audit\.log(\.1)?$'
+AGENT_RE='/\.agentguard($|/)|/\.claude/(settings\.json|hooks/|CLAUDE\.md$)|/\.kiro/(settings\.json|hooks/|agents/|KIRO\.md$)|(^|/)\.cursor/(hooks\.json$|hooks/|mcp\.json$)|/\.grok/(hooks/|config\.toml|AGENTS\.md$|skills/|memory/)|(^|/)\.grok/(hooks/|config\.toml|AGENTS\.md$)|(^|/)\.codex/(config\.toml|auth\.json|hooks\.json)$|(^|/)\.gemini/(settings\.json$|oauth_creds\.json$|mcp-oauth-tokens\.json$|GEMINI\.md$|hooks/)|(^|/)\.copilot(/|$)|(^|/)\.(claude|kiro|codex|grok|cursor|gemini)/audit\.log(\.1)?$'
 SENSITIVE_RE="$KEY_RE|$STORE_RE|$AGENT_RE"
 # Claude settings, user or project level. Project-local settings override user
 # settings, so a write there can set disableAllHooks for the project.
