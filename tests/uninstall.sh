@@ -174,6 +174,7 @@ run_uninstall kiro --dry-run
 
 check_true "KIRO.md still present after dry-run"          test -f "$FAKE_HOME/.kiro/KIRO.md"
 check_true "agentguard.json still present after dry-run"  test -f "$FAKE_HOME/.kiro/agents/agentguard.json"
+check_true "3.x hooks json still present after dry-run"   test -f "$FAKE_HOME/.kiro/hooks/agentguard.json"
 for h in "${HOOKS[@]}"; do
   check_true "hook $h still present after dry-run" test -f "$FAKE_HOME/.kiro/hooks/$h"
 done
@@ -184,6 +185,7 @@ run_uninstall kiro
 
 check_false "KIRO.md removed"            test -f "$FAKE_HOME/.kiro/KIRO.md"
 check_false "agentguard.json removed"    test -f "$FAKE_HOME/.kiro/agents/agentguard.json"
+check_false "3.x hooks json removed"     test -f "$FAKE_HOME/.kiro/hooks/agentguard.json"
 for h in "${HOOKS[@]}"; do
   check_false "hook $h removed" test -f "$FAKE_HOME/.kiro/hooks/$h"
 done
@@ -362,6 +364,7 @@ check_false "cursor --user hooks.json removed (all)"   test -f "$FAKE_HOME/.curs
 check_false "CLAUDE.md removed (all)"             test -f "$FAKE_HOME/.claude/CLAUDE.md"
 check_false "KIRO.md removed (all)"               test -f "$FAKE_HOME/.kiro/KIRO.md"
 check_false "agentguard.json removed (all)"       test -f "$FAKE_HOME/.kiro/agents/agentguard.json"
+check_false "kiro 3.x hooks json removed (all)"   test -f "$FAKE_HOME/.kiro/hooks/agentguard.json"
 check_false "AGENTS.md removed (all)"             test -f "$FAKE_HOME/AGENTS.md"
 check_false "codex AGENTS.md removed (all)"       test -f "$FAKE_HOME/.codex/AGENTS.md"
 check_false "codex hooks.json removed (all)"      test -f "$FAKE_HOME/.codex/hooks.json"

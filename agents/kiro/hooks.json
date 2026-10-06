@@ -1,0 +1,96 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "agentguard: block-env",
+      "description": "Block .env reads and env dumps",
+      "trigger": "PreToolUse",
+      "matcher": "shell",
+      "action": { "type": "command", "command": "bash ~/.kiro/hooks/block-env.sh" }
+    },
+    {
+      "name": "agentguard: block-main-branch",
+      "description": "Block commits/pushes on main/master and force pushes",
+      "trigger": "PreToolUse",
+      "matcher": "shell",
+      "action": { "type": "command", "command": "bash ~/.kiro/hooks/block-main-branch.sh" }
+    },
+    {
+      "name": "agentguard: block-system-installs",
+      "description": "Block system package manager installs",
+      "trigger": "PreToolUse",
+      "matcher": "shell",
+      "action": { "type": "command", "command": "bash ~/.kiro/hooks/block-system-installs.sh" }
+    },
+    {
+      "name": "agentguard: block-destructive-ops",
+      "description": "Block rm on root/home and pipe-to-shell",
+      "trigger": "PreToolUse",
+      "matcher": "shell",
+      "action": { "type": "command", "command": "bash ~/.kiro/hooks/block-destructive-ops.sh" }
+    },
+    {
+      "name": "agentguard: block-self-edit",
+      "description": "Block shell writes to agentguard's own configuration",
+      "trigger": "PreToolUse",
+      "matcher": "shell",
+      "action": { "type": "command", "command": "bash ~/.kiro/hooks/block-self-edit.sh" }
+    },
+    {
+      "name": "agentguard: block-env (execute_bash)",
+      "description": "Block .env reads and env dumps",
+      "trigger": "PreToolUse",
+      "matcher": "execute_bash",
+      "action": { "type": "command", "command": "bash ~/.kiro/hooks/block-env.sh" }
+    },
+    {
+      "name": "agentguard: block-main-branch (execute_bash)",
+      "description": "Block commits/pushes on main/master and force pushes",
+      "trigger": "PreToolUse",
+      "matcher": "execute_bash",
+      "action": { "type": "command", "command": "bash ~/.kiro/hooks/block-main-branch.sh" }
+    },
+    {
+      "name": "agentguard: block-system-installs (execute_bash)",
+      "description": "Block system package manager installs",
+      "trigger": "PreToolUse",
+      "matcher": "execute_bash",
+      "action": { "type": "command", "command": "bash ~/.kiro/hooks/block-system-installs.sh" }
+    },
+    {
+      "name": "agentguard: block-destructive-ops (execute_bash)",
+      "description": "Block rm on root/home and pipe-to-shell",
+      "trigger": "PreToolUse",
+      "matcher": "execute_bash",
+      "action": { "type": "command", "command": "bash ~/.kiro/hooks/block-destructive-ops.sh" }
+    },
+    {
+      "name": "agentguard: block-self-edit (execute_bash)",
+      "description": "Block shell writes to agentguard's own configuration",
+      "trigger": "PreToolUse",
+      "matcher": "execute_bash",
+      "action": { "type": "command", "command": "bash ~/.kiro/hooks/block-self-edit.sh" }
+    },
+    {
+      "name": "agentguard: block-env-read (read)",
+      "description": "Block reads of .env and credential files",
+      "trigger": "PreToolUse",
+      "matcher": "read",
+      "action": { "type": "command", "command": "bash ~/.kiro/hooks/block-env-read.sh" }
+    },
+    {
+      "name": "agentguard: block-env-read (write)",
+      "description": "Block writes to .env and credential files",
+      "trigger": "PreToolUse",
+      "matcher": "write",
+      "action": { "type": "command", "command": "bash ~/.kiro/hooks/block-env-read.sh" }
+    },
+    {
+      "name": "agentguard: audit-log",
+      "description": "Audit log every tool call",
+      "trigger": "PostToolUse",
+      "matcher": "*",
+      "action": { "type": "command", "command": "bash ~/.kiro/hooks/audit-log.sh" }
+    }
+  ]
+}

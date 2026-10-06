@@ -12,7 +12,7 @@ Security guardrails and workflow policies for AI coding agents. Blocks dangerous
 | Agent                                                               | Enforcement                                         |
 |---------------------------------------------------------------------|-----------------------------------------------------|
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code/hooks) | Shell hooks + settings.json + instruction file      |
-| [Kiro](https://kiro.dev/docs/cli/hooks/)                            | Shell hooks + agent config + instruction file       |
+| [Kiro](https://kiro.dev/docs/hooks/)                                | Shell hooks + agent config + instruction file       |
 | [Cursor](https://cursor.com)                                        | Hooks via `.cursor/` (or `~/.cursor/` with `--user`) + AGENTS.md |
 | [Grok](https://x.ai)                                                | Shell hooks (via `~/.grok/hooks/`) + AGENTS.md      |
 | [OpenAI Codex](https://github.com/openai/codex)                     | Shell hooks (via `~/.codex/hooks.json`) + AGENTS.md |
@@ -210,7 +210,7 @@ Create `skills/<name>/SKILL.md` with YAML frontmatter (`name`, `tags`, `descript
 
 ## Notes
 
-- **Kiro** — guardrails only activate when using the `agentguard` agent. Switch to it in Kiro after install.
+- **Kiro** — two hook formats are installed. Kiro CLI 2.x reads hooks from the `agentguard` agent config (`~/.kiro/agents/agentguard.json`), so guardrails only activate when using the `agentguard` agent: switch to it in Kiro after install. Kiro CLI 3.x (V3 engine, `kiro-cli --v3`) reads global hooks from `~/.kiro/hooks/agentguard.json`, which apply to every agent.
 - **Cursor** — `agentguard cursor` installs `.cursor/` into the current directory. `agentguard cursor --user` installs hooks only to `~/.cursor/` so they apply to every project (Cursor has no user-level instruction file; it is tracked for `agentguard upgrade`). `hooks.json` is merged: your own hooks are kept, ours are refreshed on every re-run, and uninstall strips only ours. Registered events: `beforeShellExecution`, `beforeReadFile`, `preToolUse` (`Write|Delete`), `beforeMCPExecution`, `postToolUse`.
 - **Grok** — native hooks via `~/.grok/hooks/agentguard.json` + shared scripts; global rules via `~/AGENTS.md`. Grok also loads Claude/Cursor locations for compatibility.
 - **Codex** — hooks in `~/.codex/hooks.json` (merged with your own hooks) + shared scripts in `~/.codex/hooks/`; global rules via `~/.codex/AGENTS.md`. Codex runs new hooks only after you trust them: open Codex and run `/hooks`. File edits through `apply_patch` are checked by the self-edit hook only, since the payload holds patch text, not a file path. An agentguard-created `~/AGENTS.md` from older releases is moved to `~/.codex/AGENTS.md` (left in place while Grok is installed).

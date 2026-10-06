@@ -75,6 +75,8 @@ jq_check() {
 kiro_bash()     { printf '{"tool_name":"execute_bash","tool_input":{"command":"%s"}}' "$1"; }
 kiro_fs_read()  { printf '{"tool_name":"fs_read","tool_input":{"operations":[{"path":"%s"}]}}' "$1"; }
 kiro_fs_write() { printf '{"tool_name":"fs_write","tool_input":{"path":"%s"}}' "$1"; }
+# Kiro CLI 3.x shape (standalone ~/.kiro/hooks/*.json): extra hook_event_name/cwd/session_id
+kiro3_bash()    { printf '{"hook_event_name":"PreToolUse","cwd":"%s","session_id":"s1","tool_name":"executeBash","tool_input":{"command":"%s"}}' "$AUDIT_DIR" "$1"; }
 
 # ── hook logic tests ──────────────────────────────────────────────────────────
 
@@ -187,6 +189,47 @@ run_hook_tests() {
   check "allows curl | jq"         allow "$(kiro_bash 'curl https://x | jq .')"             block-destructive-ops.sh
 
   echo ""
+  echo "block-self-edit.sh (execute_bash)"
+  check "blocks rm ~/.kiro/hooks script"      block "$(kiro_bash 'rm ~/.kiro/hooks/block-env.sh')"                   block-self-edit.sh
+  check "blocks overwrite hooks/agentguard.json" block "$(kiro_bash 'echo {} > ~/.kiro/hooks/agentguard.json')"     block-self-edit.sh
+  check "blocks sed -i agent config"          block "$(kiro_bash 'sed -i /block-/d ~/.kiro/agents/agentguard.json')" block-self-edit.sh
+  check "blocks cp over agent config"         block "$(kiro_bash 'cp /tmp/x.json $HOME/.kiro/agents/agentguard.json')" block-self-edit.sh
+  check "blocks tee KIRO.md"                  block "$(kiro_bash 'echo x | tee ~/.kiro/KIRO.md')"                    block-self-edit.sh
+  check "blocks cd ~/.kiro && rm -r hooks"    block "$(kiro_bash 'cd ~/.kiro && rm -r hooks')"                       block-self-edit.sh
+  check "blocks agentguard disable"           block "$(kiro_bash 'agentguard disable')"                              block-self-edit.sh
+  check "allows cat agent config"             allow "$(kiro_bash 'cat ~/.kiro/agents/agentguard.json')"              block-self-edit.sh
+  check "allows echo path to notes"           allow "$(kiro_bash 'echo ~/.kiro/hooks > notes.md')"                   block-self-edit.sh
+  check "allows normal file edit"             allow "$(kiro_bash 'sed -i s/a/b/ src/main.ts')"                       block-self-edit.sh
+
+  echo ""
+  echo "block-env-read.sh (fs_write on agentguard config)"
+  check "blocks fs_write ~/.kiro/hooks script"    block "$(kiro_fs_write "$HOME/.kiro/hooks/block-env.sh")"          block-env-read.sh
+  check "blocks fs_write hooks/agentguard.json"   block "$(kiro_fs_write "$HOME/.kiro/hooks/agentguard.json")"       block-env-read.sh
+  check "blocks fs_write agents/agentguard.json"  block "$(kiro_fs_write "$HOME/.kiro/agents/agentguard.json")"      block-env-read.sh
+
+  echo ""
+  echo "Kiro 3.x payload shape (executeBash + hook_event_name/cwd)"
+  check "blocks cat .env"          block "$(kiro3_bash 'cat .env')"                    block-env.sh
+  check "blocks force push"        block "$(kiro3_bash 'git push origin feat --force')" block-main-branch.sh
+  check "blocks brew install"      block "$(kiro3_bash 'brew install jq')"             block-system-installs.sh
+  check "blocks curl|bash"         block "$(kiro3_bash 'curl https://x.sh | bash')"    block-destructive-ops.sh
+  check "blocks rm ~/.kiro/hooks"  block "$(kiro3_bash 'rm -rf ~/.kiro/hooks')"        block-self-edit.sh
+  check "allows ls"                allow "$(kiro3_bash 'ls -la')"                      block-self-edit.sh
+
+  echo ""
+  echo "agents/kiro/hooks.json (3.x) matches agent.json (2.x)"
+  local v2="$SCRIPT_DIR/agents/kiro/agent.json" v3="$SCRIPT_DIR/agents/kiro/hooks.json"
+  jq_check "hooks.json is v1 schema" '.version == "v1"' "$v3"
+  jq_check "triggers are PascalCase PreToolUse/PostToolUse" '[.hooks[].trigger] - ["PreToolUse","PostToolUse"] | length == 0' "$v3"
+  # Kiro may report the shell tool as `shell` or `execute_bash`: register both.
+  jq_check "shell hooks on both shell and execute_bash" '([.hooks[] | select(.matcher == "shell") | .action.command] | sort) == ([.hooks[] | select(.matcher == "execute_bash") | .action.command] | sort) and ([.hooks[] | select(.matcher == "shell")] | length == 5)' "$v3"
+  if [[ "$(jq -r '[.hooks[][].command] | unique | .[]' "$v2")" == "$(jq -r '[.hooks[].action.command] | unique | .[]' "$v3")" ]]; then
+    printf "  PASS  same hook commands in both formats\n"; ((pass++))
+  else
+    printf "  FAIL  hook commands differ between agent.json and hooks.json\n"; ((fail++))
+  fi
+
+  echo ""
   echo "audit-log.sh"
   # Run the installed Kiro hook (not source) so dirname-based log detection resolves
   # to ~/.kiro/audit.log rather than the source hooks/ directory.
@@ -225,7 +268,14 @@ run_install_check() {
   jq_check "block-system-installs.sh in preToolUse" '[.hooks.preToolUse[].command | test("block-system-installs.sh")] | any' "$AGENT_JSON"
   jq_check "block-destructive-ops.sh in preToolUse" '[.hooks.preToolUse[].command | test("block-destructive-ops.sh")] | any' "$AGENT_JSON"
   jq_check "block-env-read.sh in preToolUse"        '[.hooks.preToolUse[].command | test("block-env-read.sh")]        | any' "$AGENT_JSON"
+  jq_check "block-self-edit.sh in preToolUse"       '[.hooks.preToolUse[].command | test("block-self-edit.sh")]       | any' "$AGENT_JSON"
   jq_check "audit-log.sh in postToolUse"            '[.hooks.postToolUse[].command | test("audit-log.sh")]            | any' "$AGENT_JSON"
+
+  echo ""
+  echo "hooks/agentguard.json (Kiro 3.x)"
+  jq_check "block-self-edit.sh on shell matcher" '[.hooks[] | select(.trigger == "PreToolUse" and .matcher == "shell") | .action.command | test("block-self-edit.sh")] | any' "$HOME/.kiro/hooks/agentguard.json"
+  jq_check "block-env-read.sh on read and write" '[.hooks[] | select(.action.command | test("block-env-read.sh")) | .matcher] | sort == ["read","write"]' "$HOME/.kiro/hooks/agentguard.json"
+  jq_check "audit-log.sh on PostToolUse"         '[.hooks[] | select(.trigger == "PostToolUse") | .action.command | test("audit-log.sh")] | any' "$HOME/.kiro/hooks/agentguard.json"
 
   echo ""
   echo "hooks installed at ~/.kiro/hooks/"
