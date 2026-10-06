@@ -445,6 +445,64 @@ EOF
   check "allows echo mentioning agentguard disable" \
     allow '{"tool_input":{"command":"echo run agentguard disable yourself"}}' block-self-edit.sh
 
+  # Bypasses from issue #64 and settings files from #65. jq builds the payload
+  # so commands can carry quotes.
+  self_edit() { check "$1 self-edit: $2" "$1" "$(jq -cn --arg c "$2" '{tool_input:{command:$c}}')" block-self-edit.sh; }
+  self_edit block 'git status; rm -rf ~/.claude/hooks'
+  self_edit block 'git status && rm -rf ~/.claude/hooks'
+  self_edit block 'git log $(rm -rf ~/.claude/hooks)'
+  self_edit block 'git log > ~/.claude/settings.json'
+  self_edit block 'cd ~/.claude && rm -r hooks'
+  self_edit block 'cd ~/.agentguard && rm config'
+  self_edit block 'cd ~/.claude && echo {} > settings.json'
+  self_edit block 'find ~/.claude -name "*.sh" -delete'
+  self_edit block 'find ~/.claude -exec rm {} +'
+  self_edit block 'docker run -v ~/.claude:/c alpine sh -c "echo {} > /c/settings.json"'
+  self_edit block 'docker run --mount type=bind,src=$HOME/.claude,dst=/c alpine true'
+  self_edit block "python3 -c \"open('/Users/x/.claude/settings.json','w').write('{}')\""
+  self_edit block "perl -pi -e 's/block//' ~/.claude/settings.json"
+  self_edit block 'jq . ~/.claude/settings.json | sponge ~/.claude/settings.json'
+  self_edit block 'rsync /tmp/x ~/.claude/'
+  self_edit block "node -e \"require('fs').writeFileSync('/home/x/.claude/settings.json','{}')\""
+  self_edit block 'D=~/.claude; rm -rf $D/hooks'
+  self_edit block 'export D="$HOME/.claude"; echo {} > $D/settings.json'
+  self_edit block 'rm ~/.agentguard/audit.log'
+  self_edit block 'rm -rf ${HOME}/.kiro'
+  self_edit block 'rm -rf /Users/x/.grok/anything'
+  self_edit block 'echo x >> $HOME/.codex/config.toml'
+  self_edit block 'truncate -s0 ~/.cursor/hooks/audit-log.sh'
+  self_edit block "echo '{\"disableAllHooks\":true}' > .claude/settings.local.json"
+  self_edit block 'echo {} > .claude/settings.json'
+  self_edit block 'echo {} > ~/.claude/settings.json'
+  self_edit block 'echo {} > ~/.claude.json'
+  self_edit allow 'git commit -m "fix ~/.claude hook"'
+  self_edit allow 'ls ~/.claude/hooks'
+  self_edit allow 'cat ~/.claude/CLAUDE.md'
+  self_edit allow 'cd ~/project && rm -rf build'
+  self_edit allow 'docker run -v $PWD:/app alpine'
+  self_edit allow 'find . -name "*.log" -delete'
+  self_edit allow 'python3 -c "print(1)"'
+  self_edit allow 'echo "~/.claude/settings.json" > notes.md'
+  self_edit allow 'ls ~/.claude/hooks 2>/dev/null'
+  self_edit allow 'echo {} > src/claude.json'
+
+  echo ""
+  echo "block-env-read.sh — Claude settings files (#65)"
+  check "blocks Write .claude/settings.local.json" \
+    block '{"tool_input":{"file_path":".claude/settings.local.json","content":"{}"}}' block-env-read.sh
+  check "blocks Edit /p/.claude/settings.local.json" \
+    block '{"tool_input":{"file_path":"/Users/x/p/.claude/settings.local.json"}}' block-env-read.sh
+  check "blocks Write project .claude/settings.json" \
+    block '{"tool_input":{"file_path":".claude/settings.json"}}' block-env-read.sh
+  check "blocks Edit ~/.claude/settings.json" \
+    block '{"tool_input":{"file_path":"/home/x/.claude/settings.json"}}' block-env-read.sh
+  check "blocks Write ~/.claude.json" \
+    block '{"tool_input":{"file_path":"/Users/x/.claude.json"}}' block-env-read.sh
+  check "allows Write src/claude.json" \
+    allow '{"tool_input":{"file_path":"src/claude.json"}}' block-env-read.sh
+  check "allows Read .claude/CLAUDE.md" \
+    allow '{"tool_input":{"path":".claude/CLAUDE.md"}}' block-env-read.sh
+
   echo ""
   echo "block-env-read.sh — agentguard self-config"
   check "blocks Edit on ~/.claude/settings.json" \

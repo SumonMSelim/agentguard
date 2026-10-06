@@ -38,8 +38,14 @@ _allow() { if _is_cursor; then echo '{"permission":"allow"}'; fi; exit 0; }
 _grok_block() { echo "$1" >&2; if _is_cursor; then jq -cn --arg m "$1" '{permission:"deny",user_message:$m}'; elif echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then printf '{"decision":"deny","reason":"%s"}\n' "$1"; fi; exit 2; }
 
 SENSITIVE_RE='(^|/)\.env(\.|$)|(^|/)\.env$|\.envrc$|secrets/|\.aws/|\.ssh/|credentials|\.netrc$|\.(pem|key|p12|pfx)$|/\.agentguard($|/)|/\.claude/(settings\.json|hooks/|CLAUDE\.md$)|/\.kiro/(settings\.json|hooks/|agents/|KIRO\.md$)|(^|/)\.cursor/(hooks\.json$|hooks/)|/\.grok/(hooks/|config\.toml|AGENTS\.md$|skills/|memory/)|(^|/)\.grok/(hooks/|config\.toml|AGENTS\.md$)'
+# Claude settings, user or project level. Project-local settings override user
+# settings, so a write there can set disableAllHooks for the project.
+SETTINGS_RE='(^|/)\.claude/settings(\.local)?\.json$|(^|/)\.claude\.json$'
 
 while IFS= read -r FILE; do
+  if echo "$FILE" | grep -qE "$SETTINGS_RE"; then
+    _grok_block "Blocked: '$FILE' is a Claude settings file. Project-local settings (.claude/settings.local.json) can set disableAllHooks and turn off every guardrail, so agents may not touch it. Ask the user to make the change."
+  fi
   if echo "$FILE" | grep -qE "$SENSITIVE_RE"; then
     _grok_block "Blocked: reading sensitive file '$FILE' is not permitted globally. If a value from this file is needed, ask the user to supply it directly."
   fi
