@@ -2,7 +2,9 @@
 # hooks/block-env-read.sh
 #
 # Blocks Read, Write, Edit, fs_read, and fs_write tools on sensitive file paths.
-# Shared hook — used by both Claude (Read/Write/Edit/Grep/Glob/NotebookEdit) and Kiro (fs_read/fs_write).
+# Shared hook — used by Claude (Read/Write/Edit/Grep/Glob/NotebookEdit), Kiro (fs_read/fs_write),
+# Cursor (beforeReadFile) and Grok (read_file/search_replace and friends). Not
+# registered for Codex: its apply_patch payload holds patch text, not a path.
 #
 # Covers: .env files (not .env.example and other templates), direnv (.envrc),
 # private keys, tool credential stores, shell history, agent config and auth files.

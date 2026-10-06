@@ -2,7 +2,8 @@
 # hooks/block-env.sh
 #
 # Blocks access to .env files or env var dumps via shell commands.
-# Shared hook — used by both Claude (Bash tool) and Kiro (execute_bash tool).
+# Shared hook — used by Claude (Bash), Kiro (execute_bash), Codex (Bash),
+# Cursor (beforeShellExecution) and Grok (run_terminal_command / Bash).
 #
 # LIMITATION: best-effort. block-env-read.sh (Read/Write/Edit tool hook) is the
 # primary enforcement layer for file reads; this hook is defence-in-depth for

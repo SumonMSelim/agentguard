@@ -29,7 +29,7 @@ bash tests/run_all.sh   # all suites must pass before you start
 Hooks live in `hooks/`. Each hook:
 - Reads a JSON payload from stdin
 - Exits `2` to block, `0` to allow, `1` on error
-- Handles both Claude/Kiro (`tool_input.command`) and Cursor (`command`) payload shapes
+- Handles every payload shape: Claude/Kiro/Codex (`tool_input.command`), Grok (`toolInput.command`) and Cursor (flat `command`)
 - Must have corresponding tests in `tests/claude.sh` and `tests/kiro.sh`
 
 See existing hooks for the pattern. Add the new hook name to `AGENTGUARD_HOOKS` in `install.sh`.

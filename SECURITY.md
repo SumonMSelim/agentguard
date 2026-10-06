@@ -34,7 +34,7 @@ Include:
 ## Scope
 
 agentguard is a security tool — any bypass of its enforcement hooks is in scope. The following are **not** in scope:
-- Vulnerabilities in the agents agentguard protects (Claude Code, Kiro, Cursor, Codex)
+- Vulnerabilities in the agents agentguard protects (Claude Code, Kiro, Cursor, Codex, Grok)
 - Issues requiring physical access to the machine
 - Social engineering
 

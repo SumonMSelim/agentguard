@@ -25,7 +25,7 @@
 #     workspace_roots, ... at top level. beforeShellExecution adds flat
 #     "command"/"cwd"; beforeReadFile adds flat "file_path"/"content". So a
 #     Cursor permission payload = top-level command or file_path, and no
-#     tool_input (Claude/Kiro) or toolInput (Grok). preToolUse and
+#     tool_input (Claude/Kiro/Codex) or toolInput (Grok). preToolUse and
 #     beforeMCPExecution carry tool_name/tool_input like Claude, so they are
 #     told apart by hook_event_name (Claude and Codex send "PreToolUse").
 #     beforeMCPExecution tool_input is the MCP params as a JSON string.

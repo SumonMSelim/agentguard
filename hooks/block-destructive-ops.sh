@@ -9,7 +9,8 @@
 #   - overwriting /etc/passwd, shadow, sudoers or hosts; the :(){ :|:& };: fork bomb
 #   - pipe-to-shell (curl|bash, wget|sh, bash <(curl), sh -c "$(curl)") — supply chain risk
 #
-# Shared hook — used by both Claude (Bash tool) and Kiro (execute_bash tool).
+# Shared hook — used by Claude (Bash), Kiro (execute_bash), Codex (Bash),
+# Cursor (beforeShellExecution) and Grok (run_terminal_command / Bash).
 # Note: general `rm -rf <path>` is NOT blocked — legitimate uses like
 # `rm -rf node_modules` or `rm -rf ./dist` are too common to intercept.
 # Only anchored, catastrophic targets are blocked here.
