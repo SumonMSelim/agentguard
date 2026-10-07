@@ -64,6 +64,21 @@
 # write_code), .mcp_tool_arguments (mcp_tool_use). "Exit 2 ... The Cascade
 # agent will see the error message from stderr. For pre-hooks, this blocks the
 # action"; no stdout contract, so it takes the Claude path too.
+#
+# Google Antigravity CLI (antigravity.google/docs/hooks, checked 2026-10-07)
+# PreToolUse/PostToolUse send toolCall {name, args} plus conversationId,
+# workspacePaths, stepIdx; no cwd and no event name. args use the tool's own
+# names: run_command CommandLine/Cwd, view_file AbsolutePath, write_to_file /
+# replace_file_content / multi_replace_file_content TargetFile, list_dir
+# DirectoryPath, find_by_name SearchDirectory/Pattern, grep_search
+# SearchPath/Includes. Below, a toolCall payload is mapped to tool_name /
+# tool_input (.command, .file_path, .path added) and .cwd (args.Cwd, else the
+# first workspace path), keeping toolCall for _is_antigravity. The docs give
+# the PreToolUse output only: {"decision":"allow"|"deny"|"ask"|..,"reason":..};
+# "allow" means "automatic execution" (skips the user's own permission
+# prompt), so an allow prints nothing. Deny prints the JSON and exits 0; the
+# docs name no exit-code channel. Reports from agy users (not in the docs):
+# empty stdout on exit 0 runs the tool, any non-zero exit denies it.
 
 # Audit log, shared by audit-log.sh (one line per tool call) and every block
 # path (_agentguard_log_block writes a BLOCKED line). The log sits next to the
@@ -134,12 +149,19 @@ _allow() { if _is_cursor; then echo '{"permission":"allow"}'; fi; exit 0; }
 # Copilot CLI: toolArgs is Copilot's own field (Grok sends toolName too, but
 # with toolInput).
 _is_copilot() { echo "$INPUT" | jq -e 'has("toolArgs")' >/dev/null 2>&1; }
+# Antigravity: toolCall is its own field (no other agent sends it).
+_is_antigravity() { echo "$INPUT" | jq -e 'has("toolCall")' >/dev/null 2>&1; }
 # Block: stderr message, BLOCKED audit line, exit 2. Cursor also gets deny JSON
 # (block-env-read.sh serves beforeReadFile: permission + user_message only);
 # Copilot gets a permissionDecision; Grok gets a JSON decision on stdout.
+# Antigravity gets its decision JSON and exit 0 (see the contract above).
 _grok_block() {
   echo "$1" >&2
   _agentguard_log_block
+  if _is_antigravity; then
+    jq -cn --arg m "$1" '{decision:"deny",reason:$m}'
+    exit 0
+  fi
   if _is_cursor; then
     if [[ "${0##*/}" == block-env-read.sh ]]; then
       jq -cn --arg m "$1" '{permission:"deny",user_message:$m}'
@@ -183,6 +205,22 @@ if [[ "${INPUT:-}" == *'"toolArgs"'* ]]; then
       | .tool_input = (.toolArgs
           | if type == "string" then (fromjson? // {command: .}) else . end
           | if type == "object" then . else {} end)
+    else . end' <<<"$INPUT" 2>/dev/null) && [[ -n "$_agentguard_norm" ]] && INPUT="$_agentguard_norm"
+  unset _agentguard_norm
+fi
+
+# Antigravity: map toolCall to tool_name/tool_input/cwd (see the contract
+# above). toolCall stays, so _is_antigravity still holds.
+if [[ "${INPUT:-}" == *'"toolCall"'* ]]; then
+  _agentguard_norm=$(jq -c 'if (.toolCall | type) == "object" and (has("tool_input") | not) then
+      ((.toolCall.args | objects) // {}) as $a
+      | .tool_name = (.toolCall.name // "")
+      | .tool_input = ($a + ({command: $a.CommandLine,
+          file_path: ($a.TargetFile // $a.AbsolutePath),
+          path: ($a.DirectoryPath // $a.SearchDirectory // $a.SearchPath)}
+          | with_entries(select(.value != null))))
+      | (.cwd // $a.Cwd // ((.workspacePaths | arrays | .[0]) // null)) as $c
+      | if $c then .cwd = $c else . end
     else . end' <<<"$INPUT" 2>/dev/null) && [[ -n "$_agentguard_norm" ]] && INPUT="$_agentguard_norm"
   unset _agentguard_norm
 fi

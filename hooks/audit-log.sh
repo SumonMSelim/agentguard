@@ -5,8 +5,9 @@
 # Shared hook — used by Claude (→ ~/.claude/audit.log), Kiro (→ ~/.kiro/audit.log),
 # Codex (→ ~/.codex/audit.log), Cursor (→ .cursor/audit.log), Grok (→ ~/.grok/audit.log)
 # Gemini CLI (AfterTool → ~/.gemini/audit.log), Copilot CLI (postToolUse →
-# ~/.copilot/audit.log) and Windsurf (post_* hooks →
-# ~/.codeium/windsurf/audit.log).
+# ~/.copilot/audit.log), Windsurf (post_* hooks →
+# ~/.codeium/windsurf/audit.log) and Antigravity CLI (PostToolUse →
+# ~/.gemini/config/audit.log).
 #
 # Provides a forensic record that survives hook failures and helps detect
 # unexpected behaviour or bypasses. Each entry records the UTC timestamp,

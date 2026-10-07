@@ -78,6 +78,28 @@ check_stdout() {
   fi
 }
 
+# Antigravity contract: a block exits 0 with {"decision":"deny","reason":..}
+# on stdout; an allow exits 0 with empty stdout (never "allow", which would
+# skip the user's own permission prompt). Optional 5th arg: run from this dir.
+check_agy() {
+  local label="$1" expected="$2" input="$3" hook="$4" dir="${5:-.}" out code ok=1
+  out=$(echo "$input" | (cd "$dir" && bash "$HOOKS_DIR/$hook") 2>/dev/null)
+  code=$?
+  [[ "$code" -eq 0 ]] || ok=0
+  if [[ "$expected" == "block" ]]; then
+    jq -e '.decision == "deny" and (.reason | length > 0) and (keys == ["decision","reason"])' <<<"$out" >/dev/null 2>&1 || ok=0
+  else
+    [[ -z "$out" ]] || ok=0
+  fi
+  if [[ "$ok" -eq 1 ]]; then
+    printf "  PASS  %s\n" "$label"
+    ((pass++))
+  else
+    printf "  FAIL  %s (exit %d, expected %s, stdout: %s)\n" "$label" "$code" "$expected" "$out"
+    ((fail++))
+  fi
+}
+
 # Temp git repo on 'main' for branch-detection tests.
 # CI checkouts are detached HEAD, so tests that rely on the current branch
 # must supply their own controlled git environment.
@@ -609,6 +631,52 @@ EOF
   check_in "$FEAT_REPO" "windsurf tool_info.cwd on main blocks commit" block "{$WSR,\"tool_info\":{\"command_line\":\"git commit -m x\",\"cwd\":\"$MAIN_REPO\"}}" block-main-branch.sh
   check_in "$MAIN_REPO" "windsurf tool_info.cwd on feat allows commit" allow "{$WSR,\"tool_info\":{\"command_line\":\"git commit -m x\",\"cwd\":\"$FEAT_REPO\"}}" block-main-branch.sh
 
+  # Google Antigravity CLI payload shape (toolCall {name,args}), per
+  # antigravity.google/docs/hooks. Block = deny JSON + exit 0, allow = no output.
+  echo ""
+  echo "antigravity-shaped payloads (toolCall name/args)"
+  local AG='"stepIdx":3,"conversationId":"c1","workspacePaths":["/tmp"],"modelName":"m"'
+  agy_cmd() { jq -cn --arg c "$1" --arg d "${2:-/tmp}" '{stepIdx:3,conversationId:"c1",workspacePaths:["/tmp"],toolCall:{name:"run_command",args:{CommandLine:$c,Cwd:$d,WaitMsBeforeAsync:5000}}}'; }
+  agy_file() { jq -cn --arg t "$1" --arg k "$2" --arg p "$3" '{stepIdx:3,conversationId:"c1",workspacePaths:["/p"],toolCall:{name:$t,args:{($k):$p}}}'; }
+  check_agy "antigravity blocks cat .env"                block "$(agy_cmd 'cat .env')" block-env.sh
+  check_agy "antigravity blocks token file read"         block "$(agy_cmd 'cat ~/.gemini/antigravity-cli/antigravity-oauth-token')" block-env.sh
+  check_agy "antigravity blocks rm -rf /"                block "$(agy_cmd 'rm -rf /')" block-destructive-ops.sh
+  check_agy "antigravity blocks brew install"            block "$(agy_cmd 'brew install jq')" block-system-installs.sh
+  check_agy "antigravity blocks hooks.json write"        block "$(agy_cmd 'echo {} > ~/.gemini/config/hooks.json')" block-self-edit.sh
+  check_agy "antigravity blocks workspace hooks write"   block "$(agy_cmd 'echo {} > .agents/hooks.json')" block-self-edit.sh
+  check_agy "antigravity blocks push main"               block "$(agy_cmd 'git push origin main')" block-main-branch.sh
+  check_agy "antigravity allows normal cmd"              allow "$(agy_cmd 'ls -l')" block-env.sh
+  check_agy "antigravity allows git status (self-edit)"  allow "$(agy_cmd 'git status')" block-self-edit.sh
+  check_agy "antigravity blocks view_file .env"          block "$(agy_file view_file AbsolutePath /p/.env)" block-env-read.sh
+  check_agy "antigravity blocks write_to_file hooks.json" block "$(agy_file write_to_file TargetFile /h/u/.gemini/config/hooks.json)" block-env-read.sh
+  check_agy "antigravity blocks write hook script"       block "$(agy_file write_to_file TargetFile /h/u/.gemini/config/hooks/block-env.sh)" block-env-read.sh
+  check_agy "antigravity blocks edit global rules"       block "$(agy_file replace_file_content TargetFile /h/u/.gemini/AGENTS.md)" block-env-read.sh
+  check_agy "antigravity blocks edit workspace hooks"    block "$(agy_file multi_replace_file_content TargetFile /p/.agents/hooks.json)" block-env-read.sh
+  check_agy "antigravity blocks edit cli settings"       block "$(agy_file replace_file_content TargetFile /h/u/.gemini/antigravity-cli/settings.json)" block-env-read.sh
+  check_agy "antigravity blocks list_dir ~/.ssh"         block "$(agy_file list_dir DirectoryPath /h/u/.ssh)" block-env-read.sh
+  check_agy "antigravity blocks grep_search in ~/.aws"   block "$(agy_file grep_search SearchPath /h/u/.aws)" block-env-read.sh
+  check_agy "antigravity blocks find_by_name .env*"      block "{$AG,\"toolCall\":{\"name\":\"find_by_name\",\"args\":{\"SearchDirectory\":\"/p\",\"Pattern\":\".env*\"}}}" block-env-read.sh
+  check_agy "antigravity blocks grep_search Includes .env" block "{$AG,\"toolCall\":{\"name\":\"grep_search\",\"args\":{\"SearchPath\":\"/p\",\"Query\":\"KEY\",\"Includes\":[\"*.go\",\".env\"]}}}" block-env-read.sh
+  check_agy "antigravity allows view_file src"           allow "$(agy_file view_file AbsolutePath /p/src/main.go)" block-env-read.sh
+  check_agy "antigravity allows find_by_name *.go"       allow "{$AG,\"toolCall\":{\"name\":\"find_by_name\",\"args\":{\"SearchDirectory\":\"/p\",\"Pattern\":\"*.go\"}}}" block-env-read.sh
+  check_agy "antigravity allows .agents/rules write"     allow "$(agy_file write_to_file TargetFile /p/.agents/rules/style.md)" block-env-read.sh
+  check "antigravity invalid payload fails closed"       block '{"toolCall":{"name":"run_command","args":' block-env.sh
+  # args.Cwd (else the first workspace path) is the command's directory.
+  check_agy "antigravity Cwd on main blocks commit"      block "$(agy_cmd 'git commit -m x' "$MAIN_REPO")" block-main-branch.sh "$FEAT_REPO"
+  check_agy "antigravity Cwd on feat allows commit"      allow "$(agy_cmd 'git commit -m x' "$FEAT_REPO")" block-main-branch.sh "$MAIN_REPO"
+  check_agy "antigravity workspacePaths on main blocks commit" block "$(jq -cn --arg d "$MAIN_REPO" '{workspacePaths:[$d],toolCall:{name:"run_command",args:{CommandLine:"git commit -m x"}}}')" block-main-branch.sh "$FEAT_REPO"
+  # Other shapes are not taken for Antigravity: they keep exit 2 and their own stdout.
+  check_stdout "claude block not antigravity JSON"       block '{"tool_name":"Bash","tool_input":{"command":"cat .env"}}' block-env.sh empty
+  local AG_DIS
+  AG_DIS=$(mktemp)
+  (cd "$MAIN_REPO" && pwd -P) > "$AG_DIS"
+  AGENTGUARD_DISABLED_DIRS_FILE="$AG_DIS" \
+    check_agy "antigravity Cwd in disabled dir allows"   allow "$(agy_cmd 'cat .env' "$MAIN_REPO")" block-env.sh
+  rm -f "$AG_DIS"
+  check "blocks Read antigravity token file"  block '{"tool_input":{"file_path":"/h/u/.gemini/antigravity-cli/jetski-standalone-oauth-token"}}' block-env-read.sh
+  check "blocks Read antigravity audit.log"   block '{"tool_input":{"file_path":"/h/u/.gemini/config/audit.log"}}' block-env-read.sh
+  check "allows Read antigravity keybindings" allow '{"tool_input":{"file_path":"/h/u/.gemini/antigravity-cli/keybindings.json"}}' block-env-read.sh
+
   # Cursor payload shape (flat command/file_path): stdout must be permission JSON,
   # since Cursor blocks on empty or invalid stdout.
   echo ""
@@ -906,6 +974,19 @@ EOF
   check_true "windsurf write_code logged"  grep -q ' tool=post_write_code /p/a\.go$' "$AL"
   check_true "windsurf mcp logged"         grep -q ' tool=post_mcp_tool_use github/create_issue$' "$AL"
 
+  rm -f "$AL"
+  echo '{"stepIdx":4,"error":"","toolCall":{"name":"run_command","args":{"CommandLine":"npm test","Cwd":"/p"}}}' \
+    | AGENTGUARD_AUDIT_LOG="$AL" bash "$HOOKS_DIR/audit-log.sh" >/dev/null 2>&1
+  echo '{"stepIdx":5,"error":"","toolCall":{"name":"write_to_file","args":{"TargetFile":"/p/a.go","CodeContent":"x"}}}' \
+    | AGENTGUARD_AUDIT_LOG="$AL" bash "$HOOKS_DIR/audit-log.sh" >/dev/null 2>&1
+  check_true "antigravity run_command logged" grep -q ' tool=run_command npm test$' "$AL"
+  check_true "antigravity write_to_file logged" grep -q ' tool=write_to_file /p/a\.go$' "$AL"
+  _out=$(echo '{"toolCall":{"name":"run_command","args":{"CommandLine":"ls"}}}' | AGENTGUARD_AUDIT_LOG="$AL" bash "$HOOKS_DIR/audit-log.sh" 2>/dev/null)
+  check_true "antigravity audit-log prints nothing" test -z "$_out"
+  rm -f "$AL"
+  agy_cmd 'rm -rf /' | AGENTGUARD_AUDIT_LOG="$AL" bash "$HOOKS_DIR/block-destructive-ops.sh" >/dev/null 2>&1
+  check_true "antigravity block writes BLOCKED line" grep -q 'BLOCKED hook=block-destructive-ops\.sh tool=run_command rm -rf /$' "$AL"
+
   # A payload without an operations list must reach the later detail fields.
   rm -f "$AL"
   echo '{"tool_name":"Task","tool_input":{"description":"explore repo","prompt":"p"}}' \
@@ -1101,6 +1182,15 @@ EOF
   self_edit block 'cd ~/.gemini && echo {} > settings.json'
   self_edit block 'echo {"hooksConfig":{"enabled":false}} > .gemini/settings.json'
   self_edit allow 'cat ~/.gemini/settings.json'
+  self_edit block 'rm ~/.gemini/config/hooks/block-env.sh'
+  self_edit block 'echo {} > ~/.gemini/config/hooks.json'
+  self_edit block 'cd ~/.gemini/config && echo {} > hooks.json'
+  self_edit block 'echo x >> ~/.gemini/AGENTS.md'
+  self_edit block 'cp /tmp/h.json .gemini/config/hooks.json'
+  self_edit block 'echo {} > .gemini/antigravity-cli/settings.json'
+  self_edit block 'echo {"agentguard":{"enabled":false}} > .agents/hooks.json'
+  self_edit allow 'cat .agents/hooks.json'
+  self_edit allow 'echo hi > .agents/rules/notes.md'
   self_edit block 'echo {"disableAllHooks":true} > .github/copilot/settings.json'
   self_edit block 'cd ~/.copilot && rm -r hooks'
   self_edit block 'sed -i /block/d ~/.copilot/hooks/agentguard.json'

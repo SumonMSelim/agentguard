@@ -87,6 +87,7 @@ check_true  "cursor installed in project"         test -f "$FAKE_PROJECT/.cursor
 check_true  "gemini installed"                    test -f "$FAKE_HOME/.gemini/settings.json"
 check_true  "copilot installed"                   test -f "$FAKE_HOME/.copilot/hooks/agentguard.json"
 check_true  "windsurf installed"                  test -f "$FAKE_HOME/.codeium/windsurf/hooks.json"
+check_true  "antigravity installed"               test -f "$FAKE_HOME/.gemini/config/hooks.json"
 check_true  "claude still tracked" \
   grep -qE '^AGENTGUARD_INSTALLED_AGENTS=.*claude' "$FAKE_HOME/.agentguard/config"
 
@@ -336,6 +337,93 @@ check_true  "file byte-identical"                 cmp "$TMP/invalid.json" "$W"
 run_uninstall windsurf
 check_true  "file still byte-identical"           cmp "$TMP/invalid.json" "$W"
 
+# ── Antigravity hooks.json (named entries) + ~/.gemini/AGENTS.md ──────────────
+
+echo ""
+echo "antigravity — merge into user hooks.json"
+fresh
+A="$FAKE_HOME/.gemini/config/hooks.json"
+AR="$FAKE_HOME/.gemini/AGENTS.md"
+mkdir -p "$(dirname "$A")"
+printf '%s\n' '{"my-linter":{"PostToolUse":[{"matcher":"run_command","hooks":[{"type":"command","command":"./lint.sh","timeout":10}]}]},"reminder":{"enabled":false,"PreInvocation":[{"type":"command","command":"./r.sh"}]}}' > "$A"
+cp "$A" "$TMP/agy.before"
+check_true  "install antigravity succeeds"        run_install antigravity
+check_true  "hooks.json is valid JSON"            jq empty "$A"
+jq_true     "user entries kept"                   '(.["my-linter"].PostToolUse[0].hooks[0].command == "./lint.sh") and (.reminder.enabled == false)' "$A"
+jq_true     "our run_command hooks added"         '[.agentguard.PreToolUse[] | select(.matcher == "run_command") | .hooks[].command] | length == 5' "$A"
+jq_true     "block-env-read on file tools"        '[.agentguard.PreToolUse[] | select(.matcher | test("view_file")) | .hooks[].command] == ["bash ~/.gemini/config/hooks/block-env-read.sh"]' "$A"
+jq_true     "audit-log on PostToolUse"            '.agentguard.PostToolUse[0].hooks[0].command | endswith("audit-log.sh")' "$A"
+check_true  "hook scripts installed"              test -x "$FAKE_HOME/.gemini/config/hooks/block-env-read.sh"
+check_true  "AGENTS.md installed with marker"     grep -qF '<!-- agentguard:created -->' "$AR"
+check_true  "karpathy skill appended"             grep -qF '<!-- agentguard:skill:karpathy-guidelines -->' "$AR"
+check_false "GEMINI.md not written"               test -e "$FAKE_HOME/.gemini/GEMINI.md"
+check_false "gemini settings.json not written"    test -e "$FAKE_HOME/.gemini/settings.json"
+check_true  "antigravity tracked" \
+  grep -qE '^AGENTGUARD_INSTALLED_AGENTS=.*antigravity' "$FAKE_HOME/.agentguard/config"
+cp "$A" "$TMP/agy.1"
+run_install antigravity
+check_true  "hooks.json unchanged by second install" same_json "$TMP/agy.1" "$A"
+check_true  "one karpathy skill sentinel" \
+  test "$(grep -c '<!-- agentguard:skill:karpathy-guidelines -->' "$AR")" -eq 1
+# A disabled or edited agentguard entry is reset by a re-run.
+jq '.agentguard.enabled = false | .agentguard.PreToolUse = []' "$A" > "$TMP/agy.x" && cp "$TMP/agy.x" "$A"
+run_install antigravity
+check_true  "re-run restores our entry"           same_json "$TMP/agy.1" "$A"
+check_true  "uninstall antigravity succeeds"      run_uninstall antigravity
+check_true  "uninstall restores hooks.json"       same_json "$TMP/agy.before" "$A"
+check_false "AGENTS.md removed"                   test -e "$AR"
+check_false "hooks dir removed"                   test -e "$FAKE_HOME/.gemini/config/hooks"
+
+echo ""
+echo "antigravity — no hooks.json: created, then removed on uninstall"
+fresh
+run_install antigravity
+jq_true     "hooks.json created with only ours"   'keys == ["agentguard"]' "$A"
+run_uninstall antigravity
+check_false "hooks.json removed"                  test -e "$A"
+
+echo ""
+echo "antigravity — side by side with gemini"
+fresh
+run_install gemini
+run_install antigravity
+check_true  "gemini GEMINI.md present"            test -f "$FAKE_HOME/.gemini/GEMINI.md"
+check_true  "gemini hooks present"                test -x "$FAKE_HOME/.gemini/hooks/block-env.sh"
+check_true  "antigravity AGENTS.md present"       test -f "$AR"
+run_uninstall antigravity
+check_true  "gemini GEMINI.md kept"               test -f "$FAKE_HOME/.gemini/GEMINI.md"
+check_true  "gemini hooks kept"                   test -x "$FAKE_HOME/.gemini/hooks/block-env.sh"
+jq_true     "gemini settings hooks kept"          '.hooks.BeforeTool | length > 0' "$FAKE_HOME/.gemini/settings.json"
+run_install antigravity
+run_uninstall gemini
+check_true  "antigravity hooks kept"              test -x "$FAKE_HOME/.gemini/config/hooks/block-env.sh"
+check_true  "antigravity AGENTS.md kept"          test -f "$AR"
+check_true  "antigravity check passes"            bash -c "cd '$FAKE_PROJECT' && HOME='$FAKE_HOME' bash '$SCRIPT_DIR/install.sh' check antigravity"
+
+echo ""
+echo "antigravity — user AGENTS.md kept, only skills stripped"
+fresh
+printf 'MY RULES\n' > "$TMP/r" && mkdir -p "$FAKE_HOME/.gemini" && cp "$TMP/r" "$AR"
+run_install antigravity
+check_true  "user rules kept"                     grep -qx 'MY RULES' "$AR"
+check_true  "skill appended"                      grep -qF '<!-- agentguard:skill:karpathy-guidelines -->' "$AR"
+run_uninstall antigravity
+check_true  "uninstall strips only skills"        test "$(command cat "$AR")" = 'MY RULES'
+
+echo ""
+echo "antigravity — invalid hooks.json is refused and left unchanged"
+fresh
+mkdir -p "$(dirname "$A")"
+printf '{"x":{},}\n' > "$A"
+cp "$A" "$TMP/invalid.json"
+check_false "install fails"                       run_install antigravity
+check_true  "file byte-identical"                 cmp "$TMP/invalid.json" "$A"
+run_uninstall antigravity
+check_true  "file still byte-identical"           cmp "$TMP/invalid.json" "$A"
+printf '[]\n' > "$A"
+check_false "install fails on a JSON array"       run_install antigravity
+check_true  "array left unchanged"                test "$(command cat "$A")" = '[]'
+
 # ── file mode kept ────────────────────────────────────────────────────────────
 
 # mode_of <file> — permission bits (GNU stat, else BSD stat).
@@ -366,6 +454,15 @@ check_true  "windsurf hooks.json 600 after install"     test "$(mode_of "$W")" =
 run_uninstall windsurf
 check_true  "windsurf hooks.json kept on uninstall"     test -f "$W"
 check_true  "windsurf hooks.json 600 after uninstall"   test "$(mode_of "$W")" = 600
+A="$FAKE_HOME/.gemini/config/hooks.json"
+mkdir -p "$(dirname "$A")"
+printf '%s\n' '{"mine":{"Stop":[{"type":"command","command":"s.sh"}]}}' > "$A"
+chmod 600 "$A"
+run_install antigravity
+check_true  "antigravity hooks.json 600 after install"   test "$(mode_of "$A")" = 600
+run_uninstall antigravity
+check_true  "antigravity hooks.json kept on uninstall"   test -f "$A"
+check_true  "antigravity hooks.json 600 after uninstall" test "$(mode_of "$A")" = 600
 
 # ── full round trip ───────────────────────────────────────────────────────────
 
@@ -380,6 +477,8 @@ mkdir -p "$FAKE_HOME/.codeium/windsurf"
 # jq-formatted, as uninstall writes it back, so the byte-level tree_sig matches.
 jq . <<< '{"hooks":{"pre_user_prompt":[{"command":"mine.sh"}]}}' > "$FAKE_HOME/.codeium/windsurf/hooks.json"
 cp "$FAKE_HOME/.codeium/windsurf/hooks.json" "$TMP/windsurf.before"
+mkdir -p "$FAKE_HOME/.gemini/config"
+jq . <<< '{"mine":{"Stop":[{"type":"command","command":"s.sh"}]}}' > "$FAKE_HOME/.gemini/config/hooks.json"
 tree_sig "$FAKE_HOME" > "$TMP/sig.before"
 run_install claude
 run_install all

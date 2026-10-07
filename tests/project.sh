@@ -165,6 +165,16 @@ check_true  "skill sentinel present"       grep -qF "agentguard:skill:aws" "$PRO
 check_true  "go skill not duplicated"      test "$(grep -c 'agentguard:skill:go -->' "$PROJECT_CODEX/AGENTS.md")" -eq 1
 check_false "no windsurf global files"     test -e "$FAKE_HOME/.codeium"
 
+# ── Antigravity: root AGENTS.md (workspace rule) ─────────────────────────────
+
+echo ""
+echo "antigravity --project: appends skill to AGENTS.md, no global files"
+run_project_in "$PROJECT_CODEX" antigravity --project --skills go,terraform >/dev/null
+
+check_true  "skill sentinel present"       grep -qF "agentguard:skill:terraform" "$PROJECT_CODEX/AGENTS.md"
+check_true  "go skill not duplicated"      test "$(grep -c 'agentguard:skill:go -->' "$PROJECT_CODEX/AGENTS.md")" -eq 1
+check_false "no antigravity global files"  test -e "$FAKE_HOME/.gemini"
+
 # ── Kiro: prints warning, no files written ────────────────────────────────────
 
 echo ""
