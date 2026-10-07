@@ -60,12 +60,12 @@ Seven shell scripts enforcing rules at tool-call level, plus `_check-disabled.sh
 
 | Hook | What it blocks |
 |------|---------------|
-| `block-env.sh` | `cat .env` (any case), reads of `~/.ssh/*`, `~/.aws/*` and similar credential stores, `printenv`, `env`, `gh auth token` (bash surface) |
+| `block-env.sh` | `cat .env` (any case), reads of `~/.ssh/*`, `~/.aws/*` and similar credential stores, `printenv`, `env`, `gh auth token`, `gh auth status --show-token` (bash surface; also behind `bash -c`/`eval`) |
 | `block-env-read.sh` | Read/Write/Edit on `.env*` (any case; not `.env.example` etc.), private keys, `credentials`, `~/.aws/`, `~/.ssh/`, tool and agent credential stores |
 | `block-main-branch.sh` | `git push` to `main`/`master`, force push (incl. `+refspec`, `--mirror`, `--all`), `git commit`/`merge`/`rebase`/`cherry-pick`/`revert`/`am` on protected branch. Respects `AGENTGUARD_PROTECTED_BRANCHES` env var |
 | `block-system-installs.sh` | `brew`, `apt`, `yum`, `npm -g`, `yarn global`, `pip install` outside virtualenv (checks `$VIRTUAL_ENV`) |
 | `block-destructive-ops.sh` | `rm` on `/`, `~` or `$HOME`; recursive `rm` of `.`, `..`, `.git`, `*` or a system dir; `find / -delete`; recursive `chmod`/`chown` on root or home; `mkfs`/`dd`/raw disk writes; overwriting `/etc/passwd` and similar; fork bomb; pipe-to-shell (`curl \| bash`, `wget \| sh`, `bash <(curl ...)`) |
-| `block-self-edit.sh` | Bash writes to agentguard's own config (agent settings, hooks, instruction files, `~/.agentguard`, audit logs) and `agentguard disable` / `install.sh disable` |
+| `block-self-edit.sh` | Bash writes to agentguard's own config (agent settings, hooks, instruction files, `~/.agentguard`, audit logs, incl. `git checkout` in those dirs), `agentguard disable` / `install.sh disable`, and starting an agent CLI with `CLAUDE_CONFIG_DIR` or another `HOME` |
 | `audit-log.sh` | Logs every tool call (PostToolUse) — writes to `dirname($0)/../audit.log`. Block paths in every hook add a `BLOCKED hook=<name>` line via `_agentguard_log_block` (`_check-disabled.sh`). Secrets redacted, mode 600, rotated to `audit.log.1` above 1 MB. `AGENTGUARD_AUDIT_LOG` overrides the path (tests) |
 
 Hooks handle four payload shapes:

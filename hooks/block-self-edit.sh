@@ -40,6 +40,26 @@ if echo "$COMMAND" | grep -qE "${_STMT_START}${_DISABLE_CMD}"; then
   _grok_block "Blocked: agents may not run 'agentguard disable'. Disabling guardrails requires the user to confirm in their own terminal."
 fi
 
+# Starting an agent CLI with another config dir or HOME loads none of its
+# hooks: CLAUDE_CONFIG_DIR=/tmp/x, HOME=/tmp/x claude.
+_AGENT_CLI='([^[:space:];&|]*/)?(claude|codex|gemini|copilot|grok|kiro-cli|cursor-agent)([[:space:];&|)]|$)'
+if echo "$COMMAND" | grep -qE "(^|[^A-Za-z0-9_])CLAUDE_CONFIG_DIR=|(^|[^A-Za-z0-9_])HOME=[^[:space:]]*[[:space:]]+([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*${_AGENT_CLI}"; then
+  _grok_block "Blocked: starting an agent with another config directory or HOME skips its agentguard hooks. Ask the user to run it from their own shell."
+fi
+
+# Any agent directory name, used where the path is only a prefix (git -C or
+# cd target, variable value, bind-mount source).
+_SELF_DIR='(\.claude|\.agentguard|\.kiro|\.grok|\.cursor|\.codex|\.gemini|\.copilot|\.github/copilot|\.codeium)([^a-zA-Z0-9_-]|$)'
+# git subcommands that rewrite files in the work tree.
+_GIT_WRITE='git[[:space:]]([^;&|]*[[:space:]])?(checkout|restore|reset|clean|stash|apply|am|pull|merge|rebase|switch|cherry-pick|revert)([[:space:]]|$)'
+
+# git run on an agent directory (git -C ~/.claude checkout -- .) can restore
+# or discard its settings and hooks. Checked before the git allowlist.
+if echo "$COMMAND" | grep -qE "(^|[^a-zA-Z0-9_-])git[[:space:]]([^;&|]*[[:space:]])?(-C|--git-dir|--work-tree)(=|[[:space:]]+)[\"']?[^[:space:];&|\"']*${_SELF_DIR}" \
+  && echo "$COMMAND" | grep -qE "$_GIT_WRITE"; then
+  _grok_block "Blocked: modifying agentguard's own configuration via Bash is not permitted. If you really need to change the hook configuration, edit it from your own shell, outside the agent."
+fi
+
 # Allowlist: git invocations don't modify ~/.claude/ etc directly. Commit
 # messages and diff hunks routinely contain text that would otherwise trip
 # the two-pass detector (e.g. "fix ~/.claude hook" in a commit message).
@@ -63,19 +83,18 @@ _REL_CORE='(\.claude/(settings(\.local)?\.json|hooks([^a-zA-Z0-9_-]|$)|CLAUDE\.m
 _SELF_CORE="(${_HOME_CORE}|${_REL_CORE})"
 # Anchored so "myclaude/..." doesn't false-match.
 _SELF_PATH="(^|[^a-zA-Z0-9_-])${_SELF_CORE}"
-# Any agent directory name, used where the path is only a prefix (cd target,
-# variable value, bind-mount source).
-_SELF_DIR='(\.claude|\.agentguard|\.kiro|\.grok|\.cursor|\.codex|\.gemini|\.copilot|\.github/copilot|\.codeium)([^a-zA-Z0-9_-]|$)'
 
 # Write-style operators that, combined with a self-config path, indicate an
 # attempt to modify the configuration. Plain `>` is handled separately (only
 # when the redirect target is protected) so `echo "~/.claude/x" > notes.md`
 # stays allowed.
 _W='(^|[^a-zA-Z0-9_-])'
-_WRITE_OPS="(${_W}(tee|rm|rmdir|unlink|shred|cp|mv|chmod|chown|install|ln|truncate|dd|sponge|rsync)[[:space:]]|${_W}(sed|perl)[[:space:]]+([^[:space:]]+[[:space:]]+)*-[a-zA-Z]*i|${_W}find[[:space:]].*-(delete|exec|execdir|ok|okdir)([[:space:]]|\$)|${_W}(python[0-9.]*|perl|node|ruby)[[:space:]]+([^[:space:]]+[[:space:]]+)*-[a-zA-Z]*[ec]([[:space:]]|\$))"
-# Write op or any redirect, for commands whose protected path is relative to
-# a cd target or hidden behind a variable.
-_WRITE_OR_REDIRECT="(${_WRITE_OPS}|>)"
+# A write tool may end the command (find ... | xargs rm); an interpreter may
+# read its code from stdin (python3 - <<EOF).
+_WRITE_OPS="(${_W}(tee|rm|rmdir|unlink|shred|cp|mv|chmod|chown|install|ln|truncate|dd|sponge|rsync)([[:space:]]|\$)|${_W}(sed|perl)[[:space:]]+([^[:space:]]+[[:space:]]+)*-[a-zA-Z]*i|${_W}find[[:space:]].*-(delete|exec|execdir|ok|okdir)([[:space:]]|\$)|${_W}(python[0-9.]*|perl|node|ruby)[[:space:]]+([^[:space:]]+[[:space:]]+)*((-[a-zA-Z]*[ec]|-)([[:space:]]|\$)|<<))"
+# Write op, git work-tree write or any redirect, for commands whose protected
+# path is relative to a cd target or hidden behind a variable.
+_WRITE_OR_REDIRECT="(${_WRITE_OPS}|${_W}${_GIT_WRITE}|>)"
 
 _MSG="Blocked: modifying agentguard's own configuration via Bash is not permitted. Settings files, including project-local .claude/settings.local.json, can set disableAllHooks and turn off every guardrail. If you really need to change the hook configuration, edit it from your own shell, outside the agent."
 
