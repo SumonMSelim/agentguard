@@ -108,7 +108,11 @@ REAL_DATE=$(command -v date)
 cat > "$SHIM_DIR/date" <<EOF
 #!/bin/bash
 for a in "\$@"; do [[ "\$a" == -d ]] && { echo "date: illegal option -- d" >&2; exit 1; }; done
-if [[ "\$1" == -u && "\$2" == -r ]]; then exec "$REAL_DATE" -u -d "@\$3" "\$4"; fi
+if [[ "\$1" == -u && "\$2" == -r ]]; then
+  # Real BSD date answers -r itself; GNU date needs -d @N.
+  "$REAL_DATE" -u -r "\$3" "\$4" 2>/dev/null && exit 0
+  exec "$REAL_DATE" -u -d "@\$3" "\$4"
+fi
 exec "$REAL_DATE" "\$@"
 EOF
 chmod +x "$SHIM_DIR/date"
