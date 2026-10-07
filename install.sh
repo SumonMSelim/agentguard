@@ -10,6 +10,7 @@
 #   agentguard uninstall ...
 #   agentguard check ...
 #   agentguard upgrade
+#   agentguard log [<agent>|all] [--blocked] [--tail N] [--since 2h|30m|7d]
 #
 # Bootstrap from a fresh clone (one time only, installs the wrapper):
 #   ./install.sh claude   # then use `agentguard` for all future commands
@@ -43,6 +44,10 @@ UPGRADE=0
 DISABLE_CMD=0
 ENABLE_CMD=0
 STATUS_CMD=0
+LOG_CMD=0
+LOG_BLOCKED=0
+LOG_TAIL=50
+LOG_SINCE=""
 TARGET_DIR=""
 CURSOR_USER=0
 
@@ -81,6 +86,11 @@ elif [[ "$AGENT" == "enable" ]]; then
 elif [[ "$AGENT" == "status" ]]; then
   STATUS_CMD=1
   shift || true
+elif [[ "$AGENT" == "log" ]]; then
+  LOG_CMD=1
+  AGENT="${2:-all}"
+  [[ "$AGENT" == --* ]] && AGENT="all"
+  shift || true
 fi
 
 # Parse flags (can appear anywhere after the agent arg)
@@ -97,6 +107,15 @@ for i in "${!args[@]}"; do
   fi
   if [[ "${args[$i]}" == "--user" ]]; then
     CURSOR_USER=1
+  fi
+  if [[ "${args[$i]}" == "--blocked" ]]; then
+    LOG_BLOCKED=1
+  fi
+  if [[ "${args[$i]}" == "--tail" ]]; then
+    LOG_TAIL="${args[$((i+1))]:-missing}"
+  fi
+  if [[ "${args[$i]}" == "--since" ]]; then
+    LOG_SINCE="${args[$((i+1))]:-missing}"
   fi
   # disable/enable/status take an optional path: the first non-flag argument.
   if [[ $((DISABLE_CMD + ENABLE_CMD + STATUS_CMD)) -gt 0 && -z "$TARGET_DIR" && "${args[$i]}" != --* ]]; then
@@ -1215,6 +1234,24 @@ tracked_agents() {
     | sed -E 's/^AGENTGUARD_INSTALLED_AGENTS=//; s/^"//; s/"$//' || true
 }
 
+# audit_log_path <agent> — prints the audit.log path the agent's hooks write to
+# (hooks/audit-log.sh: dirname of the hooks dir). Returns 1 for an unknown agent.
+audit_log_path() {
+  case "$1" in
+    claude)      echo "$HOME/.claude/audit.log" ;;
+    kiro)        echo "$HOME/.kiro/audit.log" ;;
+    codex)       echo "$HOME/.codex/audit.log" ;;
+    grok)        echo "$HOME/.grok/audit.log" ;;
+    gemini)      echo "$HOME/.gemini/audit.log" ;;
+    copilot)     echo "$HOME/.copilot/audit.log" ;;
+    windsurf)    echo "$HOME/.codeium/windsurf/audit.log" ;;
+    antigravity) echo "$HOME/.gemini/config/audit.log" ;;
+    cursor)      echo "$PWD/.cursor/audit.log" ;;
+    cursor-user) echo "$HOME/.cursor/audit.log" ;;
+    *)           return 1 ;;
+  esac
+}
+
 # is_agent_tracked <agent> — returns 0 if the agent is in AGENTGUARD_INSTALLED_AGENTS.
 is_agent_tracked() {
   tracked_agents | tr ' ' '\n' | grep -qx "$1"
@@ -2302,6 +2339,85 @@ cmd_status() {
   fi
 }
 
+# utc_iso <epoch> — prints the epoch as 2026-10-08T01:02:03Z, the audit log's
+# timestamp format. GNU `date -d @N` first, then BSD (macOS) `date -r N`; each
+# result is checked because one date may misread the other's flags.
+utc_iso() {
+  local out re='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+  out=$(date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) && [[ "$out" =~ $re ]] && { echo "$out"; return 0; }
+  out=$(date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) && [[ "$out" =~ $re ]] && { echo "$out"; return 0; }
+  return 1
+}
+
+# _log_lines <log> <cutoff> — prints audit.log.1 then audit.log, keeping only
+# BLOCKED lines with --blocked and lines at or after <cutoff> (ISO UTC strings
+# compare in time order) when set.
+_log_lines() {
+  local f files=()
+  for f in "$1.1" "$1"; do
+    if [[ -f "$f" ]]; then files+=("$f"); fi
+  done
+  awk -v b="$LOG_BLOCKED" -v c="$2" '
+    b == 1 && $2 != "BLOCKED" { next }
+    c != "" && ($1 !~ /^[0-9][0-9][0-9][0-9]-/ || $1 < c) { next }
+    { print }
+  ' "${files[@]}"
+}
+
+# cmd_log — prints the audit log of $AGENT ("all": tracked agents plus any
+# agent whose log exists). Several agents: lines prefixed with the agent name
+# and merged in time order. Exits 1 with a hint when no log is found.
+cmd_log() {
+  local cutoff="" candidates a path seen="|" n i
+  local shown=() paths=() hints=()
+  [[ "$LOG_TAIL" =~ ^[0-9]+$ ]] || fail "--tail takes a number of lines (0 = all), got '$LOG_TAIL'"
+  if [[ -n "$LOG_SINCE" ]]; then
+    [[ "$LOG_SINCE" =~ ^([0-9]+)([smhd])$ ]] || fail "--since takes a duration like 30m, 2h or 7d, got '$LOG_SINCE'"
+    n=$((10#${BASH_REMATCH[1]}))
+    case "${BASH_REMATCH[2]}" in
+      m) n=$((n * 60)) ;;
+      h) n=$((n * 3600)) ;;
+      d) n=$((n * 86400)) ;;
+    esac
+    cutoff=$(utc_iso $(( $(date -u +%s) - n ))) || fail "Could not compute the --since time with this system's date command."
+  fi
+
+  if [[ "$AGENT" == "all" ]]; then
+    candidates="$(tracked_agents) ${AGENTS[*]} cursor-user"
+  elif [[ "$AGENT" == "cursor" && "$CURSOR_USER" -eq 1 ]]; then
+    candidates="cursor-user"
+  else
+    candidates="$AGENT"
+  fi
+  for a in $candidates; do
+    path=$(audit_log_path "$a") || continue
+    # cursor and cursor-user share a path when run from $HOME.
+    [[ "$seen" == *"|$path|"* ]] && continue
+    seen="$seen$path|"
+    if [[ -f "$path" || -f "$path.1" ]]; then
+      shown+=("$a"); paths+=("$path")
+    elif [[ "$AGENT" != "all" ]] || is_agent_tracked "$a"; then
+      hints+=("no audit log for $a at $path; is it installed?")
+    fi
+  done
+
+  if [[ ${#shown[@]} -eq 0 ]]; then
+    [[ ${#hints[@]} -gt 0 ]] || hints=("no audit log found for any agent; is agentguard installed?")
+    for i in "${hints[@]}"; do warn "$i" >&2; done
+    exit 1
+  fi
+
+  n=${#shown[@]}
+  for i in "${!shown[@]}"; do
+    if [[ "$n" -gt 1 ]]; then
+      _log_lines "${paths[$i]}" "$cutoff" | awk -v p="${shown[$i]}" '{ print p "  " $0 }'
+    else
+      _log_lines "${paths[$i]}" "$cutoff"
+    fi
+  done | if [[ "$n" -gt 1 ]]; then sort -s -b -k2,2; else cat; fi \
+       | if [[ "$LOG_TAIL" -gt 0 ]]; then tail -n "$LOG_TAIL"; else cat; fi
+}
+
 # ── entry point ───────────────────────────────────────────────────────────────
 
 if [[ "$DISABLE_CMD" -eq 1 ]]; then
@@ -2337,6 +2453,11 @@ unset _valid _a
 
 # The agents this run acts on: $AGENT, or every registered agent for "all".
 if [[ "$AGENT" == "all" ]]; then TARGETS=("${AGENTS[@]}"); else TARGETS=("$AGENT"); fi
+
+if [[ "$LOG_CMD" -eq 1 ]]; then
+  cmd_log
+  exit 0
+fi
 
 if [[ "$CHECK" -eq 1 ]]; then
   for a in "${TARGETS[@]}"; do "check_$a"; done

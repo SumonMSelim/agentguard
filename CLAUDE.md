@@ -34,6 +34,10 @@ agentguard uninstall claude --dry-run
 agentguard check claude
 agentguard check all
 
+# Audit log (reads audit.log.1 + audit.log; default agent all, --tail 50)
+agentguard log
+agentguard log claude --blocked --since 2h --tail 20
+
 # Bootstrap (one time only, from a fresh clone — this installs the `agentguard` CLI wrapper)
 #   ./install.sh claude     # after this, use `agentguard claude` etc. for everything
 
@@ -112,6 +116,7 @@ Duplication prevented by sentinel comment: `<!-- agentguard:skill:<name> -->`.
 - `check-sync.sh` — diffs instruction files.
 - `uninstall.sh` — installs then uninstalls, verifies clean state.
 - `check.sh` — exercises `agentguard check` (or direct script during development).
+- `log.sh` — exercises `agentguard log` against fake audit logs (filters, prefixing, BSD `date` fallback, missing-log exit code).
 - `project.sh` — exercises `--project` flag installs.
 - `upgrade.sh` — version tracking, `upgrade` (from a throwaway clone), checksum verify.
 - `install.sh` — install edge cases: `claude` then `all`, re-install idempotency, odd settings.json shapes, invalid JSON refused, HOME with a space, Cursor hooks.json, full round trip.
