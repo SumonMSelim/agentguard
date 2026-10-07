@@ -4,23 +4,14 @@
 [![Release](https://github.com/SumonMSelim/agentguard/actions/workflows/release.yml/badge.svg)](https://github.com/SumonMSelim/agentguard/actions/workflows/release.yml)
 [![Latest release](https://img.shields.io/github/v/release/SumonMSelim/agentguard)](https://github.com/SumonMSelim/agentguard/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Platform: macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](#installation)
+[![Bash 3.2+](https://img.shields.io/badge/bash-3.2%2B-4EAA25.svg?logo=gnubash&logoColor=white)](https://www.gnu.org/software/bash/)
+[![Requires jq](https://img.shields.io/badge/requires-jq-orange.svg)](https://jqlang.org)
+[![Agents: 8](https://img.shields.io/badge/agents-8-8A2BE2.svg)](#agents)
 
 Security guardrails and workflow policies for AI coding agents. Blocks dangerous operations at the hook level — not just as instructions.
 
-## Supported agents
-
-| Agent                                                               | Enforcement                                         |
-|---------------------------------------------------------------------|-----------------------------------------------------|
-| [Claude Code](https://docs.anthropic.com/en/docs/claude-code/hooks) | Shell hooks + settings.json + instruction file      |
-| [Kiro](https://kiro.dev/docs/hooks/)                                | Shell hooks + agent config + instruction file       |
-| [Cursor](https://cursor.com)                                        | Hooks via `.cursor/` (or `~/.cursor/` with `--user`) + AGENTS.md |
-| [Grok](https://x.ai)                                                | Shell hooks (via `~/.grok/hooks/`) + AGENTS.md      |
-| [OpenAI Codex](https://github.com/openai/codex)                     | Shell hooks (via `~/.codex/hooks.json`) + AGENTS.md |
-| [Gemini CLI](https://geminicli.com/docs/hooks/)                     | Shell hooks (via `~/.gemini/settings.json`) + GEMINI.md |
-| [GitHub Copilot CLI](https://docs.github.com/en/copilot/reference/hooks-configuration) | Shell hooks (via `~/.copilot/hooks/agentguard.json`) + copilot-instructions.md |
-| [Windsurf](https://docs.devin.ai/desktop/cascade/hooks) (Cascade)   | Shell hooks (via `~/.codeium/windsurf/hooks.json`) + global_rules.md |
-
-See [docs/configuration.md](docs/configuration.md) for the full list of enforced rules.
+Supports Claude Code, OpenAI Codex, Kiro, Cursor, Grok, Gemini CLI, GitHub Copilot CLI and Windsurf. See [Agents](#agents) for each one, and [docs/configuration.md](docs/configuration.md) for the full list of enforced rules.
 
 ## Installation
 
@@ -43,13 +34,6 @@ sudo dpkg -i agentguard_${VERSION}_all.deb
 
 Requires: `jq` (`sudo apt-get install jq`).
 
-After installing via either method, install guardrails for your agent:
-
-```bash
-agentguard claude   # Claude Code
-agentguard all      # All agents
-```
-
 ### Manual
 
 Requires: `bash`, `jq`.
@@ -62,24 +46,19 @@ git clone https://github.com/SumonMSelim/agentguard.git ~/agentguard
 ~/agentguard/install.sh claude   # one-time only: bootstraps the `agentguard` CLI wrapper into ~/.local/bin
 ```
 
-The script installs the `agentguard` wrapper to `~/.local/bin/`. After this, use the `agentguard` command for everything:
-
-```bash
-agentguard claude   # Claude Code
-agentguard grok     # Grok
-agentguard gemini   # Gemini CLI
-agentguard copilot  # GitHub Copilot CLI
-agentguard windsurf # Windsurf (Cascade)
-agentguard all      # All agents
-agentguard check claude
-agentguard uninstall claude
-agentguard claude --project --skills go,aws
-```
-
-If `~/.local/bin` is not in your `PATH`, add this to your shell profile:
+The script installs the `agentguard` wrapper to `~/.local/bin/`. If that is not in your `PATH`, add this to your shell profile:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
+```
+
+### Install guardrails
+
+After any of the methods above, install guardrails for your agents:
+
+```bash
+agentguard <agent>   # one agent, e.g. agentguard claude (see Agents below)
+agentguard all       # every supported agent
 ```
 
 Common options:
@@ -93,6 +72,236 @@ Common options:
 
 Re-running is safe — existing files are backed up with a timestamp suffix. `settings.json` is merged, not overwritten.
 
+## Agents
+
+Install, check and activate each agent. Click an agent to expand it.
+
+<details>
+<summary><strong>Claude Code</strong></summary>
+
+**Install**
+
+```bash
+agentguard claude
+```
+
+**Check**
+
+```bash
+agentguard check claude
+```
+
+**Activate**
+
+Start a new Claude Code session. Hooks load when a session starts.
+
+**Notes**
+
+- Hooks, deny rules, `attribution` and `includeGitInstructions` are merged into `~/.claude/settings.json`. Your own keys are kept, and uninstall removes only what agentguard added.
+- Global rules go to `~/.claude/CLAUDE.md`.
+- Docs: [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-code/hooks).
+
+</details>
+
+<details>
+<summary><strong>OpenAI Codex</strong></summary>
+
+**Install**
+
+```bash
+agentguard codex
+```
+
+**Check**
+
+```bash
+agentguard check codex
+```
+
+**Activate**
+
+Open Codex, run `/hooks` and approve the agentguard hooks. They stay off until you do.
+
+**Notes**
+
+- Hooks are merged into `~/.codex/hooks.json` (your own hooks are kept) and the scripts go to `~/.codex/hooks/`. Global rules go to `~/.codex/AGENTS.md`.
+- File edits through `apply_patch` are checked by the self-edit hook only, since the payload holds patch text, not a file path.
+- An agentguard-created `~/AGENTS.md` from older releases is moved to `~/.codex/AGENTS.md` (left in place while Grok is installed).
+- Docs: [OpenAI Codex](https://github.com/openai/codex).
+
+</details>
+
+<details>
+<summary><strong>Kiro</strong></summary>
+
+**Install**
+
+```bash
+agentguard kiro
+```
+
+**Check**
+
+```bash
+agentguard check kiro
+```
+
+**Activate**
+
+- **Kiro CLI 3.x** (`kiro-cli --v3`): nothing to do. Hooks in `~/.kiro/hooks/agentguard.json` apply to every agent. Use interactive mode; Kiro does not load hooks with `--no-interactive`.
+- **Kiro CLI 2.x**: switch to the `agentguard` agent. Hooks live in its agent config (`~/.kiro/agents/agentguard.json`) and run only under that agent.
+
+**Notes**
+
+- Both hook formats are installed, so the same install works for 2.x and 3.x. Shell hooks are registered under both `shell` and `execute_bash`.
+- Global rules go to `~/.kiro/KIRO.md`.
+- Docs: [Kiro hooks](https://kiro.dev/docs/hooks/).
+
+</details>
+
+<details>
+<summary><strong>Cursor</strong></summary>
+
+**Install**
+
+```bash
+cd /path/to/project
+agentguard cursor           # this project: .cursor/ (hooks + AGENTS.md)
+agentguard cursor --user    # every project: hooks in ~/.cursor/
+```
+
+**Check**
+
+```bash
+agentguard check cursor          # from the project root
+agentguard check cursor --user
+```
+
+**Activate**
+
+Nothing to do.
+
+**Notes**
+
+- `hooks.json` is merged: your own hooks are kept, ours are refreshed on every re-run, and uninstall removes only ours.
+- Registered events: `beforeShellExecution`, `beforeReadFile`, `preToolUse` (`Write|Delete`), `beforeMCPExecution`, `postToolUse`.
+- `--user` installs hooks only, because Cursor has no user-level instruction file. It is tracked for `agentguard upgrade`. Project installs are not tracked: re-run `agentguard cursor` in each project after upgrading.
+- Docs: [Cursor hooks](https://cursor.com/docs/agent/hooks).
+
+</details>
+
+<details>
+<summary><strong>Grok</strong></summary>
+
+**Install**
+
+```bash
+agentguard grok
+```
+
+**Check**
+
+```bash
+agentguard check grok
+```
+
+**Activate**
+
+Nothing to do.
+
+**Notes**
+
+- Native hooks via `~/.grok/hooks/agentguard.json` plus the shared scripts. Global rules go to `~/AGENTS.md`.
+- Grok also loads Claude and Cursor locations for compatibility.
+- Docs: [Grok](https://x.ai).
+
+</details>
+
+<details>
+<summary><strong>Gemini CLI</strong></summary>
+
+**Install**
+
+```bash
+agentguard gemini
+```
+
+**Check**
+
+```bash
+agentguard check gemini
+```
+
+**Activate**
+
+Nothing to do. Hooks are on by default in Gemini CLI v0.26.0 and later. `hooksConfig.enabled: false` turns them all off, and `agentguard check gemini` reports it.
+
+**Notes**
+
+- Hooks are merged into the `hooks` key of `~/.gemini/settings.json` (your settings and hooks are kept, uninstall removes only ours). The scripts go to `~/.gemini/hooks/`. Global rules go to `~/.gemini/GEMINI.md`.
+- Registered: `BeforeTool` for `run_shell_command` and the file tools (`read_file`, `write_file`, `replace`, `read_many_files`, `glob`, `grep_search`, `list_directory`), `AfterTool` for the audit log.
+- Docs: [Gemini CLI hooks](https://geminicli.com/docs/hooks/).
+
+</details>
+
+<details>
+<summary><strong>GitHub Copilot CLI</strong></summary>
+
+**Install**
+
+```bash
+agentguard copilot
+```
+
+**Check**
+
+```bash
+agentguard check copilot
+```
+
+**Activate**
+
+Nothing to do. If `COPILOT_HOME` is set, Copilot reads from that directory instead of `~/.copilot`, and the install warns you.
+
+**Notes**
+
+- Copilot runs every `*.json` file in `~/.copilot/hooks/`, so agentguard writes its own `~/.copilot/hooks/agentguard.json` and never touches your hook files. Global rules go to `~/.copilot/copilot-instructions.md`.
+- Registered: `preToolUse` for `bash`, `apply_patch` (self-edit hook only, the payload is patch text) and the file tools (`view`, `create`, `edit`, `str_replace_editor`, `grep`, `rg`, `glob`), `postToolUse` for the audit log.
+- Agents may not edit `.github/copilot/settings.json` or `settings.local.json`, since `disableAllHooks` there turns off every hook for the repository.
+- Hook timeouts are fail-open in Copilot CLI.
+- Docs: [Copilot CLI hooks](https://docs.github.com/en/copilot/reference/hooks-configuration).
+
+</details>
+
+<details>
+<summary><strong>Windsurf (Cascade)</strong></summary>
+
+**Install**
+
+```bash
+agentguard windsurf
+```
+
+**Check**
+
+```bash
+agentguard check windsurf
+```
+
+**Activate**
+
+Nothing to do, but hooks do not run while a workspace is open in Restricted Mode.
+
+**Notes**
+
+- Hooks are merged into `~/.codeium/windsurf/hooks.json` (your hooks are kept, uninstall removes only ours). The scripts go to `~/.codeium/windsurf/hooks/`. Global rules go to `~/.codeium/windsurf/memories/global_rules.md`.
+- Registered: `pre_run_command`, `pre_read_code`, `pre_write_code`, `pre_mcp_tool_use`, and the matching `post_*` events for the audit log.
+- Windsurf limits global rules to 6,000 characters, so a skill that would pass the limit is skipped with a warning. The default `karpathy-guidelines` does not fit next to the base rules. Add skills per project with `agentguard windsurf --project`, which writes `AGENTS.md`.
+- Workspace hooks (`.devin/hooks.json`, legacy `.windsurf/hooks.json`) are not written, but agents may not edit them.
+- Docs: [Cascade hooks](https://docs.devin.ai/desktop/cascade/hooks).
+
+</details>
+
 ## Uninstall
 
 ```bash
@@ -101,7 +310,7 @@ agentguard uninstall all
 agentguard uninstall claude --dry-run   # preview first
 ```
 
-Removes only what agentguard owns: hooks, the instruction file if agentguard created it (otherwise only its skill sections), Kiro agent config. The `~/.local/bin/agentguard` CLI wrapper is removed only by `agentguard uninstall all`, so the command keeps working for the agents you still have. Claude `settings.json` is surgically unmerged — your own keys untouched, file not deleted.
+Removes only what agentguard owns: its hooks and hook entries, and the instruction file if agentguard created it (otherwise only its skill sections). Merged config files keep your own keys and hooks. The `~/.local/bin/agentguard` CLI wrapper is removed only by `agentguard uninstall all`, so the command keeps working for the agents you still have.
 
 ## Check installation status
 
@@ -137,7 +346,7 @@ Disabling adds the absolute path to `~/.agentguard/disabled-dirs`. Every hook re
 agentguard upgrade
 ```
 
-Pulls the latest agentguard, then uninstalls and reinstalls every agent you previously set up — in one step. Your own `settings.json` keys, your protected-branch choice, your own instruction-file content and your selected skills are preserved: skill sections are stripped and re-applied from the new release. An instruction file that agentguard created is replaced with the new version, so edits you made inside it survive only in the timestamped `.bak` copy. Cursor installs are project-local and not tracked; re-run `agentguard cursor` in each project.
+Pulls the latest agentguard, then uninstalls and reinstalls every agent you previously set up — in one step. Your own `settings.json` keys, your protected-branch choice, your own instruction-file content and your selected skills are preserved: skill sections are stripped and re-applied from the new release. An instruction file that agentguard created is replaced with the new version, so edits you made inside it survive only in the timestamped `.bak` copy. Project-level Cursor installs are not tracked (see [Cursor](#agents)).
 
 On a `.deb` install, the upgrade downloads `SHA256SUMS` from the same release and aborts if the package checksum does not match.
 
@@ -199,14 +408,8 @@ agentguard claude --skills none
 # All agents at once — recommended:
 agentguard all --project --skills go,aws
 
-# Or per-agent:
-agentguard claude --project --skills go,aws     # → .claude/CLAUDE.md
-agentguard codex  --project --skills go,aws     # → AGENTS.md
-agentguard grok   --project --skills go,aws     # → AGENTS.md (Grok loads it)
-agentguard gemini --project --skills go,aws     # → GEMINI.md
-agentguard copilot --project --skills go,aws    # → .github/copilot-instructions.md
-agentguard windsurf --project --skills go,aws   # → AGENTS.md (Windsurf loads it)
-agentguard cursor --skills go,aws               # → .cursor/ (hooks + AGENTS.md)
+# Or one agent (file per the table above):
+agentguard claude --project --skills go,aws
 
 # Preview without writing:
 agentguard all --project --skills go,aws --dry-run
@@ -222,13 +425,6 @@ Create `skills/<name>/SKILL.md` with YAML frontmatter (`name`, `tags`, `descript
 
 ## Notes
 
-- **Kiro** — two hook formats are installed. Kiro CLI 2.x reads hooks from the `agentguard` agent config (`~/.kiro/agents/agentguard.json`), so guardrails only activate when using the `agentguard` agent: switch to it in Kiro after install. Kiro CLI 3.x (V3 engine, `kiro-cli --v3`) reads global hooks from `~/.kiro/hooks/agentguard.json`, which apply to every agent.
-- **Cursor** — `agentguard cursor` installs `.cursor/` into the current directory. `agentguard cursor --user` installs hooks only to `~/.cursor/` so they apply to every project (Cursor has no user-level instruction file; it is tracked for `agentguard upgrade`). `hooks.json` is merged: your own hooks are kept, ours are refreshed on every re-run, and uninstall strips only ours. Registered events: `beforeShellExecution`, `beforeReadFile`, `preToolUse` (`Write|Delete`), `beforeMCPExecution`, `postToolUse`.
-- **Grok** — native hooks via `~/.grok/hooks/agentguard.json` + shared scripts; global rules via `~/AGENTS.md`. Grok also loads Claude/Cursor locations for compatibility.
-- **Codex** — hooks in `~/.codex/hooks.json` (merged with your own hooks) + shared scripts in `~/.codex/hooks/`; global rules via `~/.codex/AGENTS.md`. Codex runs new hooks only after you trust them: open Codex and run `/hooks`. File edits through `apply_patch` are checked by the self-edit hook only, since the payload holds patch text, not a file path. An agentguard-created `~/AGENTS.md` from older releases is moved to `~/.codex/AGENTS.md` (left in place while Grok is installed).
-- **Gemini CLI** — hooks in the `hooks` key of `~/.gemini/settings.json` (merged: your settings and hooks are kept, uninstall strips only ours) + shared scripts in `~/.gemini/hooks/`; global rules via `~/.gemini/GEMINI.md`. Registered: `BeforeTool` for `run_shell_command` and the file tools (`read_file`, `write_file`, `replace`, `read_many_files`, `glob`, `grep_search`, `list_directory`), `AfterTool` for the audit log. Hooks are on by default (Gemini CLI v0.26.0+); `hooksConfig.enabled: false` turns them all off, and `agentguard check gemini` reports it.
-- **GitHub Copilot CLI** — Copilot runs every `*.json` file in `~/.copilot/hooks/`, so agentguard writes its own `~/.copilot/hooks/agentguard.json` next to the shared scripts and never touches your hook files. Global rules via `~/.copilot/copilot-instructions.md`. Registered: `preToolUse` for `bash`, `apply_patch` (self-edit hook only, the payload is patch text) and the file tools (`view`, `create`, `edit`, `str_replace_editor`, `grep`, `rg`, `glob`), `postToolUse` for the audit log. A block exits 2 and prints a `permissionDecision: "deny"` JSON. Agents may not edit `.github/copilot/settings.json` or `settings.local.json`, since `disableAllHooks` there turns off every hook for the repository. If `COPILOT_HOME` is set, Copilot reads from that directory instead of `~/.copilot` and install warns. Hook timeouts are fail-open in Copilot CLI.
-- **Windsurf (Cascade)** — hooks in `~/.codeium/windsurf/hooks.json` (merged: your hooks are kept, uninstall strips only ours) + shared scripts in `~/.codeium/windsurf/hooks/`; global rules via `~/.codeium/windsurf/memories/global_rules.md`. Registered: `pre_run_command`, `pre_read_code`, `pre_write_code`, `pre_mcp_tool_use`, and the matching `post_*` events for the audit log. Hooks need no enabling but do not run in Restricted Mode. Windsurf limits global rules to 6,000 characters, so a skill that would pass the limit is skipped with a warning (the default `karpathy-guidelines` does not fit next to the base rules); add skills per project with `agentguard windsurf --project`. Workspace hooks (`.devin/hooks.json`, legacy `.windsurf/hooks.json`) are not written, but agents may not edit them.
 - **`block-env.sh`** — best-effort on the bash surface. `block-env-read.sh` is the primary layer (intercepts Read/Write/Edit tools directly).
 - **Protected branches** — install prompts for which branches to protect from direct commit/push (default: `main,master`). Your answer is saved to `~/.agentguard/config` and applies across all agents. Override per-shell with `export AGENTGUARD_PROTECTED_BRANCHES="main,master,develop"`.
 
