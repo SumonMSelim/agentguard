@@ -77,7 +77,8 @@ agentguard grok   --project --skills go,aws    # → AGENTS.md
 agentguard gemini --project --skills go,aws    # → GEMINI.md
 agentguard copilot --project --skills go,aws   # → .github/copilot-instructions.md
 agentguard windsurf --project --skills go,aws  # → AGENTS.md
-agentguard all    --project --skills go,aws    # → claude + codex + grok + gemini + copilot + windsurf (kiro warns)
+agentguard antigravity --project --skills go,aws # → AGENTS.md
+agentguard all    --project --skills go,aws    # → claude + codex + grok + gemini + copilot + windsurf + antigravity (kiro warns)
 agentguard kiro   --project --skills go,aws    # prints warning — not supported
 ```
 
@@ -99,6 +100,7 @@ Create `skills/<name>/SKILL.md` with YAML front-matter (`name`, `tags`, `descrip
 - Gemini CLI: `~/.gemini/audit.log`
 - GitHub Copilot CLI: `~/.copilot/audit.log`
 - Windsurf: `~/.codeium/windsurf/audit.log`
+- Antigravity CLI: `~/.gemini/config/audit.log`
 
 To keep more history than the built-in rotation, add a `logrotate` config:
 

@@ -325,6 +325,31 @@ run_uninstall windsurf
 jq_true "user hooks.json entry kept" '. == {"hooks":{"post_cascade_response":[{"command":"log.sh"}]}}' "$WS_DIR/hooks.json"
 rm -rf "$FAKE_HOME/.codeium"
 
+# ── Antigravity ───────────────────────────────────────────────────────────────
+
+AG_DIR="$FAKE_HOME/.gemini/config"
+echo ""
+echo "uninstall antigravity — dry-run leaves files intact"
+run_install antigravity
+run_uninstall antigravity --dry-run
+check_true "antigravity AGENTS.md still present after dry-run" test -f "$FAKE_HOME/.gemini/AGENTS.md"
+check_true "antigravity hooks.json still present after dry-run" test -f "$AG_DIR/hooks.json"
+for h in "${HOOKS[@]}"; do
+  check_true "antigravity hook $h still present after dry-run" test -f "$AG_DIR/hooks/$h"
+done
+
+echo ""
+echo "uninstall antigravity — removes files, keeps user hooks.json entries"
+run_uninstall antigravity
+check_false "antigravity AGENTS.md removed" test -f "$FAKE_HOME/.gemini/AGENTS.md"
+check_false "antigravity hooks.json removed" test -f "$AG_DIR/hooks.json"
+check_false "antigravity hooks dir removed"  test -d "$AG_DIR/hooks"
+echo '{"mine":{"Stop":[{"type":"command","command":"log.sh"}]}}' > "$AG_DIR/hooks.json"
+run_install antigravity
+run_uninstall antigravity
+jq_true "user hooks.json entry kept" '. == {"mine":{"Stop":[{"type":"command","command":"log.sh"}]}}' "$AG_DIR/hooks.json"
+rm -rf "$FAKE_HOME/.gemini"
+
 # ── Cursor ────────────────────────────────────────────────────────────────────
 
 echo ""
@@ -439,6 +464,9 @@ check_false "copilot hooks dir removed (all)"     test -d "$FAKE_HOME/.copilot/h
 check_false "windsurf global_rules.md removed (all)" test -f "$FAKE_HOME/.codeium/windsurf/memories/global_rules.md"
 check_false "windsurf hooks.json removed (all)"   test -f "$FAKE_HOME/.codeium/windsurf/hooks.json"
 check_false "windsurf hooks dir removed (all)"    test -d "$FAKE_HOME/.codeium/windsurf/hooks"
+check_false "antigravity AGENTS.md removed (all)" test -f "$FAKE_HOME/.gemini/AGENTS.md"
+check_false "antigravity hooks.json removed (all)" test -f "$FAKE_HOME/.gemini/config/hooks.json"
+check_false "antigravity hooks dir removed (all)" test -d "$FAKE_HOME/.gemini/config/hooks"
 check_false "~/.agentguard/config removed (all)"  test -f "$FAKE_HOME/.agentguard/config"
 check_false "~/.agentguard/ dir removed (all)"    test -d "$FAKE_HOME/.agentguard"
 for h in "${HOOKS[@]}"; do

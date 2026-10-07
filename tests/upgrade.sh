@@ -97,7 +97,7 @@ fi
 echo ""
 echo "agent tracking — install all tracks global agents (not cursor)"
 run_install all
-for agent in claude kiro codex gemini copilot windsurf; do
+for agent in claude kiro codex gemini copilot windsurf antigravity; do
   if grep 'AGENTGUARD_INSTALLED_AGENTS=' "$CFG" | grep -q "$agent"; then
     printf "  PASS  %s tracked after install all\n" "$agent"
     ((pass++))
@@ -203,7 +203,7 @@ git -C "$UP_ORIGIN" init -q
 git -C "$UP_ORIGIN" add -A -f   # -f: agents/*/AGENTS.md matches .gitignore
 git -C "$UP_ORIGIN" -c user.name=test -c user.email=test@example.com commit -qm init
 git clone -q "$UP_ORIGIN" "$UP_CLONE"
-for agent in claude codex kiro grok gemini copilot windsurf; do
+for agent in claude codex kiro grok gemini copilot windsurf antigravity; do
   (cd "$FAKE_PROJECT" && HOME="$UP_HOME" bash "$UP_CLONE/install.sh" "$agent" </dev/null) >/dev/null 2>&1
 done
 (cd "$FAKE_PROJECT" && HOME="$UP_HOME" bash "$UP_CLONE/install.sh" cursor --user </dev/null) >/dev/null 2>&1
@@ -217,7 +217,7 @@ before_tracked=$(tracked_agents "$UP_HOME/.agentguard/config")
 up_out=$(cd "$FAKE_PROJECT" && HOME="$UP_HOME" bash "$UP_CLONE/install.sh" upgrade </dev/null 2>&1) || true
 after_tracked=$(tracked_agents "$UP_HOME/.agentguard/config")
 after_branches=$(protected_branches "$UP_HOME/.agentguard/config")
-if [[ "$before_tracked" == "claude codex kiro grok gemini copilot windsurf cursor-user" && "$after_tracked" == "$before_tracked" ]]; then
+if [[ "$before_tracked" == "claude codex kiro grok gemini copilot windsurf antigravity cursor-user" &&"$after_tracked" == "$before_tracked" ]]; then
   printf "  PASS  upgrade keeps all tracked agents\n"
   ((pass++))
 else
@@ -267,6 +267,15 @@ if [[ -f "$UP_HOME/.codeium/windsurf/memories/global_rules.md" ]] \
   ((pass++))
 else
   printf "  FAIL  windsurf global_rules.md or hooks.json missing under ~/.codeium/windsurf after upgrade\n"
+  ((fail++))
+fi
+if grep -qF '<!-- agentguard:skill:karpathy-guidelines -->' "$UP_HOME/.gemini/AGENTS.md" 2>/dev/null \
+   && jq -e --slurpfile g "$UP_CLONE/agents/antigravity/hooks.json" '.agentguard == $g[0].agentguard' \
+        "$UP_HOME/.gemini/config/hooks.json" >/dev/null 2>&1; then
+  printf "  PASS  upgrade reinstalls antigravity under ~/.gemini/config\n"
+  ((pass++))
+else
+  printf "  FAIL  antigravity AGENTS.md skills or hooks.json entry missing after upgrade\n"
   ((fail++))
 fi
 if jq -e --arg h "$UP_HOME" '[.hooks.preToolUse[].command] == ["./hooks/mine.sh", ($h + "/.cursor/hooks/block-env-read.sh")]' \

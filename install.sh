@@ -6,7 +6,7 @@
 # `agentguard <cmd>` from any directory after the initial install.
 #
 # Preferred usage (after the `agentguard` CLI wrapper is installed):
-#   agentguard [claude|codex|kiro|cursor|grok|gemini|copilot|windsurf|all]
+#   agentguard [claude|codex|kiro|cursor|grok|gemini|copilot|windsurf|antigravity|all]
 #   agentguard uninstall ...
 #   agentguard check ...
 #   agentguard upgrade
@@ -21,7 +21,7 @@
 #   --project              — append skills to the project-level instruction file in CWD
 #                            Claude: .claude/CLAUDE.md  Codex: AGENTS.md  Gemini: GEMINI.md  Kiro: not supported
 #                            Copilot: .github/copilot-instructions.md
-#                            Windsurf: AGENTS.md
+#                            Windsurf: AGENTS.md  Antigravity: AGENTS.md
 #   --user                 — Cursor only: install hooks to ~/.cursor/ (all projects) instead of CWD
 #
 # Re-running install is safe. Existing files are backed up before any writes.
@@ -49,7 +49,7 @@ CURSOR_USER=0
 # Agent registry, in install / check / uninstall order. Each agent has
 # install_<agent>, uninstall_<agent>, check_<agent> and install_project_<agent>
 # functions; "all" runs them for every agent in this list.
-AGENTS=(claude codex kiro cursor grok gemini copilot windsurf)
+AGENTS=(claude codex kiro cursor grok gemini copilot windsurf antigravity)
 
 # Our hook filenames, generated from hooks/*.sh. Installed, checked and
 # removed by name; the release workflow globs the same directory.
@@ -799,6 +799,89 @@ install_gemini() {
   track_installed_agent "gemini"
 }
 
+# Google Antigravity CLI (agy) reads global hooks from
+# ~/.gemini/config/hooks.json, shared with the Antigravity app and IDE: named
+# entries, {"<name>":{"PreToolUse":[{"matcher":..,"hooks":[{"type":"command",
+# "command":..}]}],..}}, each optionally "enabled": false. Ours is the
+# "agentguard" entry; every other entry is kept. stdin JSON carries toolCall
+# {name,args}; a PreToolUse hook denies with {"decision":"deny","reason":..}.
+# Global rules: ~/.gemini/AGENTS.md (no frontmatter needed, 24,000 bytes per
+# file). ~/.gemini/GEMINI.md is left to Gemini CLI, so both agents can be
+# installed side by side; with both, Antigravity loads both rule files.
+# Ref: antigravity.google/docs/hooks, antigravity.google/docs/rules
+ANTIGRAVITY_DIR="$HOME/.gemini/config"
+ANTIGRAVITY_RULES="$HOME/.gemini/AGENTS.md"
+ANTIGRAVITY_RULES_LIMIT=24000
+
+# merge_named_hooks <dest> <src> <label> — sets every top-level entry of <src>
+# in <dest>, keeping all other entries. Ours is replaced on re-run, so changed
+# matchers or a user's "enabled": false on our entry are reset.
+merge_named_hooks() {
+  local dest="$1" src="$2" label="$3"
+  require jq
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would register hooks → $dest"
+    return
+  fi
+  mkdir -p "$(dirname "$dest")"
+  if [[ ! -f "$dest" ]]; then
+    cp "$src" "$dest"
+    ok "$label hooks registered → $dest"
+    return
+  fi
+  jq -e 'type == "object"' "$dest" >/dev/null 2>&1 \
+    || fail "$dest is not a valid JSON object — fix it and re-run. File left unchanged."
+  backup_if_exists "$dest"
+  jq --slurpfile g "$src" '. + $g[0]' "$dest" > "${dest}.tmp.$$" \
+    || { rm -f "${dest}.tmp.$$"; fail "${dest##*/} merge failed — $dest left unchanged."; }
+  mv_keep_mode "${dest}.tmp.$$" "$dest"
+  ok "$label hooks merged → $dest (other hooks kept)"
+}
+
+# unmerge_named_hooks <file> <src> — removes the top-level entries of <src>;
+# removes the file if nothing else was in it.
+unmerge_named_hooks() {
+  local f="$1" src="$2" stripped
+  if [[ ! -f "$f" ]]; then
+    log "$(basename "$f") not found (already removed?)"
+    return
+  fi
+  stripped=$(jq --slurpfile g "$src" '($g[0] | keys) as $ours
+    | with_entries(select(.key as $k | $ours | index($k) | not))' "$f") \
+    || { warn "$f is not valid JSON — leaving in place"; return; }
+  # Only our entry was in it: nothing of the user's to back up.
+  if [[ "$stripped" == "{}" ]]; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      dry "Would remove $f"
+    else
+      rm "$f"
+      ok "Removed $f"
+    fi
+    return
+  fi
+  backup_if_exists "$f"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    dry "Would strip agentguard hooks from $f"
+  else
+    echo "$stripped" > "${f}.tmp.$$" && mv_keep_mode "${f}.tmp.$$" "$f"
+    ok "agentguard hooks stripped from $f (other hooks kept)"
+  fi
+}
+
+install_antigravity() {
+  local dest="$ANTIGRAVITY_DIR"
+
+  section "Installing Antigravity CLI guardrails → $dest"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be written)"
+
+  install_hooks "$dest/hooks"
+  merge_named_hooks "$dest/hooks.json" "$SCRIPT_DIR/agents/antigravity/hooks.json" "Antigravity"
+  install_instruction_file "$SCRIPT_DIR/agents/antigravity/AGENTS.md" "$ANTIGRAVITY_RULES" \
+    "AGENTS.md installed → $ANTIGRAVITY_RULES" "$ANTIGRAVITY_RULES_LIMIT"
+  log "Note: the hooks also apply to the Antigravity app and IDE, which read the same hooks.json. Restart agy to load them; /hooks lists them."
+  track_installed_agent "antigravity"
+}
+
 # GitHub Copilot CLI runs every *.json in ~/.copilot/hooks/ ("all hook entries
 # from all sources are run"), so our entries go in a file of their own,
 # hooks/agentguard.json, next to the scripts (only *.json is read as config).
@@ -1148,6 +1231,7 @@ installed_skills() {
     codex)  f="$HOME/.codex/AGENTS.md"; [[ -f "$f" ]] || f="$HOME/AGENTS.md" ;;
     grok)   f="$HOME/AGENTS.md" ;;
     gemini) f="$HOME/.gemini/GEMINI.md" ;;
+    antigravity) f="$HOME/.gemini/AGENTS.md" ;;
     copilot) f="$HOME/.copilot/copilot-instructions.md" ;;
     windsurf) f="$HOME/.codeium/windsurf/memories/global_rules.md" ;;
     *)      return 0 ;;
@@ -1642,6 +1726,20 @@ uninstall_gemini() {
   untrack_installed_agent "gemini"
 }
 
+uninstall_antigravity() {
+  local dest="$ANTIGRAVITY_DIR"
+
+  section "Uninstalling Antigravity CLI guardrails from $dest"
+  [[ "$DRY_RUN" -eq 1 ]] && echo "  (dry-run: no files will be changed)"
+
+  remove_hooks "$dest/hooks"
+  unmerge_named_hooks "$dest/hooks.json" "$SCRIPT_DIR/agents/antigravity/hooks.json"
+  remove_instruction_file "$ANTIGRAVITY_RULES" "$SCRIPT_DIR/agents/antigravity/AGENTS.md"
+
+  [[ "$DRY_RUN" -eq 0 ]] && { rmdir "$dest/hooks" 2>/dev/null || true; }
+  untrack_installed_agent "antigravity"
+}
+
 uninstall_copilot() {
   local dest="$COPILOT_DIR"
 
@@ -1922,6 +2020,24 @@ check_gemini() {
   echo ""
 }
 
+check_antigravity() {
+  local dest="$ANTIGRAVITY_DIR" f="$ANTIGRAVITY_DIR/hooks.json"
+  section "Checking Antigravity CLI installation → $dest"
+  check_file "$ANTIGRAVITY_RULES" "AGENTS.md"
+  check_hook_execs "$dest/hooks"
+  check_file "$f" "hooks.json"
+  if [[ -f "$f" ]]; then
+    if jq -e --slurpfile g "$SCRIPT_DIR/agents/antigravity/hooks.json" '.agentguard == $g[0].agentguard' "$f" >/dev/null 2>&1; then
+      _check_ok "hooks.json: agentguard hooks registered"
+    elif jq -e '.agentguard.enabled == false' "$f" >/dev/null 2>&1; then
+      _check_fail "hooks.json: agentguard hooks disabled (\"enabled\": false)"
+    else
+      _check_fail "hooks.json: agentguard entry missing or changed (re-run 'agentguard antigravity')"
+    fi
+  fi
+  echo ""
+}
+
 check_copilot() {
   local dest="$COPILOT_DIR"
   section "Checking GitHub Copilot CLI installation → $dest"
@@ -2016,6 +2132,7 @@ check_windsurf() {
 #   Kiro:   not supported      (prints warning, exits 0)
 #   Grok:   AGENTS.md          (created if absent; Grok also supports .grok/ for project)
 #   Gemini: GEMINI.md          (created if absent)
+#   Antigravity: AGENTS.md     (created if absent)
 #   Copilot: .github/copilot-instructions.md (created if absent)
 #   Windsurf: AGENTS.md        (created if absent)
 
@@ -2046,6 +2163,7 @@ install_project_claude() { install_project_file "Claude Code" "$(pwd)/.claude/CL
 install_project_codex()  { install_project_file "Codex" "$(pwd)/AGENTS.md"; }
 install_project_grok()   { install_project_file "Grok" "$(pwd)/AGENTS.md"; }
 install_project_gemini() { install_project_file "Gemini CLI" "$(pwd)/GEMINI.md"; }
+install_project_antigravity() { install_project_file "Antigravity CLI" "$(pwd)/AGENTS.md"; }
 install_project_copilot() { install_project_file "GitHub Copilot CLI" "$(pwd)/.github/copilot-instructions.md"; }
 # Windsurf reads a root-level AGENTS.md as an always-on workspace rule.
 install_project_windsurf() { install_project_file "Windsurf" "$(pwd)/AGENTS.md"; }

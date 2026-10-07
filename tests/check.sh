@@ -52,6 +52,7 @@ check_false "grok check fails when not installed"   run_check grok
 check_false "gemini check fails when not installed" run_check gemini
 check_false "copilot check fails when not installed" run_check copilot
 check_false "windsurf check fails when not installed" run_check windsurf
+check_false "antigravity check fails when not installed" run_check antigravity
 check_false "all check fails when not installed"    run_check all
 
 # ── fully installed → check passes ───────────────────────────────────────────
@@ -71,6 +72,7 @@ check_true "grok check passes after install"   run_check grok
 check_true "gemini check passes after install" run_check gemini
 check_true "copilot check passes after install" run_check copilot
 check_true "windsurf check passes after install" run_check windsurf
+check_true "antigravity check passes after install" run_check antigravity
 check_true "all check passes after install"    run_check all
 
 # ── partial install → check fails ────────────────────────────────────────────
@@ -152,6 +154,27 @@ mv "$FAKE_HOME/.codeium/windsurf/memories/global_rules.md" "$FAKE_HOME/rules.kee
 check_false "windsurf check fails with missing global_rules.md" run_check windsurf
 mv "$FAKE_HOME/rules.keep" "$FAKE_HOME/.codeium/windsurf/memories/global_rules.md"
 check_true  "windsurf check passes once restored" run_check windsurf
+
+echo ""
+echo "check — antigravity → exits 1 when broken"
+A="$FAKE_HOME/.gemini/config/hooks.json"
+cp "$A" "$A.keep"
+jq '.agentguard.enabled = false' "$A.keep" > "$A"
+check_false "antigravity check fails when our entry is disabled" run_check antigravity
+jq '.agentguard.PreToolUse |= map(select(.matcher != "run_command"))' "$A.keep" > "$A"
+check_false "antigravity check fails with missing run_command hooks" run_check antigravity
+jq 'del(.agentguard)' "$A.keep" > "$A"
+check_false "antigravity check fails without our entry" run_check antigravity
+rm "$A"
+check_false "antigravity check fails with missing hooks.json" run_check antigravity
+mv "$A.keep" "$A"
+chmod -x "$FAKE_HOME/.gemini/config/hooks/block-env.sh"
+check_false "antigravity check fails with non-executable hook" run_check antigravity
+chmod +x "$FAKE_HOME/.gemini/config/hooks/block-env.sh"
+mv "$FAKE_HOME/.gemini/AGENTS.md" "$FAKE_HOME/agy-rules.keep"
+check_false "antigravity check fails with missing AGENTS.md" run_check antigravity
+mv "$FAKE_HOME/agy-rules.keep" "$FAKE_HOME/.gemini/AGENTS.md"
+check_true  "antigravity check passes once restored" run_check antigravity
 
 echo ""
 echo "check — cursor hooks → exits 1 when broken"

@@ -7,11 +7,11 @@
 [![Platform: macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](#installation)
 [![Bash 3.2+](https://img.shields.io/badge/bash-3.2%2B-4EAA25.svg?logo=gnubash&logoColor=white)](https://www.gnu.org/software/bash/)
 [![Requires jq](https://img.shields.io/badge/requires-jq-orange.svg)](https://jqlang.org)
-[![Agents: 8](https://img.shields.io/badge/agents-8-8A2BE2.svg)](#agents)
+[![Agents: 9](https://img.shields.io/badge/agents-9-8A2BE2.svg)](#agents)
 
 Security guardrails and workflow policies for AI coding agents. Blocks dangerous operations at the hook level — not just as instructions.
 
-Supports Claude Code, OpenAI Codex, Kiro, Cursor, Grok, Gemini CLI, GitHub Copilot CLI and Windsurf. See [Agents](#agents) for each one, and [docs/configuration.md](docs/configuration.md) for the full list of enforced rules.
+Supports Claude Code, OpenAI Codex, Kiro, Cursor, Grok, Gemini CLI, GitHub Copilot CLI, Windsurf and Google Antigravity CLI. See [Agents](#agents) for each one, and [docs/configuration.md](docs/configuration.md) for the full list of enforced rules.
 
 ## Installation
 
@@ -302,6 +302,36 @@ Nothing to do, but hooks do not run while a workspace is open in Restricted Mode
 
 </details>
 
+<details>
+<summary><strong>Google Antigravity CLI</strong></summary>
+
+**Install**
+
+```bash
+agentguard antigravity
+```
+
+**Check**
+
+```bash
+agentguard check antigravity
+```
+
+**Activate**
+
+Restart `agy`, run `/hooks` and confirm the `agentguard` hooks are listed.
+
+**Notes**
+
+- Hooks are an `agentguard` entry in `~/.gemini/config/hooks.json` (your other entries are kept, a re-run resets ours, uninstall removes only ours). The scripts go to `~/.gemini/config/hooks/`. Global rules go to `~/.gemini/AGENTS.md` (24,000-byte limit; skills that would pass it are skipped).
+- The hooks file is shared with the Antigravity app and IDE, so the hooks run there too.
+- Registered: `PreToolUse` for `run_command` and the file tools (`view_file`, `write_to_file`, `replace_file_content`, `multi_replace_file_content`, `list_dir`, `find_by_name`, `grep_search`), `PostToolUse` for the audit log. A block prints `{"decision":"deny"}`; an allow prints nothing, so your own permission settings still apply.
+- Gemini CLI uses other files in `~/.gemini`, so both can be installed. With both, Antigravity also reads `~/.gemini/GEMINI.md` and loads the rules twice.
+- MCP tool calls are not checked, because their tool names are not documented.
+- Docs: [Antigravity hooks](https://antigravity.google/docs/hooks).
+
+</details>
+
 ## Uninstall
 
 ```bash
@@ -402,6 +432,7 @@ agentguard claude --skills none
 | Gemini CLI  | `GEMINI.md` in CWD                                    |                                  |
 | Copilot CLI | `.github/copilot-instructions.md` in CWD              |                                  |
 | Windsurf    | `AGENTS.md` in CWD                                    | Root `AGENTS.md` is an always-on workspace rule |
+| Antigravity | `AGENTS.md` in CWD                                    | Workspace rule file              |
 | Kiro        | —                                                     | Not supported; prints warning    |
 
 ```bash
