@@ -146,6 +146,16 @@ check_true  "file byte-identical"                 cmp "$TMP/invalid.json" "$S"
 check_false "uninstall fails"                     run_uninstall claude
 check_true  "file still byte-identical"           cmp "$TMP/invalid.json" "$S"
 
+echo ""
+echo "backup — same-second backup does not overwrite an existing one"
+seed '{"model":"opus"}'
+BAK="$S.bak.$(date +%Y%m%d%H%M%S)"
+printf 'MARKER\n' > "$BAK"
+run_install claude
+check_true  "existing backup unchanged"           test "$(cat "$BAK")" = MARKER
+check_true  "new backup written alongside" \
+  test "$(command find "$FAKE_HOME/.claude" -maxdepth 1 -name 'settings.json.bak.*' | wc -l)" -ge 2
+
 # ── HOME with a space ─────────────────────────────────────────────────────────
 
 echo ""

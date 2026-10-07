@@ -149,10 +149,16 @@ backup_if_exists() {
     if [[ "$DRY_RUN" -eq 1 ]]; then
       dry "Would back up $(basename "$file") → $(basename "$file").bak.<timestamp>"
     else
-      local ts
+      local ts suffix n=0
       ts=$(date +%Y%m%d%H%M%S)
-      cp "$file" "${file}.bak.${ts}"
-      log "Backed up $(basename "$file") → $(basename "$file").bak.${ts}"
+      suffix="$ts"
+      # Two backups in the same second would share a name: add .1, .2, ...
+      while [[ -e "${file}.bak.${suffix}" ]]; do
+        n=$((n + 1))
+        suffix="${ts}.${n}"
+      done
+      cp "$file" "${file}.bak.${suffix}"
+      log "Backed up $(basename "$file") → $(basename "$file").bak.${suffix}"
     fi
   fi
 }
