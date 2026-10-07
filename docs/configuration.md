@@ -102,6 +102,14 @@ Create `skills/<name>/SKILL.md` with YAML front-matter (`name`, `tags`, `descrip
 - Windsurf: `~/.codeium/windsurf/audit.log`
 - Antigravity CLI: `~/.gemini/config/audit.log`
 
+Read them with `agentguard log [<agent>|all] [--blocked] [--tail N] [--since <duration>]`, from your own shell:
+
+- Default agent is `all`: every tracked agent plus any agent whose log exists. `cursor` reads `.cursor/audit.log` in the current directory, `cursor --user` (or `cursor-user`) reads `~/.cursor/audit.log`.
+- `audit.log.1` is read before `audit.log`, so the rotated generation is included.
+- `--blocked` keeps only `BLOCKED` lines. `--since 30m|2h|7d` keeps lines whose UTC timestamp is within that window. `--tail N` prints the last N lines after filtering (default 50, `0` = all).
+- With more than one agent, lines are merged in time order and prefixed with the agent name: `claude  2026-10-08T01:02:03Z BLOCKED hook=block-env.sh tool=Bash cat .env`.
+- Exits 1 with a hint (`no audit log for <agent> at <path>; is it installed?`) when no log is found. The logs are only read, never written.
+
 To keep more history than the built-in rotation, add a `logrotate` config:
 
 ```conf

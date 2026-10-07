@@ -351,6 +351,17 @@ agentguard check all
 
 Reports which hooks, files, settings, and CLI wrapper are present or missing. Exits 1 if anything is out of order — useful in CI to assert guardrails are in place.
 
+## Read the audit log
+
+```bash
+agentguard log                    # last 50 lines from every agent with a log
+agentguard log claude --blocked   # only what the guardrails blocked
+agentguard log all --since 2h     # last 2 hours (30m, 7d, ...)
+agentguard log codex --tail 0     # every line
+```
+
+Reads `audit.log.1` then `audit.log`. With more than one agent, lines are merged in time order and prefixed with the agent name. Exits 1 with a hint when no log is found. See [Audit log](docs/configuration.md#audit-log-rotation) for the paths.
+
 ## Disable per directory
 
 For throwaway projects (pet projects, POCs, sandboxes) where you want the AI to have full access, disable agentguard for that directory:
