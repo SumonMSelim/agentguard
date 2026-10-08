@@ -225,6 +225,15 @@ run_hook_tests() {
   env_cmd block 'set'
   env_cmd block 'declare -x'
   env_cmd block 'typeset -x'
+  env_cmd block 'declare -p'
+  env_cmd block "eval 'gh auth token'"
+  env_cmd block "bash -c 'gh auth token'"
+  env_cmd block 'bash -c "export"'
+  env_cmd block 'echo $(gh auth token)'
+  env_cmd block 'echo `gh auth token`'
+  env_cmd block '"export"'
+  env_cmd block "cat '.env'"
+  env_cmd block 'cat ".env"'
   env_cmd block '/usr/bin/env'
   env_cmd block '/usr/bin/printenv'
   # globs and obfuscation
@@ -279,6 +288,13 @@ run_hook_tests() {
   env_cmd allow 'grep setenv src/main.c'
   env_cmd allow 'grep -r getenv src'
   env_cmd allow 'source .venv/bin/activate'
+  # quoted search patterns are not shell (#132)
+  env_cmd allow "rg -n '^(import|export)|<[A-Z]' src/content | head -30"
+  env_cmd allow "rg -n 'block-self-edit|gh auth token' CLAUDE.md README.md"
+  env_cmd allow "echo '(import|export)'"
+  env_cmd allow "grep -rn 'export' src"
+  env_cmd allow 'git commit -m "gh auth token docs"'
+  env_cmd allow "rg 'set -e' scripts"
 
   echo ""
   echo "block-env-read.sh"

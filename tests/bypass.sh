@@ -263,6 +263,25 @@ expect block "$FEAT" 'scp ~/.ssh/id_rsa host:'
 expect block "$FEAT" 'gh auth token'
 expect block "$FEAT" 'gh auth status --show-token'
 expect block "$FEAT" 'gh auth status -t'
+# Quoted search patterns are not shell, quoted text that runs still is (#132).
+expect allow "$FEAT" "rg -n '^(import|export)|<[A-Z]' src/content | head -30"
+expect allow "$FEAT" "rg -n 'block-self-edit|gh auth token' CLAUDE.md README.md"
+expect allow "$FEAT" "echo '(import|export)'"
+expect allow "$FEAT" "grep -rn 'export' src"
+expect allow "$FEAT" 'git commit -m "gh auth token docs"'
+expect allow "$FEAT" "rg 'set -e' scripts"
+expect block "$FEAT" 'export'
+expect block "$FEAT" 'export -p'
+expect block "$FEAT" 'set'
+expect block "$FEAT" 'declare -p'
+expect block "$FEAT" "eval 'gh auth token'"
+expect block "$FEAT" "bash -c 'gh auth token'"
+expect block "$FEAT" 'bash -c "export"'
+expect block "$FEAT" 'echo $(gh auth token)'
+expect block "$FEAT" 'echo `gh auth token`'
+expect block "$FEAT" '"export"'
+expect block "$FEAT" "cat '.env'"
+expect block "$FEAT" 'cat ".env"'
 
 echo ""
 echo "audit (#123): protected branch"
