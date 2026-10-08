@@ -11,6 +11,7 @@
 #   agentguard check ...
 #   agentguard upgrade
 #   agentguard log [<agent>|all] [--blocked] [--tail N] [--since 2h|30m|7d]
+#   agentguard doctor [<agent>|all]
 #
 # Bootstrap from a fresh clone (one time only, installs the wrapper):
 #   ./install.sh claude   # then use `agentguard` for all future commands
@@ -48,6 +49,7 @@ LOG_CMD=0
 LOG_BLOCKED=0
 LOG_TAIL=50
 LOG_SINCE=""
+DOCTOR_CMD=0
 TARGET_DIR=""
 CURSOR_USER=0
 
@@ -88,6 +90,11 @@ elif [[ "$AGENT" == "status" ]]; then
   shift || true
 elif [[ "$AGENT" == "log" ]]; then
   LOG_CMD=1
+  AGENT="${2:-all}"
+  [[ "$AGENT" == --* ]] && AGENT="all"
+  shift || true
+elif [[ "$AGENT" == "doctor" ]]; then
+  DOCTOR_CMD=1
   AGENT="${2:-all}"
   [[ "$AGENT" == --* ]] && AGENT="all"
   shift || true
@@ -2424,6 +2431,137 @@ cmd_log() {
        | if [[ "$LOG_TAIL" -gt 0 ]]; then tail -n "$LOG_TAIL"; else cat; fi
 }
 
+# ── doctor ────────────────────────────────────────────────────────────────────
+#
+# One screen per agent: installed (check_<agent>), runnable (agent binary),
+# activated (hints), firing (audit log). Read only. FAIL counts, WARN does not.
+
+_doctor_fails=0
+
+_doctor_pass() { printf "${_C_GREEN}  [PASS]${_C_RESET}    %s\n" "$*"; }
+_doctor_warn() { printf "${_C_YELLOW}  [WARN]${_C_RESET}    %s\n" "$*"; }
+_doctor_fail() { printf "${_C_RED}  [FAIL]${_C_RESET}    %s\n" "$*"; _doctor_fails=$((_doctor_fails + 1)); }
+
+doctor_global() {
+  local jq_path tracked dirs d
+  section "agentguard doctor"
+  log "agentguard version: $AGENTGUARD_VERSION"
+  log "bash version: $BASH_VERSION"
+  if jq_path=$(command -v jq 2>/dev/null); then
+    _doctor_pass "jq: $jq_path ($(jq --version 2>/dev/null || echo "version unknown"))"
+  else
+    _doctor_fail "jq: not found on PATH (hooks block every call without it)"
+  fi
+  tracked=$(tracked_agents)
+  log "tracked agents: ${tracked:-none}"
+  dirs=""
+  if [[ -f "$AGENTGUARD_DISABLED_DIRS_FILE" ]]; then
+    dirs=$(awk 'NF && $1 !~ /^#/' "$AGENTGUARD_DISABLED_DIRS_FILE")
+  fi
+  if [[ -z "$dirs" ]]; then
+    log "disabled dirs: none"
+  else
+    while IFS= read -r d; do
+      _doctor_warn "disabled dir: $d (no guardrails here; 'agentguard enable' turns them back on)"
+    done <<< "$dirs"
+  fi
+}
+
+# doctor_agent <agent> — <agent> is a name from AGENTS or cursor-user.
+doctor_agent() {
+  local a="$1" name="$1" prev_user="$CURSOR_USER" out n bins b bin="" ver="" path size last cutoff blocked
+  if [[ "$a" == "cursor-user" ]]; then name="cursor"; CURSOR_USER=1; fi
+  section "$a"
+
+  # Installed: the check_<agent> issue count, read from its subshell.
+  if command -v jq >/dev/null 2>&1; then
+    out=$("check_$name"; printf '\n%s' "$_check_issues")
+    n="${out##*$'\n'}"
+    if [[ "$n" -eq 0 ]]; then
+      _doctor_pass "install check: 'agentguard check $a' passes"
+    else
+      _doctor_fail "install check: $n issue(s); run 'agentguard $a' to fix"
+      printf '%s\n' "${out%$'\n'*}" | awk 'NF && !/\[OK\]/ && !/Checking /'
+    fi
+  else
+    _doctor_fail "install check: skipped, jq not found"
+  fi
+
+  # Runnable: the agent CLI on PATH, with its version when timeout(1) exists.
+  case "$name" in
+    kiro)        bins="kiro kiro-cli" ;;
+    cursor)      bins="cursor cursor-agent" ;;
+    windsurf)    bins="windsurf cascade" ;;
+    antigravity) bins="agy" ;;
+    *)           bins="$name" ;;
+  esac
+  for b in $bins; do
+    bin=$(command -v "$b" 2>/dev/null) && break
+    bin=""
+  done
+  if [[ -z "$bin" ]]; then
+    _doctor_warn "agent binary: not found on PATH (looked for: $bins)"
+  else
+    if command -v timeout >/dev/null 2>&1; then
+      ver=$(timeout 3 "$bin" --version </dev/null 2>/dev/null | head -n1) || ver=""
+    fi
+    _doctor_pass "agent binary: $bin${ver:+ ($ver)}"
+  fi
+
+  # Activated: steps outside agentguard's control.
+  case "$name" in
+    codex) log "hint: Codex runs these hooks only after you approve them with /hooks in a Codex session." ;;
+    kiro)  log "hint: Kiro CLI 2.x applies these hooks only under the 'agentguard' agent; Kiro 3.x global hooks apply to all agents." ;;
+    gemini)
+      if jq -e '.hooksConfig.enabled == false' "$GEMINI_DIR/settings.json" >/dev/null 2>&1; then
+        log "hint: set hooksConfig.enabled to true in $GEMINI_DIR/settings.json; Gemini CLI runs no hooks while it is false."
+      fi ;;
+    antigravity)
+      if jq -e '.agentguard.enabled == false' "$ANTIGRAVITY_DIR/hooks.json" >/dev/null 2>&1; then
+        log "hint: our entry in $ANTIGRAVITY_DIR/hooks.json has \"enabled\": false; re-run 'agentguard antigravity'."
+      fi ;;
+  esac
+
+  # Firing: the audit log the hooks write.
+  path=$(audit_log_path "$a")
+  if [[ ! -f "$path" ]]; then
+    _doctor_warn "activity: no audit log yet at $path; run a tool call in $name, then re-run 'agentguard doctor $a'"
+  else
+    size=$(wc -c < "$path" | tr -d '[:space:]')
+    last=$(tail -n1 "$path" | awk '{ print $1 }')
+    if cutoff=$(utc_iso $(( $(date -u +%s) - 86400 ))); then
+      blocked=$(LOG_BLOCKED=1 _log_lines "$path" "$cutoff" | wc -l | tr -d '[:space:]')
+    else
+      blocked="unknown"
+    fi
+    _doctor_pass "activity: $path ($size bytes, last entry ${last:-none}, $blocked blocked in the last 24h)"
+  fi
+  CURSOR_USER="$prev_user"
+}
+
+# cmd_doctor — $AGENT, or for "all" the tracked agents (every agent when none
+# is tracked). Exits 0 when nothing failed, 1 otherwise.
+cmd_doctor() {
+  local targets a
+  if [[ "$AGENT" == "all" ]]; then
+    targets=$(tracked_agents)
+    [[ -n "$targets" ]] || targets="${AGENTS[*]}"
+  elif [[ "$AGENT" == "cursor" && "$CURSOR_USER" -eq 1 ]]; then
+    targets="cursor-user"
+  else
+    targets="$AGENT"
+  fi
+  doctor_global
+  for a in $targets; do doctor_agent "$a"; done
+  echo ""
+  if [[ "$_doctor_fails" -eq 0 ]]; then
+    ok "No failures found."
+    exit 0
+  fi
+  warn "$_doctor_fails check(s) failed."
+  exit 1
+}
+
 # ── entry point ───────────────────────────────────────────────────────────────
 
 if [[ "$DISABLE_CMD" -eq 1 ]]; then
@@ -2463,6 +2601,10 @@ if [[ "$AGENT" == "all" ]]; then TARGETS=("${AGENTS[@]}"); else TARGETS=("$AGENT
 if [[ "$LOG_CMD" -eq 1 ]]; then
   cmd_log
   exit 0
+fi
+
+if [[ "$DOCTOR_CMD" -eq 1 ]]; then
+  cmd_doctor
 fi
 
 if [[ "$CHECK" -eq 1 ]]; then

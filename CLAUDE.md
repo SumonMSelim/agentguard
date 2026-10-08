@@ -38,6 +38,10 @@ agentguard check all
 agentguard log
 agentguard log claude --blocked --since 2h --tail 20
 
+# Doctor (install check + agent binary + activation hints + audit activity; default: tracked agents)
+agentguard doctor
+agentguard doctor codex
+
 # Bootstrap (one time only, from a fresh clone — this installs the `agentguard` CLI wrapper)
 #   ./install.sh claude     # after this, use `agentguard claude` etc. for everything
 
@@ -117,6 +121,7 @@ Duplication prevented by sentinel comment: `<!-- agentguard:skill:<name> -->`.
 - `uninstall.sh` — installs then uninstalls, verifies clean state.
 - `check.sh` — exercises `agentguard check` (or direct script during development).
 - `log.sh` — exercises `agentguard log` against fake audit logs (filters, prefixing, BSD `date` fallback, missing-log exit code).
+- `doctor.sh` — exercises `agentguard doctor` with a fake HOME and stub agent binaries on a minimal `PATH` (PASS, missing binary, missing log, blocked count, exit codes).
 - `project.sh` — exercises `--project` flag installs.
 - `upgrade.sh` — version tracking, `upgrade` (from a throwaway clone), checksum verify.
 - `install.sh` — install edge cases: `claude` then `all`, re-install idempotency, odd settings.json shapes, invalid JSON refused, HOME with a space, Cursor hooks.json, full round trip.
