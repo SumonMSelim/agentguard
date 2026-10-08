@@ -362,6 +362,15 @@ agentguard log codex --tail 0     # every line
 
 Reads `audit.log.1` then `audit.log`. With more than one agent, lines are merged in time order and prefixed with the agent name. Exits 1 with a hint when no log is found. See [Audit log](docs/configuration.md#audit-log-rotation) for the paths.
 
+## Diagnose a broken install
+
+```bash
+agentguard doctor                 # every tracked agent (every agent if none is tracked)
+agentguard doctor codex
+```
+
+One screen per agent: the `agentguard check` result, whether the agent CLI is on `PATH` (and its version), activation steps agentguard cannot do for you (Codex `/hooks` approval, the Kiro 2.x `agentguard` agent, Gemini `hooksConfig.enabled`, a disabled Antigravity entry), and the audit log: size, last entry and `BLOCKED` lines in the last 24 hours. Also shows the agentguard, bash and `jq` versions, tracked agents and disabled directories. Exits 1 when any line is `FAIL`; `WARN` lines (no agent CLI on `PATH`, no audit log yet) do not fail.
+
 ## Disable per directory
 
 For throwaway projects (pet projects, POCs, sandboxes) where you want the AI to have full access, disable agentguard for that directory:
