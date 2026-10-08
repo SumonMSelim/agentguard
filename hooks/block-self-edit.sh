@@ -47,6 +47,18 @@ if echo "$COMMAND" | grep -qE "(^|[^A-Za-z0-9_])CLAUDE_CONFIG_DIR=|(^|[^A-Za-z0-
   _grok_block "Blocked: starting an agent with another config directory or HOME skips its agentguard hooks. Ask the user to run it from their own shell."
 fi
 
+# Claude Code puts subagent worktrees at <project>/.claude/worktrees/<name>/.
+# For the path checks below, each such segment (in ~/.claude too) becomes a
+# neutral token, so `cd <worktree> && make` is not seen as agent config. Only
+# the segment is rewritten: a nested .claude/settings.local.json inside the
+# worktree stays protected. The name can not be `..` and the rest of the path
+# must be plain (no $var, glob or quote tricks); a command with any `..` path
+# segment is left as is, so `cd <worktree> && cd ../..` can not reach the
+# .claude dir unseen. The disable check above used the original command.
+if ! echo "$COMMAND" | grep -qE "(^|[/[:space:]\"'=:])\.\.([/[:space:]\"';&|)]|\$)"; then
+  COMMAND=$(echo "$COMMAND" | sed -E 's#\.claude/worktrees/[A-Za-z0-9_-][A-Za-z0-9_.-]*(/[A-Za-z0-9_./-]*)?([[:space:]"'"'"';&|:)<>]|$)#.claude-worktree\1\2#g')
+fi
+
 # Any agent directory name, used where the path is only a prefix (git -C or
 # cd target, variable value, bind-mount source).
 _SELF_DIR='(\.claude|\.agentguard|\.kiro|\.grok|\.cursor|\.codex|\.gemini|\.copilot|\.github/copilot|\.codeium)([^a-zA-Z0-9_-]|$)'
