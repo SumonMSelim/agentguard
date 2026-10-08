@@ -1220,6 +1220,17 @@ EOF
   self_edit allow 'echo "~/.claude/settings.json" > notes.md'
   self_edit allow 'ls ~/.claude/hooks 2>/dev/null'
   self_edit allow 'echo {} > src/claude.json'
+  # Harmless redirects after cd / variable indirection (#122).
+  self_edit allow 'cd ~/.claude && ls -la 2>&1'
+  self_edit allow 'cd ~/.claude && diff <(cat a) b 2>/dev/null'
+  self_edit allow 'D=~/.claude; cat $D/settings.json 2>&1 | head'
+  self_edit allow 'cd ~/.claude && cat settings.json >&2'
+  self_edit block 'cd ~/.claude && echo x 2>settings.json'
+  self_edit block 'cd ~/.claude && echo {} > settings.json'
+  self_edit block 'cd ~/.claude && ls > hooks/x.sh 2>&1'
+  self_edit block 'D=~/.claude; echo {} > $D/settings.json 2>/dev/null'
+  self_edit block 'cd ~/.claude && echo x &> hooks.json'
+  self_edit block 'cd ~/.claude && echo x >& settings.json'
 
   echo ""
   echo "block-env-read.sh — Claude settings files (#65)"

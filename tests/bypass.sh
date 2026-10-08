@@ -126,6 +126,15 @@ expect block "$FEAT" 'sed -i s/x/y/ ~/.claude/settings.json'
 expect block "$FEAT" 'cp /tmp/x.sh ~/.claude/hooks/block-env.sh'
 expect block "$FEAT" 'env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT agentguard disable'
 expect block "$FEAT" 'bash ~/.agentguard/../install.sh disable'
+expect block "$FEAT" 'cd ~/.claude && echo x 2>settings.json'
+expect block "$FEAT" 'cd ~/.claude && echo {} > settings.json'
+expect block "$FEAT" 'cd ~/.claude && ls > hooks/x.sh 2>&1'
+expect block "$FEAT" 'D=~/.claude; echo {} > $D/settings.json 2>/dev/null'
+expect block "$FEAT" 'cd ~/.claude && echo x &> hooks.json'
+expect allow "$FEAT" 'cd ~/.claude && ls -la 2>&1'
+expect allow "$FEAT" 'cd ~/.claude && diff <(cat a) b 2>/dev/null'
+expect allow "$FEAT" 'D=~/.claude; cat $D/settings.json 2>&1 | head'
+expect allow "$FEAT" 'cd ~/.claude && cat settings.json >&2'
 
 echo ""
 echo "git: force push, refspecs and protected branch"

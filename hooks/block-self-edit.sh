@@ -96,16 +96,21 @@ if echo "$COMMAND" | grep -qE "$_SELF_PATH" \
   _grok_block "$_MSG"
 fi
 
+# Harmless redirects (fd duplications like 2>&1, >&2, 1>&- and redirects to
+# /dev/null) removed, so `cd ~/.claude && ls 2>&1` is not seen as a write by
+# the cd/pushd and variable checks below. Any other redirect is kept.
+_NO_NOISE=$(echo "$COMMAND" | sed -E 's/[0-9]*>[>|]?[[:space:]]*(&([0-9]+-?|-)|\/dev\/null)([^a-zA-Z0-9_./-]|$)/\3/g')
+
 # cd/pushd into a protected dir, then a write on a relative path:
 #   cd ~/.claude && rm -r hooks
 if echo "$COMMAND" | grep -qE "${_W}(cd|pushd)[[:space:]]+[\"']?[^[:space:];&|\"']*${_SELF_DIR}" \
-  && echo "$COMMAND" | grep -qE "$_WRITE_OR_REDIRECT"; then
+  && echo "$_NO_NOISE" | grep -qE "$_WRITE_OR_REDIRECT"; then
   _grok_block "$_MSG"
 fi
 
 # Variable indirection: D=~/.claude; rm -rf $D/hooks
 if echo "$COMMAND" | grep -qE "(^|[^a-zA-Z0-9_])[A-Za-z_][A-Za-z0-9_]*=[\"']?[^[:space:];&|\"']*${_SELF_DIR}" \
-  && echo "$COMMAND" | grep -qE "$_WRITE_OR_REDIRECT"; then
+  && echo "$_NO_NOISE" | grep -qE "$_WRITE_OR_REDIRECT"; then
   _grok_block "$_MSG"
 fi
 
