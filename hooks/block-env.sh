@@ -105,15 +105,27 @@ if echo "$N" | grep -qE "${_BOUNDARY}((([^[:space:]]*/)?(sudo|doas)|command|exec
   _grok_block "Blocked: bare 'env' to dump environment variables is not permitted. If a secret is needed for this task, ask the user to supply it directly."
 fi
 
+# The env-dump and gh token rules below match S: the command with quoted
+# strings replaced by _q_ (one pass, left to right, so 'a"b' is one string),
+# so search patterns like rg '(import|export)' or 'gh auth token' are not read
+# as shell. When quoted text can run as shell (sh -c, eval, source, ., $(, a
+# backtick, a quoted command name like "export") or the quoting is not plain
+# (an escaped quote, or a newline: sed works per line), S is N as before.
+S=$(printf '%s' "$COMMAND" | sed -E "s/'[^']*'|\"[^\"]*\"/_q_/g" | tr -d "\"'\\\\{}" | tr '[:upper:]' '[:lower:]')
+if [[ "$COMMAND" == *'$('* || "$COMMAND" == *'`'* || "$COMMAND" == *$'\n'* || "$COMMAND" == *'\"'* || "$COMMAND" == *"\\'"* ]] \
+  || echo "$S" | grep -qE "(^|[^a-z0-9_-])(bash|sh|zsh|dash|ksh)([[:space:]]+-[^[:space:]]+)*[[:space:]]+(-[a-z]*c[a-z]*|--command)|(^|[^a-z0-9_./-])(eval|source)([[:space:]]|\$)|${_BOUNDARY}\.[[:space:]]|${_STMT_START}[^[:space:];|&]*_q_"; then
+  S="$N"
+fi
+
 # Block shell builtins that list variables: bare export/set, export -p and
 # declare/typeset with at most one flag (declare -x). `set -x` stays allowed.
-if echo "$N" | grep -qE "${_STMT_START}(set|export([[:space:]]+-p)?|(declare|typeset)([[:space:]]+-[A-Za-z]+)?)[[:space:]]*(\$|[;|>&)])"; then
+if echo "$S" | grep -qE "${_STMT_START}(set|export([[:space:]]+-p)?|(declare|typeset)([[:space:]]+-[A-Za-z]+)?)[[:space:]]*(\$|[;|>&)])"; then
   _grok_block "$_ENV_MSG"
 fi
 
 # Block GitHub CLI auth token exposure (gh auth token, gh auth status --show-token).
 # gh must be at a statement boundary.
-if echo "$COMMAND" | grep -qE "${_STMT_START}gh[[:space:]]+auth[[:space:]]+(token|status([[:space:]]+[^;&|]*)?[[:space:]](--show-token|-t)([[:space:]]|\$))"; then
+if echo "$S" | grep -qE "${_STMT_START}gh[[:space:]]+auth[[:space:]]+(token|status([[:space:]]+[^;&|]*)?[[:space:]](--show-token|-t)([[:space:]]|\$))"; then
   _grok_block "Blocked: 'gh auth token' exposes the GitHub authentication token. If this token is needed for a task, ask the user to supply it directly."
 fi
 
