@@ -1247,6 +1247,22 @@ EOF
   self_edit block 'D=~/.claude; echo {} > $D/settings.json 2>/dev/null'
   self_edit block 'cd ~/.claude && echo x &> hooks.json'
   self_edit block 'cd ~/.claude && echo x >& settings.json'
+  # Claude Code worktrees (#131)
+  self_edit allow 'docker run --rm -v /Users/me/proj/.claude/worktrees/agent-abc:/src -w /src golang go test ./...'
+  self_edit allow $'cd /Users/me/proj/.claude/worktrees/agent-abc; python3 - <<\'E\'\nprint(1)\nE'
+  self_edit allow $'cd /Users/me/proj/.claude/worktrees/agent-abc; cat >> internal/x.go <<\'E\'\n// x\nE'
+  self_edit allow 'cd /Users/me/proj/.claude/worktrees/agent-abc; make build test 2>&1 | tail'
+  self_edit allow 'W=/Users/me/proj/.claude/worktrees/agent-abc; git -C $W commit -m "fix: x"'
+  self_edit allow "docker run --rm -v ./:/work/src -w /work/src alpine sh -c 'bash tests/run_all.sh'"
+  self_edit block 'rm -rf ~/.claude/worktrees/../hooks'
+  self_edit block 'echo {} > ~/.claude/worktrees/../settings.json'
+  self_edit block 'echo '\''{"disableAllHooks":true}'\'' > /Users/me/proj/.claude/worktrees/x/.claude/settings.local.json'
+  self_edit block 'cd /Users/me/proj/.claude/worktrees/x && rm -rf ~/.claude/hooks'
+  self_edit block 'rm -rf ~/.claude/worktrees'
+  self_edit block 'cd ~/.claude/worktrees/x && cd ../.. && rm -rf hooks'
+  self_edit block 'rm -rf ~/.claude/worktrees/x/sub/../../../hooks'
+  self_edit block 'X=.; rm -rf ~/.claude/worktrees/x/$X$X/$X$X/hooks'
+  self_edit block 'rm -rf ~/.claude/worktrees/x/.?/.?/hooks'
 
   echo ""
   echo "block-env-read.sh — Claude settings files (#65)"

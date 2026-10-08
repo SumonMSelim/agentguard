@@ -141,6 +141,26 @@ expect allow "$FEAT" 'D=~/.claude; cat $D/settings.json 2>&1 | head'
 expect allow "$FEAT" 'cd ~/.claude && cat settings.json >&2'
 
 echo ""
+echo "self-edit: Claude Code worktrees (#131)"
+WT="$TMP/proj/.claude/worktrees/agent-abc"
+mkrepo "$WT" feat
+expect allow "$FEAT" 'docker run --rm -v /Users/me/proj/.claude/worktrees/agent-abc:/src -w /src golang go test ./...'
+expect allow "$FEAT" $'cd /Users/me/proj/.claude/worktrees/agent-abc; python3 - <<\'E\'\nprint(1)\nE'
+expect allow "$FEAT" $'cd /Users/me/proj/.claude/worktrees/agent-abc; cat >> internal/x.go <<\'E\'\n// x\nE'
+expect allow "$FEAT" 'cd /Users/me/proj/.claude/worktrees/agent-abc; make build test 2>&1 | tail'
+expect allow "$FEAT" 'W=/Users/me/proj/.claude/worktrees/agent-abc; git -C $W commit -m "fix: x"'
+expect allow "$WT" "docker run --rm -v ./:/work/src -w /work/src alpine sh -c 'bash tests/run_all.sh'"
+expect block "$FEAT" 'rm -rf ~/.claude/worktrees/../hooks'
+expect block "$FEAT" 'echo {} > ~/.claude/worktrees/../settings.json'
+expect block "$FEAT" 'echo '\''{"disableAllHooks":true}'\'' > /Users/me/proj/.claude/worktrees/x/.claude/settings.local.json'
+expect block "$FEAT" 'cd /Users/me/proj/.claude/worktrees/x && rm -rf ~/.claude/hooks'
+expect block "$FEAT" 'rm -rf ~/.claude/worktrees'
+expect block "$FEAT" 'cd ~/.claude/worktrees/x && cd ../.. && rm -rf hooks'
+expect block "$FEAT" 'rm -rf ~/.claude/worktrees/x/sub/../../../hooks'
+expect block "$FEAT" 'X=.; rm -rf ~/.claude/worktrees/x/$X$X/$X$X/hooks'
+expect block "$FEAT" 'rm -rf ~/.claude/worktrees/x/.?/.?/hooks'
+
+echo ""
 echo "git: force push, refspecs and protected branch"
 expect block "$FEAT" 'git push origin +main'
 expect block "$FEAT" 'git push origin +feat'
