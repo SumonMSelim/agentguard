@@ -555,6 +555,7 @@ EOF
   check "grok blocks read .env"        block '{"toolName":"read_file","toolInput":{"target_file":".env"}}'   block-env-read.sh
   check "grok blocks search .env"      block '{"toolName":"search_replace","toolInput":{"file_path":".env","new_string":"x"}}' block-env-read.sh
   check "grok allows normal cmd"       allow '{"toolName":"run_terminal_command","toolInput":{"command":"ls -l"}}' block-env.sh
+  check_stdout "grok deny JSON escapes quote in path" block '{"toolName":"read_file","toolInput":{"target_file":"/p/a\"b/.env"}}' block-env-read.sh '.decision == "deny" and (.reason | contains("/p/a\"b/.env"))'
 
   # Codex payload shape (Claude-shaped plus hook_event_name/cwd), per learn.chatgpt.com/docs/hooks
   echo ""

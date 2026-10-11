@@ -171,7 +171,7 @@ _grok_block() {
   elif _is_copilot; then
     jq -cn --arg m "$1" '{permissionDecision:"deny",permissionDecisionReason:$m}'
   elif echo "$INPUT" | jq -e 'has("hookEventName") or has("toolName")' >/dev/null 2>&1; then
-    printf '{"decision":"deny","reason":"%s"}\n' "$1"
+    jq -cn --arg m "$1" '{decision:"deny",reason:$m}'
   fi
   exit 2
 }
